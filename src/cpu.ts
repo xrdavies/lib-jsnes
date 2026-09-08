@@ -4,6 +4,8 @@ export class Cpu6502 {
   a=0; x=0; y=0; sp=0xfd; p=U|I; pc=0; cycles=0;
   constructor(private readonly bus: CpuBus) {}
   reset(): void { this.sp=0xfd; this.p=U|I; this.pc=this.read16(0xfffc); this.cycles=0; }
+  save(): number[]{return [this.a,this.x,this.y,this.sp,this.p,this.pc&255,this.pc>>>8,this.cycles];}
+  load(v:number[]): void {[this.a,this.x,this.y,this.sp,this.p]=v; this.pc=v[5]|(v[6]<<8); this.cycles=v[7];}
   irq(): void { if (!(this.p&I)) this.interrupt(0xfffe); }
   nmi(): void { this.interrupt(0xfffa); }
   step(): number { const op=this.fetch(); let used=2; switch(op){
