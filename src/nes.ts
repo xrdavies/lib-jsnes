@@ -32,7 +32,7 @@ export class Nes implements CpuBus {
     address &= 0xffff;
     if (address < 0x2000) return this.ram[address & 0x7ff];
     if (address < 0x4000) return this.ppu.readRegister(address);
-    if (address === 0x4015) return 0;
+    if (address === 0x4015) return this.apu.readStatus();
     if (address === 0x4016) return this.controller1.read();
     if (address === 0x4017) return this.controller2.read();
     return this.cartridge.readCpu(address);
