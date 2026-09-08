@@ -14,5 +14,5 @@ export function parseRom(input: ArrayBuffer | Uint8Array): RomImage {
   const trainerSize = flags6 & 4 ? 512 : 0, start = 16 + trainerSize, end = start + prgSize + chrSize;
   if (!prgSize || end > bytes.length) throw new Error('Truncated iNES ROM');
   const mirroring: Mirroring = flags6 & 8 ? 'four-screen' : flags6 & 1 ? 'vertical' : 'horizontal';
-  return { format: nes2 ? 'nes2' : 'ines', mapper: (flags6 >>> 4) | (flags7 & 0xf0), mirroring, battery: !!(flags6 & 2), trainer: trainerSize ? bytes.slice(16, start) : undefined, prgRom: bytes.slice(start, start + prgSize), chrRom: chrSize ? bytes.slice(start + prgSize, end) : new Uint8Array(0), chrRam: chrSize === 0 };
+  return { format: nes2 ? 'nes2' : 'ines', mapper: (flags6 >>> 4) | (flags7 & 0xf0) | (nes2 ? ((bytes[8] & 0x0f) << 8) : 0), mirroring, battery: !!(flags6 & 2), trainer: trainerSize ? bytes.slice(16, start) : undefined, prgRom: bytes.slice(start, start + prgSize), chrRom: chrSize ? bytes.slice(start + prgSize, end) : new Uint8Array(0), chrRam: chrSize === 0 };
 }
