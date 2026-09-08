@@ -1,9 +1,9 @@
 export interface CpuBus { read(address: number): number; write(address: number, value: number): void; }
 const C=1,Z=2,I=4,D=8,B=16,U=32,V=64,N=128;
 export class Cpu6502 {
-  a=0; x=0; y=0; sp=0xfd; p=U|I; pc=0; cycles=0; unknownOpcodes=0; lastUnknownOpcode=-1;
+  a=0; x=0; y=0; sp=0xfd; p=U|I; pc=0; cycles=0; unknownOpcodes=0; lastUnknownOpcode=-1; readonly unknownOpcodeCounts=new Uint32Array(256);
   constructor(private readonly bus: CpuBus) {}
-  reset(): void { this.sp=0xfd; this.p=U|I; this.pc=this.read16(0xfffc); this.cycles=0; this.unknownOpcodes=0; this.lastUnknownOpcode=-1; }
+  reset(): void { this.sp=0xfd; this.p=U|I; this.pc=this.read16(0xfffc); this.cycles=0; this.unknownOpcodes=0; this.lastUnknownOpcode=-1; this.unknownOpcodeCounts.fill(0); }
   save(): number[]{return [this.a,this.x,this.y,this.sp,this.p,this.pc&255,this.pc>>>8,this.cycles&255,(this.cycles>>>8)&255,(this.cycles>>>16)&255,(this.cycles>>>24)&255];}
   load(v:number[]): void {[this.a,this.x,this.y,this.sp,this.p]=v; this.pc=v[5]|(v[6]<<8); this.cycles=v[7]|(v[8]<<8)|(v[9]<<16)|(v[10]<<24);}
   irq(): void { if (!(this.p&I)) this.interrupt(0xfffe); }
@@ -25,7 +25,12 @@ export class Cpu6502 {
     case 0xaa: this.x=this.a; this.nz(this.x); used=2; break; case 0xba: this.x=this.sp; this.nz(this.x); used=2; break; case 0x9a: this.sp=this.x; used=2; break; case 0x48: this.push(this.a); used=3; break; case 0x8a: this.a=this.x; this.nz(this.a); used=2; break; case 0xa8: this.y=this.a; this.nz(this.y); used=2; break; case 0x98: this.a=this.y; this.nz(this.a); used=2; break;
     case 0x18: this.p&=~C; used=2; break; case 0x90: used=this.branch(!(this.p&C)); break; case 0xb0: used=this.branch(!!(this.p&C)); break; case 0x50: used=this.branch(!(this.p&V)); break; case 0x70: used=this.branch(!!(this.p&V)); break;  case 0x38: this.p|=C; used=2; break; case 0x58: this.p&=~I; used=2; break; case 0x78: this.p|=I; used=2; break; case 0xb8: this.p&=~V; used=2; break; case 0xd8: this.p&=~D; used=2; break; case 0xf8: this.p|=D; used=2; break;
     case 0xd0: used=this.branch(!(this.p&Z)); break; case 0xf0: used=this.branch(!!(this.p&Z)); break; case 0x10: used=this.branch(!(this.p&N)); break; case 0x30: used=this.branch(!!(this.p&N)); break;
-    default: this.unknownOpcodes++; this.lastUnknownOpcode=op; used=2; break;
+    case 0x47: this.sre(this.fetch()); used=5; break; case 0x4f: this.sre(this.abs()); used=6; break; case 0x57: this.sre(this.zpx()); used=6; break; case 0x5f: this.sre(this.absx()); used=7; break;
+    case 0x67: this.rra(this.fetch()); used=5; break; case 0x6f: this.rra(this.abs()); used=6; break; case 0x77: this.rra(this.zpx()); used=6; break; case 0x7f: this.rra(this.absx()); used=7; break;
+    case 0xc7: this.dcp(this.fetch()); used=5; break; case 0xcf: this.dcp(this.abs()); used=6; break; case 0xd7: this.dcp(this.zpx()); used=6; break; case 0xdf: this.dcp(this.absx()); used=7; break;
+    case 0xe7: this.isc(this.fetch()); used=5; break; case 0xef: this.isc(this.abs()); used=6; break; case 0xf7: this.isc(this.zpx()); used=6; break; case 0xff: this.isc(this.absx()); used=7; break;
+    case 0x80: this.fetch(); used=2; break; case 0x82: this.fetch(); used=2; break; case 0x89: this.fetch(); used=2; break; case 0xc2: this.fetch(); used=2; break; case 0xe2: this.fetch(); used=2; break; case 0xeb: this.adc(this.imm()^255); used=2; break; case 0xde: {const a=this.absx(),v=(this.bus.read(a)+1)&255;this.bus.write(a,v);this.adc(v^255);used=7;break;} case 0xda: break; case 0xfa: break; case 0x5a: break; case 0x7a: break; case 0xf4: this.zpx(); used=4; break; case 0xd4: this.zpx(); used=4; break;
+    default: this.unknownOpcodes++; this.lastUnknownOpcode=op; this.unknownOpcodeCounts[op]++; used=2; break;
   } this.cycles+=used; return used; }
   private fetch(){const v=this.bus.read(this.pc); this.pc=(this.pc+1)&0xffff; return v;}
   private imm(){const v=this.fetch(); this.nz(v); return v;}
@@ -39,6 +44,10 @@ export class Cpu6502 {
   private push(v:number){this.bus.write(0x100|this.sp,v); this.sp=(this.sp-1)&255;}
   private pop(){this.sp=(this.sp+1)&255; return this.bus.read(0x100|this.sp);}
   private nz(v:number){this.p=(this.p&~(N|Z))|(v?0:Z)|(v&128);}
+  private sre(a:number){const v=this.shift(this.bus.read(a),true); this.bus.write(a,v); this.a^=v; this.nz(this.a);}
+  private rra(a:number){const v=this.rotate(this.bus.read(a),true); this.bus.write(a,v); this.adc(v);}
+  private dcp(a:number){const v=(this.bus.read(a)-1)&255; this.bus.write(a,v); this.compare(this.a,v);}
+  private isc(a:number){const v=(this.bus.read(a)+1)&255; this.bus.write(a,v); this.adc(v^255);}
   private shift(v:number,right:boolean){this.p=(this.p&~C)|(right?(v&1):((v>>7)&1)); v=right?v>>1:(v<<1)&255; this.nz(v); return v;}
   private rotate(v:number,right:boolean){const c=this.p&C?1:0; this.p=(this.p&~C)|(right?(v&1):((v>>7)&1)); v=right?(v>>1)|(c<<7):((v<<1)&255)|c; this.nz(v); return v;}
   private compare(reg:number,v:number){const d=(reg-v)&255; this.p=(this.p&~C)|(reg>=v?C:0); this.nz(d);}
