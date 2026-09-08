@@ -133,3 +133,14 @@ test('NROM mirroring and UxROM switching retain their independent mappings', () 
   uxrom.reset();
   assert.deepEqual(prgPair(uxrom), [0, 7]);
 });
+
+test('save/load restores CPU, mapper, PPU memory, and cartridge RAM', () => {
+  const nes = new Nes(image(1, 8, 4));
+  serial(nes, 0xe000, 3); ppuWrite(nes, 0x2000, 0x66); nes.write(0x6000, 0x77);
+  const state = nes.saveState();
+  serial(nes, 0xe000, 5); ppuWrite(nes, 0x2000, 0x11); nes.write(0x6000, 0x22);
+  nes.loadState(state);
+  assert.deepEqual(prgPair(nes), [3, 7]);
+  assert.equal(ppuRead(nes, 0x2000), 0x66);
+  assert.equal(nes.read(0x6000), 0x77);
+});
