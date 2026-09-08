@@ -10,10 +10,10 @@ export class Cartridge {
   private control = 0x0c;
   private chr0 = 0;
   private chr1 = 0;
-  private prg = 0; private chrBank = 0;
+  private prg = 0; private chrBank = 0; private axBank=0; private gxBank=0; private gxChr=0;
 
   constructor(readonly rom: RomImage) {
-    if (![0, 1, 2, 3].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
+    if (![0, 1, 2, 3, 7, 66].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
     if (rom.mapper === 1 && (rom.prgRom.length > 0x40000 || rom.chrRom.length > 0x20000)) {
       throw new Error('Extended MMC1 boards are not supported yet');
     }
@@ -22,6 +22,7 @@ export class Cartridge {
   }
 
   get mirroring(): NametableMirroring {
+    if (this.rom.mapper === 7) return this.axBank&16 ? 'single-upper' : 'single-lower';
     if (this.rom.mapper !== 1) return this.rom.mirroring;
     switch (this.control & 3) {
       case 0: return 'single-lower';
@@ -32,13 +33,13 @@ export class Cartridge {
   }
 
   /** Reset mapping without discarding cartridge RAM. */
-  saveState(): Uint8Array { const out=new Uint8Array(6+0x2000); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg]); out.set(this.prgRam,6); return out; }
-  loadState(state: Uint8Array): void { if(state.length!==6+0x2000) throw new RangeError('Invalid cartridge state'); [this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank]=state; this.prgRam.set(state.subarray(6)); }
+  saveState(): Uint8Array { const out=new Uint8Array(9+0x2000); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg]); out.set(this.prgRam,9); return out; }
+  loadState(state: Uint8Array): void { if(state.length!==9+0x2000) throw new RangeError('Invalid cartridge state'); [this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr]=state; this.prgRam.set(state.subarray(9)); }
 
   reset(): void {
     this.shift = 0x10;
     this.control = 0x0c;
-    this.chr0 = this.chr1 = this.prg = this.chrBank = 0;
+    this.chr0 = this.chr1 = this.prg = this.chrBank = this.axBank = this.gxBank = this.gxChr = 0;
   }
 
   readCpu(address: number): number {
@@ -49,6 +50,8 @@ export class Cartridge {
     const count = this.rom.prgRom.length / 0x4000;
     let bank = slot;
     if (this.rom.mapper === 2) bank = slot === 0 ? this.prg : count - 1;
+    if (this.rom.mapper === 7) bank = (this.axBank&15)*2 + slot;
+    if (this.rom.mapper === 66) bank = (this.gxBank&3)*2 + slot;
     if (this.rom.mapper === 1) {
       const selected = this.prg & 15;
       switch ((this.control >>> 2) & 3) {
@@ -71,6 +74,8 @@ export class Cartridge {
     }
     if (this.rom.mapper === 2) this.prg = value;
     if (this.rom.mapper === 3) { this.chrBank = value; return; }
+    if (this.rom.mapper === 7) { this.axBank=value; return; }
+    if (this.rom.mapper === 66) { this.gxBank=value>>4; this.gxChr=value&3; return; }
     if (this.rom.mapper !== 1) return;
     // ponytail: instruction-level bus; suppress consecutive-cycle writes when CPU bus timing is implemented.
     if (value & 0x80) {
@@ -100,6 +105,7 @@ export class Cartridge {
 
   private chrAddress(address: number): number {
     address &= 0x1fff;
+    if (this.rom.mapper === 66) return (this.gxChr % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 3) return (this.chrBank % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper !== 1) return address;
     const slot = address >>> 12;

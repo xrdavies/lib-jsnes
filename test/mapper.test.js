@@ -5,7 +5,7 @@ import { Nes } from '../dist/index.js';
 // Synthetic bank markers keep the test independent of commercial ROMs.
 function image(mapper = 1, prgBanks = 8, chrBanks = 4, flags = 0) {
   const bytes = new Uint8Array(16 + prgBanks * 0x4000 + chrBanks * 0x2000);
-  bytes.set([0x4e, 0x45, 0x53, 0x1a, prgBanks, chrBanks, (mapper << 4) | flags]);
+  bytes.set([0x4e, 0x45, 0x53, 0x1a, prgBanks, chrBanks, ((mapper & 15) << 4) | flags, (mapper >>> 4) << 4]);
   for (let i = 0; i < prgBanks; i++) bytes.fill(i, 16 + i * 0x4000, 16 + (i + 1) * 0x4000);
   for (let i = 0; i < chrBanks * 2; i++) {
     const start = 16 + prgBanks * 0x4000 + i * 0x1000;
@@ -155,4 +155,13 @@ test('PPU raises one NMI when VBlank begins and NMI output is enabled', () => {
 test('CNROM switches the 8KB CHR bank without changing PRG mapping', () => {
   const nes = new Nes(image(3, 2, 4)); assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
   nes.write(0x8000, 2); assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x44, 0x45]);
+});
+
+test('AxROM switches 32KB PRG banks and single-screen nametable', () => {
+  const nes = new Nes(image(7, 4, 1)); assert.deepEqual(prgPair(nes), [0, 1]); nes.write(0x8000, 1); assert.deepEqual(prgPair(nes), [2, 3]);
+  ppuWrite(nes, 0x2000, 9); assert.deepEqual([0x2000,0x2400,0x2800,0x2c00].map(a=>ppuRead(nes,a)), [9,9,9,9]);
+});
+
+test('GxROM switches PRG and CHR banks from one register', () => {
+  const nes = new Nes(image(66, 8, 4)); nes.write(0x8000, 0x21); assert.deepEqual(prgPair(nes), [4,5]); assert.deepEqual(chrPair(nes), [0x42,0x43]);
 });
