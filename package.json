@@ -1,0 +1,14 @@
+{
+  "name": "lib-jsnes",
+  "version": "0.1.0",
+  "description": "A TypeScript NES emulator core for Node.js and browsers",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"}},
+  "files": ["dist"],
+  "scripts": {"build": "tsc", "test": "npm run build && node test/rom.test.js"},
+  "devDependencies": {"typescript": "^5.6.0"},
+  "keywords": ["nes", "emulator", "nintendo", "wasm"],
+  "license": "MIT"
+}
