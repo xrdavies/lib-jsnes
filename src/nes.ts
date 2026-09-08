@@ -18,6 +18,7 @@ export class Nes implements CpuBus {
   private dmaStall = 0;
 
   get frame(): Uint32Array { return this.ppu.frame; }
+  setController(player: 1|2, mask: number): void { if(player===1)this.controller1.setButtons(mask); else if(player===2)this.controller2.setButtons(mask); else throw new RangeError('player must be 1 or 2'); }
   audioSamples(): Int16Array { return this.apu.drainSamples(); }
   frameRgba(): Uint8ClampedArray { const out=new Uint8ClampedArray(this.frame.length*4); for(let i=0;i<this.frame.length;i++){const p=this.frame[i]; out[i*4]=p>>>16&255; out[i*4+1]=p>>>8&255; out[i*4+2]=p&255; out[i*4+3]=p>>>24&255;} return out; }
 

@@ -23,7 +23,7 @@ const rgba = nes.frameRgba(); // stable RGBA bytes for ImageData
 const pcm = nes.audioSamples(); // signed 16-bit PCM at 44.1 kHz
 ```
 
-Controllers use `nes.controller1.setButtons(mask)` with the exported `Button` constants. `saveState()` and `loadState()` preserve CPU, mapper, PPU, audio, controller, and RAM state.
+Controllers use `nes.setController(1, Button.A | Button.Start)` with the exported `Button` constants. `saveState()` and `loadState()` preserve CPU, mapper, PPU, audio, controller, and RAM state.
 
 ## Cartridge support
 
