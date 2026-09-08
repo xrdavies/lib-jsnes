@@ -12,7 +12,7 @@ npm run build:wasm
 
 ## WASM
 
-`npm run build:wasm` compiles the browser ABI to `dist-wasm/lib-jsnes.wasm`. The TypeScript implementation is the reference runtime; the WASM ABI is expanded alongside it. The generated file is intentionally ignored and should be produced during packaging or CI.
+`npm run build:wasm` compiles the browser ABI to `dist-wasm/lib-jsnes.wasm`. The TypeScript implementation is the reference runtime; the WASM ABI is expanded alongside it. The generated file is intentionally ignored and should be produced during packaging or CI. Call `romWrite` for each ROM byte, then `loadRom(length)`, `reset()`, and `step(cycles)`; read the frame through the exported linear memory.
 
 ## API
 
@@ -22,6 +22,7 @@ const nes = new Nes(await fetch('/game.nes').then(r => r.arrayBuffer()));
 nes.reset();
 const frame = nes.runFrame(); // 256x240 packed pixels
 const rgba = nes.frameRgba(); // stable RGBA bytes for ImageData
+const pcm = nes.audioSamples(); // signed 16-bit PCM at 44.1 kHz
 ```
 
 ## Publishing
