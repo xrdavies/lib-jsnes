@@ -9,8 +9,8 @@ export class Cpu6502 {
     case 0x8d: this.bus.write(this.abs(),this.a); used=4; break; case 0x8e: this.bus.write(this.abs(),this.x); used=4; break; case 0x8c: this.bus.write(this.abs(),this.y); used=4; break;
     case 0xad: this.a=this.bus.read(this.abs()); this.nz(this.a); used=4; break; case 0xbd: {const b=this.abs()+this.x; this.a=this.bus.read(b); this.nz(this.a); used=4+(b>0xffff?0:0); break;}
     case 0xe8: this.x=(this.x+1)&255; this.nz(this.x); used=2; break; case 0xca: this.x=(this.x-1)&255; this.nz(this.x); used=2; break;
-    case 0x4c: this.pc=this.abs(); used=3; break; case 0x20: {const d=this.abs(); this.push((this.pc-1)>>>8); this.push(this.pc-1); this.pc=d; used=6; break;}
-    case 0x60: this.pc=(this.pop()|(this.pop()<<8))+1; used=6; break; case 0x00: this.p|=B; used=7; break;
+    case 0x4c: this.pc=this.abs(); used=3; break; case 0x6c: {const a=this.abs(), lo=this.bus.read(a), hi=this.bus.read((a&0xff00)|((a+1)&255)); this.pc=lo|(hi<<8); used=5; break;} case 0x20: {const d=this.abs(); this.push((this.pc-1)>>>8); this.push(this.pc-1); this.pc=d; used=6; break;}
+    case 0x60: this.pc=(this.pop()|(this.pop()<<8))+1; used=6; break; case 0x00: this.p|=B; used=7; break; case 0x48: this.push(this.a); used=3; break; case 0x68: this.a=this.pop(); this.nz(this.a); used=4; break; case 0x08: this.push(this.p|B|U); used=3; break; case 0x28: this.p=(this.pop()|U)&~B; used=4; break;
     case 0x69: this.adc(this.imm()); used=2; break; case 0xe9: this.adc(this.imm()^255); used=2; break;
     case 0x29: this.a&=this.imm(); this.nz(this.a); used=2; break; case 0x09: this.a|=this.imm(); this.nz(this.a); used=2; break; case 0x49: this.a^=this.imm(); this.nz(this.a); used=2; break;
     case 0xc9: this.compare(this.a,this.imm()); used=2; break; case 0xe0: this.compare(this.x,this.imm()); used=2; break; case 0xc0: this.compare(this.y,this.imm()); used=2; break;
