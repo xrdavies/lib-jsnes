@@ -25,6 +25,8 @@ export class Cpu6502 {
     case 0xaa: this.x=this.a; this.nz(this.x); used=2; break; case 0xba: this.x=this.sp; this.nz(this.x); used=2; break; case 0x9a: this.sp=this.x; used=2; break; case 0x48: this.push(this.a); used=3; break; case 0x8a: this.a=this.x; this.nz(this.a); used=2; break; case 0xa8: this.y=this.a; this.nz(this.y); used=2; break; case 0x98: this.a=this.y; this.nz(this.a); used=2; break;
     case 0x18: this.p&=~C; used=2; break; case 0x90: used=this.branch(!(this.p&C)); break; case 0xb0: used=this.branch(!!(this.p&C)); break; case 0x50: used=this.branch(!(this.p&V)); break; case 0x70: used=this.branch(!!(this.p&V)); break;  case 0x38: this.p|=C; used=2; break; case 0x58: this.p&=~I; used=2; break; case 0x78: this.p|=I; used=2; break; case 0xb8: this.p&=~V; used=2; break; case 0xd8: this.p&=~D; used=2; break; case 0xf8: this.p|=D; used=2; break;
     case 0xd0: used=this.branch(!(this.p&Z)); break; case 0xf0: used=this.branch(!!(this.p&Z)); break; case 0x10: used=this.branch(!(this.p&N)); break; case 0x30: used=this.branch(!!(this.p&N)); break;
+    case 0x07: this.slo(this.fetch()); used=5; break; case 0x0f: this.slo(this.abs()); used=6; break; case 0x17: this.slo(this.zpx()); used=6; break; case 0x1f: this.slo(this.absx()); used=7; break; case 0x13: this.slo(this.indY()); used=8; break;
+    case 0x27: this.rla(this.fetch()); used=5; break; case 0x2f: this.rla(this.abs()); used=6; break; case 0x37: this.rla(this.zpx()); used=6; break; case 0x3f: this.rla(this.absx()); used=7; break; case 0x33: this.rla(this.indY()); used=8; break;
     case 0x47: this.sre(this.fetch()); used=5; break; case 0x4f: this.sre(this.abs()); used=6; break; case 0x57: this.sre(this.zpx()); used=6; break; case 0x5f: this.sre(this.absx()); used=7; break;
     case 0x67: this.rra(this.fetch()); used=5; break; case 0x6f: this.rra(this.abs()); used=6; break; case 0x77: this.rra(this.zpx()); used=6; break; case 0x7f: this.rra(this.absx()); used=7; break;
     case 0xc7: this.dcp(this.fetch()); used=5; break; case 0xcf: this.dcp(this.abs()); used=6; break; case 0xd7: this.dcp(this.zpx()); used=6; break; case 0xdf: this.dcp(this.absx()); used=7; break;
@@ -44,6 +46,8 @@ export class Cpu6502 {
   private push(v:number){this.bus.write(0x100|this.sp,v); this.sp=(this.sp-1)&255;}
   private pop(){this.sp=(this.sp+1)&255; return this.bus.read(0x100|this.sp);}
   private nz(v:number){this.p=(this.p&~(N|Z))|(v?0:Z)|(v&128);}
+  private slo(a:number){const v=this.shift(this.bus.read(a),false);this.bus.write(a,v);this.a|=v;this.nz(this.a);}
+  private rla(a:number){const v=this.rotate(this.bus.read(a),false);this.bus.write(a,v);this.a&=v;this.nz(this.a);}
   private sre(a:number){const v=this.shift(this.bus.read(a),true); this.bus.write(a,v); this.a^=v; this.nz(this.a);}
   private rra(a:number){const v=this.rotate(this.bus.read(a),true); this.bus.write(a,v); this.adc(v);}
   private dcp(a:number){const v=(this.bus.read(a)-1)&255; this.bus.write(a,v); this.compare(this.a,v);}
