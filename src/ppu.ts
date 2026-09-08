@@ -3,5 +3,6 @@ export class Ppu {
   private ctrl=0; private mask=0; private status=0xa0; private oamAddr=0; private addr=0; private latch=false; private data=0; scanline=0; dot=0;
   readRegister(reg:number):number { switch(reg&7){case 2: {const v=this.status; this.status&=0x7f; this.latch=false; return v;} case 4:return this.oam[this.oamAddr]; case 7:{const a=this.addr&0x3fff; const v=a>=0x3f00?this.palette[a&31]:this.data; if(a<0x3f00)this.data=this.vram[a]; this.addr=(a+(this.ctrl&4?32:1))&0x3fff; return v;} default:return 0;} }
   writeRegister(reg:number,value:number):void {value&=255; switch(reg&7){case 0:this.ctrl=value;break;case 1:this.mask=value;break;case 3:this.oamAddr=value;break;case 4:this.oam[this.oamAddr++]=value;break;case 5:this.latch=!this.latch;break;case 6:if(!this.latch)this.addr=(value&0x3f)<<8;else this.addr=(this.addr&0x3f00)|value;this.latch=!this.latch;break;case 7:{const a=this.addr&0x3fff; if(a>=0x3f00)this.palette[a&31]=value; else this.vram[a]=value; this.addr=(a+(this.ctrl&4?32:1))&0x3fff; break;}}}
+  dma(bytes: Uint8Array): void { this.oam.set(bytes); }
   step(dots=1):boolean {let frame=false; while(dots-->0){if(++this.dot>=341){this.dot=0;if(++this.scanline>=262){this.scanline=0;frame=true;} if(this.scanline===241)this.status|=0x80; if(this.scanline===261)this.status&=0x7f;}} return frame;}
 }
