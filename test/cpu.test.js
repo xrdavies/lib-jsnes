@@ -11,3 +11,7 @@ test('6502 shifts and rotates carry through accumulator and memory', () => {
   mem.set([0xa9,0x81,0x0a,0x2a,0x69,1,0x85,0x10,0x46,0x10,0x66,0x10,0x00],0x8000); mem[0xfffc]=0; mem[0xfffd]=0x80;
   const cpu=new Cpu6502(bus); cpu.reset(); for(let i=0;i<7;i++) cpu.step(); assert.equal(cpu.a,6); assert.equal(mem[0x10],1); assert.ok(cpu.p&1);
 });
+test('6502 exposes unknown opcode diagnostics without breaking stepping', () => {
+  const mem = new Uint8Array(65536); const bus={read:a=>mem[a&65535],write:(a,v)=>{mem[a&65535]=v&255;}}; mem[0xfffc]=0; mem[0xfffd]=0x80; mem[0x8000]=0x02;
+  const cpu=new Cpu6502(bus); cpu.reset(); cpu.step(); assert.equal(cpu.unknownOpcodes,1); assert.equal(cpu.lastUnknownOpcode,0x02);
+});

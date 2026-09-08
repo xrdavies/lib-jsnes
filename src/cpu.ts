@@ -1,9 +1,9 @@
 export interface CpuBus { read(address: number): number; write(address: number, value: number): void; }
 const C=1,Z=2,I=4,D=8,B=16,U=32,V=64,N=128;
 export class Cpu6502 {
-  a=0; x=0; y=0; sp=0xfd; p=U|I; pc=0; cycles=0;
+  a=0; x=0; y=0; sp=0xfd; p=U|I; pc=0; cycles=0; unknownOpcodes=0; lastUnknownOpcode=-1;
   constructor(private readonly bus: CpuBus) {}
-  reset(): void { this.sp=0xfd; this.p=U|I; this.pc=this.read16(0xfffc); this.cycles=0; }
+  reset(): void { this.sp=0xfd; this.p=U|I; this.pc=this.read16(0xfffc); this.cycles=0; this.unknownOpcodes=0; this.lastUnknownOpcode=-1; }
   save(): number[]{return [this.a,this.x,this.y,this.sp,this.p,this.pc&255,this.pc>>>8,this.cycles&255,(this.cycles>>>8)&255,(this.cycles>>>16)&255,(this.cycles>>>24)&255];}
   load(v:number[]): void {[this.a,this.x,this.y,this.sp,this.p]=v; this.pc=v[5]|(v[6]<<8); this.cycles=v[7]|(v[8]<<8)|(v[9]<<16)|(v[10]<<24);}
   irq(): void { if (!(this.p&I)) this.interrupt(0xfffe); }
@@ -25,7 +25,7 @@ export class Cpu6502 {
     case 0xaa: this.x=this.a; this.nz(this.x); used=2; break; case 0xba: this.x=this.sp; this.nz(this.x); used=2; break; case 0x9a: this.sp=this.x; used=2; break; case 0x48: this.push(this.a); used=3; break; case 0x8a: this.a=this.x; this.nz(this.a); used=2; break; case 0xa8: this.y=this.a; this.nz(this.y); used=2; break; case 0x98: this.a=this.y; this.nz(this.a); used=2; break;
     case 0x18: this.p&=~C; used=2; break; case 0x90: used=this.branch(!(this.p&C)); break; case 0xb0: used=this.branch(!!(this.p&C)); break; case 0x50: used=this.branch(!(this.p&V)); break; case 0x70: used=this.branch(!!(this.p&V)); break;  case 0x38: this.p|=C; used=2; break; case 0x58: this.p&=~I; used=2; break; case 0x78: this.p|=I; used=2; break; case 0xb8: this.p&=~V; used=2; break; case 0xd8: this.p&=~D; used=2; break; case 0xf8: this.p|=D; used=2; break;
     case 0xd0: used=this.branch(!(this.p&Z)); break; case 0xf0: used=this.branch(!!(this.p&Z)); break; case 0x10: used=this.branch(!(this.p&N)); break; case 0x30: used=this.branch(!!(this.p&N)); break;
-    default: used=2; break;
+    default: this.unknownOpcodes++; this.lastUnknownOpcode=op; used=2; break;
   } this.cycles+=used; return used; }
   private fetch(){const v=this.bus.read(this.pc); this.pc=(this.pc+1)&0xffff; return v;}
   private imm(){const v=this.fetch(); this.nz(v); return v;}
