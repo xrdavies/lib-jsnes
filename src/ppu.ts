@@ -35,6 +35,6 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   consumeScanlines(): number { const n=this.scanlineTicks; this.scanlineTicks=0; return n; }
   consumeNmi(): boolean { const pending=this.nmiPending; this.nmiPending=false; return pending; }
   loadState(state: Uint8Array): void { if(state.length!==0x4000+32+256+13) throw new RangeError('Invalid PPU state'); this.vram.set(state.subarray(0,0x4000)); this.palette.set(state.subarray(0x4000,0x4020)); this.oam.set(state.subarray(0x4020,0x4120)); const v=state.subarray(0x4120); [this.ctrl,this.mask,this.status,this.oamAddr]=v; this.addr=v[4]|(v[5]<<8); this.latch=!!v[6]; this.data=v[7]; this.scanline=v[8]|(v[9]<<8); this.dot=v[10]|(v[11]<<8); this.nmiPending=!!v[12]; }
-  dma(bytes: Uint8Array): void { this.oam.set(bytes); }
+  dma(bytes: Uint8Array): void { for(let i=0;i<256;i++)this.oam[(this.oamAddr+i)&255]=bytes[i]; this.oamAddr=(this.oamAddr+256)&255; }
   step(dots=1):boolean {let frame=false; while(dots-->0){if(++this.dot>=341){this.dot=0;this.scanlineTicks++; if(++this.scanline>=262){this.scanline=0; this.spriteOverflow=false; this.renderBackground(); this.renderSprites(); if(this.sprite0Hit)this.status|=0x40; frame=true;} if(this.scanline===241)this.status|=0x80; if(this.ctrl&0x80)this.nmiPending=true; if(this.scanline===261)this.status&=0x7f;}} return frame;}
 }

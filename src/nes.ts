@@ -48,7 +48,7 @@ export class Nes implements CpuBus {
       this.controller1.write(value);
       this.controller2.write(value);
     } else if (address === 0x4014) {
-      this.dmaStall += 513;
+      this.dmaStall += 513 + (this.cpu.cycles & 1);
       const bytes = new Uint8Array(256);
       for (let i = 0; i < 256; i++) bytes[i] = this.read((value << 8) + i);
       this.ppu.dma(bytes);
