@@ -6,3 +6,4 @@ const nes = new Nes(image); nes.reset(); nes.runFrame(); assert.ok(nes.cycleCoun
 console.log('rom tests passed');
 const { Button } = await import('../dist/index.js'); nes.controller1.setButtons(Button.A | Button.Start); nes.write(0x4016, 1); nes.write(0x4016, 0); assert.deepEqual([nes.read(0x4016), nes.read(0x4016), nes.read(0x4016), nes.read(0x4016)], [1,0,0,1]);
 nes.write(0x4000, 0x4f); nes.write(0x4002, 0x20); nes.write(0x4003, 0); nes.write(0x4015, 1); nes.step(1000); assert.equal(nes.read(0x4015)&1,1); assert.ok(nes.audioSamples().length > 0);
+const nes2 = new Uint8Array(16 + 0x4000 + 0x2000); nes2.set([0x4e,0x45,0x53,0x1a,1,1,0,0x08]); assert.equal(parseRom(nes2).format, 'nes2');
