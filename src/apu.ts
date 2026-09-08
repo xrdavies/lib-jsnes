@@ -1,9 +1,11 @@
 const CPU_HZ=1789773, SAMPLE_HZ=44100;
-class Pulse { regs=new Uint8Array(4); timer=0; phase=0; enabled=false; write(i:number,v:number){this.regs[i]=v&255; if(i===3)this.timer=(this.timer&0xff)|((v&7)<<8);} step(){if(this.timer--<=0){this.timer=(this.regs[2]|((this.regs[3]&7)<<8))+1;this.phase=(this.phase+1)&7;}} sample(){if(!this.enabled||!this.regs[2]&&!(this.regs[3]&7))return 0;const duty=[1,2,4,6][this.regs[0]>>6];return this.phase<duty?(this.regs[0]&15):0;}}
-/** Small deterministic pulse mixer; envelope/sweep and triangle/noise/DMC are pending. */
-export class Apu { private readonly pulse=[new Pulse(),new Pulse()]; private frac=0; private samples:number[]=[];
-  write(address:number,value:number):void {if(address>=0x4000&&address<0x4008)this.pulse[address<0x4004?0:1].write(address&3,value); else if(address===0x4015){this.pulse[0].enabled=!!(value&1);this.pulse[1].enabled=!!(value&2);}}
-  step(cycles:number):void {for(let i=0;i<cycles;i++){for(const p of this.pulse)p.step();this.frac+=SAMPLE_HZ;if(this.frac>=CPU_HZ){this.frac-=CPU_HZ;this.samples.push((this.pulse[0].sample()+this.pulse[1].sample())*512-4096);}}}
+const NOISE_PERIOD=[4,8,16,32,64,96,128,160,202,254,380,508,762,1016,2034,4068];
+class Pulse { regs=new Uint8Array(4); timer=0; phase=0; enabled=false; write(i:number,v:number){this.regs[i]=v&255; if(i===3)this.timer=(this.timer&0xff)|((v&7)<<8);} step(){if(this.timer--<=0){this.timer=(this.regs[2]|((this.regs[3]&7)<<8))+1;this.phase=(this.phase+1)&7;}} sample(){if(!this.enabled||(!this.regs[2]&&!(this.regs[3]&7)))return 0;return this.phase<[1,2,4,6][this.regs[0]>>6]?(this.regs[0]&15):0;}}
+class Noise { regs=new Uint8Array(4); timer=0; shift=1; enabled=false; step(){if(this.timer--<=0){this.timer=NOISE_PERIOD[this.regs[2]&15];const tap=(this.regs[2]&0x80)?6:1;this.shift=(this.shift>>1)|(((this.shift^(this.shift>>tap))&1)<<14);}} sample(){return this.enabled&&!(this.shift&1)?this.regs[0]&15:0;}}
+/** Deterministic pulse/noise mixer; triangle and DMC remain pending. */
+export class Apu { private readonly pulse=[new Pulse(),new Pulse()]; private readonly noise=new Noise(); private frac=0; private samples:number[]=[];
+  write(address:number,value:number):void {if(address>=0x4000&&address<0x4008)this.pulse[address<0x4004?0:1].write(address&3,value); else if(address>=0x400c&&address<0x4010)this.noise.regs[address&3]=value&255; else if(address===0x4015){this.pulse[0].enabled=!!(value&1);this.pulse[1].enabled=!!(value&2);this.noise.enabled=!!(value&8);}}
+  step(cycles:number):void {for(let i=0;i<cycles;i++){for(const p of this.pulse)p.step();this.noise.step();this.frac+=SAMPLE_HZ;if(this.frac>=CPU_HZ){this.frac-=CPU_HZ;this.samples.push((this.pulse[0].sample()+this.pulse[1].sample()+this.noise.sample())*384-4096);}}}
   drainSamples():Int16Array {const out=Int16Array.from(this.samples);this.samples=[];return out;}
-  reset():void {this.frac=0;this.samples=[];for(const p of this.pulse){p.regs.fill(0);p.timer=0;p.phase=0;p.enabled=false;}}
+  reset():void {this.frac=0;this.samples=[];for(const p of this.pulse){p.regs.fill(0);p.timer=0;p.phase=0;p.enabled=false;}this.noise.regs.fill(0);this.noise.timer=0;this.noise.shift=1;this.noise.enabled=false;}
 }
