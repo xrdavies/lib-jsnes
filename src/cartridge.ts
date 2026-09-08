@@ -10,10 +10,10 @@ export class Cartridge {
   private control = 0x0c;
   private chr0 = 0;
   private chr1 = 0;
-  private prg = 0;
+  private prg = 0; private chrBank = 0;
 
   constructor(readonly rom: RomImage) {
-    if (![0, 1, 2].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
+    if (![0, 1, 2, 3].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
     if (rom.mapper === 1 && (rom.prgRom.length > 0x40000 || rom.chrRom.length > 0x20000)) {
       throw new Error('Extended MMC1 boards are not supported yet');
     }
@@ -32,13 +32,13 @@ export class Cartridge {
   }
 
   /** Reset mapping without discarding cartridge RAM. */
-  saveState(): Uint8Array { const out=new Uint8Array(5+0x2000); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg]); out.set(this.prgRam,5); return out; }
-  loadState(state: Uint8Array): void { if(state.length!==5+0x2000) throw new RangeError('Invalid cartridge state'); [this.shift,this.control,this.chr0,this.chr1,this.prg]=state; this.prgRam.set(state.subarray(5)); }
+  saveState(): Uint8Array { const out=new Uint8Array(6+0x2000); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg]); out.set(this.prgRam,6); return out; }
+  loadState(state: Uint8Array): void { if(state.length!==6+0x2000) throw new RangeError('Invalid cartridge state'); [this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank]=state; this.prgRam.set(state.subarray(6)); }
 
   reset(): void {
     this.shift = 0x10;
     this.control = 0x0c;
-    this.chr0 = this.chr1 = this.prg = 0;
+    this.chr0 = this.chr1 = this.prg = this.chrBank = 0;
   }
 
   readCpu(address: number): number {
@@ -70,6 +70,7 @@ export class Cartridge {
       return;
     }
     if (this.rom.mapper === 2) this.prg = value;
+    if (this.rom.mapper === 3) { this.chrBank = value; return; }
     if (this.rom.mapper !== 1) return;
     // ponytail: instruction-level bus; suppress consecutive-cycle writes when CPU bus timing is implemented.
     if (value & 0x80) {
@@ -99,6 +100,7 @@ export class Cartridge {
 
   private chrAddress(address: number): number {
     address &= 0x1fff;
+    if (this.rom.mapper === 3) return (this.chrBank % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper !== 1) return address;
     const slot = address >>> 12;
     const bank = this.control & 16
