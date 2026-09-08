@@ -23,5 +23,5 @@ export class Cpu6502 {
   private pop(){this.sp=(this.sp+1)&255; return this.bus.read(0x100|this.sp);}
   private nz(v:number){this.p=(this.p&~(N|Z))|(v?0:Z)|(v&128);}
   private adc(v:number){const sum=this.a+v+(this.p&C?1:0); this.p=(this.p&~(C|V))|(sum>255?C:0)|((~(this.a^v)&(this.a^sum)&128)?V:0); this.a=sum&255; this.nz(this.a);}
-  private branch(ok:boolean){if(!ok)return 2; const off=(this.fetch()<<24)>>24; const old=this.pc; this.pc=(this.pc+off)&0xffff; return 3+(old&0xff00)!==(this.pc&0xff00)?1:0;}
+  private branch(ok:boolean){if(!ok)return 2; const off=(this.fetch()<<24)>>24; const old=this.pc; this.pc=(this.pc+off)&0xffff; return 3 + ((old & 0xff00) !== (this.pc & 0xff00) ? 1 : 0);}
 }
