@@ -9,8 +9,9 @@ export function parseRom(input: ArrayBuffer | Uint8Array): RomImage {
   const nes2 = (flags7 & 0x0c) === 0x08;
   const prgUnits = nes2 ? (bytes[4] | ((bytes[9] & 0x0f) << 8)) : bytes[4];
   const chrUnits = nes2 ? (bytes[5] | ((bytes[9] >>> 4) << 8)) : bytes[5];
-  if (nes2 && ((bytes[4] & 0x3f) === 0x3f || (bytes[5] & 0x3f) === 0x3f)) throw new Error('NES 2.0 exponent ROM sizes are not supported yet');
-  const prgSize = prgUnits * 0x4000, chrSize = chrUnits * 0x2000;
+  const exponentSize = (value:number): number => { const exponent=value>>>2, multiplier=(value&3)*2+1; if(exponent>30)throw new Error('NES 2.0 ROM size is too large'); return 2**exponent*multiplier; };
+  const prgSize = nes2 && (bytes[4]&0x3f)===0x3f ? exponentSize(bytes[4]) : prgUnits*0x4000;
+  const chrSize = nes2 && (bytes[5]&0x3f)===0x3f ? exponentSize(bytes[5]) : chrUnits*0x2000;
   const trainerSize = flags6 & 4 ? 512 : 0, start = 16 + trainerSize, end = start + prgSize + chrSize;
   if (!prgSize || end > bytes.length) throw new Error('Truncated iNES ROM');
   const mirroring: Mirroring = flags6 & 8 ? 'four-screen' : flags6 & 1 ? 'vertical' : 'horizontal';
