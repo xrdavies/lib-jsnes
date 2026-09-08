@@ -144,3 +144,10 @@ test('save/load restores CPU, mapper, PPU memory, and cartridge RAM', () => {
   assert.equal(ppuRead(nes, 0x2000), 0x66);
   assert.equal(nes.read(0x6000), 0x77);
 });
+
+test('PPU raises one NMI when VBlank begins and NMI output is enabled', () => {
+  const bytes = image(0, 1, 1); const prg = 16; bytes[prg + 0x3ffa] = 0; bytes[prg + 0x3ffb] = 0x80; bytes[prg + 0x3ffc] = 0; bytes[prg + 0x3ffd] = 0x80; bytes[prg] = 0xea; // NMI target $8000.
+  const nes = new Nes(bytes); nes.reset(); nes.ppu.writeRegister(0, 0x80); nes.step(27394);
+  assert.equal(nes.cpu.pc, 0x8000);
+  assert.equal(nes.ppu.consumeNmi(), false);
+});
