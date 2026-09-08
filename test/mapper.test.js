@@ -165,3 +165,7 @@ test('AxROM switches 32KB PRG banks and single-screen nametable', () => {
 test('GxROM switches PRG and CHR banks from one register', () => {
   const nes = new Nes(image(66, 8, 4)); nes.write(0x8000, 0x21); assert.deepEqual(prgPair(nes), [4,5]); assert.deepEqual(chrPair(nes), [0x42,0x43]);
 });
+
+test('MMC3 selects 8KB PRG slots and 1KB CHR banks', () => {
+  const nes = new Nes(image(4, 8, 4)); nes.write(0x8000, 6); nes.write(0x8001, 3); assert.equal(nes.read(0x8000), 1); nes.write(0x8000, 0); nes.write(0x8001, 5); assert.equal(nes.cartridge.readChr(0), 0x41); nes.write(0x8000, 0x46); nes.write(0x8001, 2); assert.equal(nes.read(0x8000), 7);
+});
