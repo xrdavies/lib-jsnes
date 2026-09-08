@@ -12,6 +12,11 @@ export class Cpu6502 {
     case 0x4c: this.pc=this.abs(); used=3; break; case 0x20: {const d=this.abs(); this.push((this.pc-1)>>>8); this.push(this.pc-1); this.pc=d; used=6; break;}
     case 0x60: this.pc=(this.pop()|(this.pop()<<8))+1; used=6; break; case 0x00: this.p|=B; used=7; break;
     case 0x69: this.adc(this.imm()); used=2; break; case 0xe9: this.adc(this.imm()^255); used=2; break;
+    case 0x29: this.a&=this.imm(); this.nz(this.a); used=2; break; case 0x09: this.a|=this.imm(); this.nz(this.a); used=2; break; case 0x49: this.a^=this.imm(); this.nz(this.a); used=2; break;
+    case 0xc9: this.compare(this.a,this.imm()); used=2; break; case 0xe0: this.compare(this.x,this.imm()); used=2; break; case 0xc0: this.compare(this.y,this.imm()); used=2; break;
+    case 0x85: this.bus.write(this.fetch(),this.a); used=3; break; case 0x86: this.bus.write(this.fetch(),this.x); used=3; break; case 0x84: this.bus.write(this.fetch(),this.y); used=3; break;
+    case 0xa5: this.a=this.bus.read(this.fetch()); this.nz(this.a); used=3; break; case 0xa6: this.x=this.bus.read(this.fetch()); this.nz(this.x); used=3; break; case 0xa4: this.y=this.bus.read(this.fetch()); this.nz(this.y); used=3; break;
+    case 0xaa: this.x=this.a; this.nz(this.x); used=2; break; case 0x8a: this.a=this.x; this.nz(this.a); used=2; break; case 0xa8: this.y=this.a; this.nz(this.y); used=2; break; case 0x98: this.a=this.y; this.nz(this.a); used=2; break;
     case 0xd0: used=this.branch(!(this.p&Z)); break; case 0xf0: used=this.branch(!!(this.p&Z)); break; case 0x10: used=this.branch(!(this.p&N)); break; case 0x30: used=this.branch(!!(this.p&N)); break;
     default: used=2; break;
   } this.cycles+=used; return used; }
@@ -22,6 +27,7 @@ export class Cpu6502 {
   private push(v:number){this.bus.write(0x100|this.sp,v); this.sp=(this.sp-1)&255;}
   private pop(){this.sp=(this.sp+1)&255; return this.bus.read(0x100|this.sp);}
   private nz(v:number){this.p=(this.p&~(N|Z))|(v?0:Z)|(v&128);}
+  private compare(reg:number,v:number){const d=(reg-v)&255; this.p=(this.p&~C)|(reg>=v?C:0); this.nz(d);}
   private adc(v:number){const sum=this.a+v+(this.p&C?1:0); this.p=(this.p&~(C|V))|(sum>255?C:0)|((~(this.a^v)&(this.a^sum)&128)?V:0); this.a=sum&255; this.nz(this.a);}
   private branch(ok:boolean){if(!ok)return 2; const off=(this.fetch()<<24)>>24; const old=this.pc; this.pc=(this.pc+off)&0xffff; return 3 + ((old & 0xff00) !== (this.pc & 0xff00) ? 1 : 0);}
 }
