@@ -182,3 +182,7 @@ test('PPU mask controls background and sprite rendering', () => {
 test('PPU mask clips the first eight background columns', () => {
   const raw=image(0,1,1); raw.fill(255,16+0x4000,16+0x4000+16); const nes=new Nes(raw); nes.ppu.writeRegister(1,8); nes.runFrame(); const drawn=nes.frame[16]; nes.ppu.writeRegister(1,8); nes.runFrame(); assert.equal(nes.frame[4],0xff000000); assert.equal(nes.frame[16],drawn);
 });
+
+test('PPU enables an immediate NMI when NMI output is turned on during VBlank', () => {
+  const nes=new Nes(image(0,1,1)); nes.ppu.step(241*341); assert.equal(nes.ppu.consumeNmi(),false); nes.ppu.writeRegister(0,0x80); assert.equal(nes.ppu.consumeNmi(),true);
+});
