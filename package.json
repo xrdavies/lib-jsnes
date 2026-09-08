@@ -31,5 +31,7 @@
     "nintendo",
     "wasm"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "browser": "./dist/index.js",
+  "sideEffects": false
 }
