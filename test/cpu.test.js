@@ -15,3 +15,7 @@ test('6502 exposes unknown opcode diagnostics without breaking stepping', () => 
   const mem = new Uint8Array(65536); const bus={read:a=>mem[a&65535],write:(a,v)=>{mem[a&65535]=v&255;}}; mem[0xfffc]=0; mem[0xfffd]=0x80; mem[0x8000]=0x02;
   const cpu=new Cpu6502(bus); cpu.reset(); cpu.step(); assert.equal(cpu.unknownOpcodes,1); assert.equal(cpu.lastUnknownOpcode,0x02);
 });
+
+test('6502 advances past a not-taken branch operand', () => {
+  const mem=new Uint8Array(65536); const bus={read:a=>mem[a&65535],write:(a,v)=>{mem[a&65535]=v&255;}}; mem.set([0xf0,0x7f,0xa9,0x2a],0x8000); mem[0xfffc]=0; mem[0xfffd]=0x80; const cpu=new Cpu6502(bus); cpu.reset(); cpu.step(); cpu.step(); assert.equal(cpu.a,0x2a);
+});

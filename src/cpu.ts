@@ -56,5 +56,5 @@ export class Cpu6502 {
   private rotate(v:number,right:boolean){const c=this.p&C?1:0; this.p=(this.p&~C)|(right?(v&1):((v>>7)&1)); v=right?(v>>1)|(c<<7):((v<<1)&255)|c; this.nz(v); return v;}
   private compare(reg:number,v:number){const d=(reg-v)&255; this.p=(this.p&~C)|(reg>=v?C:0); this.nz(d);}
   private adc(v:number){const sum=this.a+v+(this.p&C?1:0); this.p=(this.p&~(C|V))|(sum>255?C:0)|((~(this.a^v)&(this.a^sum)&128)?V:0); this.a=sum&255; this.nz(this.a);}
-  private branch(ok:boolean){if(!ok)return 2; const off=(this.fetch()<<24)>>24; const old=this.pc; this.pc=(this.pc+off)&0xffff; return 3 + ((old & 0xff00) !== (this.pc & 0xff00) ? 1 : 0);}
+  private branch(ok:boolean){if(!ok){this.fetch();return 2;} const off=(this.fetch()<<24)>>24; const old=this.pc; this.pc=(this.pc+off)&0xffff; return 3 + ((old & 0xff00) !== (this.pc & 0xff00) ? 1 : 0);}
 }
