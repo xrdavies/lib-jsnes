@@ -5,10 +5,29 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": {".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"}},
-  "files": ["dist"],
-  "scripts": {"build": "tsc", "test": "npm run build && node --test test/*.test.js"},
-  "devDependencies": {"typescript": "^5.6.0"},
-  "keywords": ["nes", "emulator", "nintendo", "wasm"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test test/*.test.js",
+    "build:wasm": "node scripts/build-wasm.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "assemblyscript": "^0.28.20"
+  },
+  "keywords": [
+    "nes",
+    "emulator",
+    "nintendo",
+    "wasm"
+  ],
   "license": "MIT"
 }

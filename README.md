@@ -7,7 +7,12 @@ A new TypeScript NES emulator core designed for browsers and Node.js. The public
 ```sh
 npm install
 npm test
+npm run build:wasm
 ```
+
+## WASM
+
+`npm run build:wasm` compiles the browser ABI to `dist-wasm/lib-jsnes.wasm`. The TypeScript implementation is the reference runtime; the WASM ABI is expanded alongside it. The generated file is intentionally ignored and should be produced during packaging or CI.
 
 ## API
 
