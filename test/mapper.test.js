@@ -151,3 +151,8 @@ test('PPU raises one NMI when VBlank begins and NMI output is enabled', () => {
   assert.equal(nes.cpu.pc, 0x8000);
   assert.equal(nes.ppu.consumeNmi(), false);
 });
+
+test('CNROM switches the 8KB CHR bank without changing PRG mapping', () => {
+  const nes = new Nes(image(3, 2, 4)); assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
+  nes.write(0x8000, 2); assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x44, 0x45]);
+});
