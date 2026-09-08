@@ -10,7 +10,7 @@ export class Cartridge {
   private control = 0x0c;
   private chr0 = 0;
   private chr1 = 0;
-  private prg = 0; private chrBank = 0; private axBank=0; private gxBank=0; private gxChr=0; private mmc3Select=0; private mmc3Regs=new Uint8Array(8); private mmc3Mirror=0;
+  private prg = 0; private chrBank = 0; private axBank=0; private gxBank=0; private gxChr=0; private mmc3Select=0; private mmc3Regs=new Uint8Array(8); private mmc3Mirror=0; private mmc3Latch=0; private mmc3Counter=0; private mmc3Irq=false;
 
   constructor(readonly rom: RomImage) {
     if (![0, 1, 2, 3, 4, 7, 66].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
@@ -40,7 +40,7 @@ export class Cartridge {
   reset(): void {
     this.shift = 0x10;
     this.control = 0x0c;
-    this.chr0 = this.chr1 = this.prg = this.chrBank = this.axBank = this.gxBank = this.gxChr = 0; this.mmc3Select=0; this.mmc3Regs.fill(0); this.mmc3Mirror=0;
+    this.chr0 = this.chr1 = this.prg = this.chrBank = this.axBank = this.gxBank = this.gxChr = 0; this.mmc3Select=0; this.mmc3Regs.fill(0); this.mmc3Mirror=0; this.mmc3Latch=0; this.mmc3Counter=0; this.mmc3Irq=false;
   }
 
   readCpu(address: number): number {
@@ -78,7 +78,7 @@ export class Cartridge {
     if (this.rom.mapper === 3) { this.chrBank = value; return; }
     if (this.rom.mapper === 7) { this.axBank=value; return; }
     if (this.rom.mapper === 66) { this.gxBank=value>>4; this.gxChr=value&3; return; }
-    if (this.rom.mapper === 4) { const a=address&0xe001; if(a===0x8000)this.mmc3Select=value; else if(a===0x8001)this.mmc3Regs[this.mmc3Select&7]=value; else if(a===0xa000)this.mmc3Mirror=value&1; return; }
+    if (this.rom.mapper === 4) { const a=address&0xe001; if(a===0x8000)this.mmc3Select=value; else if(a===0x8001)this.mmc3Regs[this.mmc3Select&7]=value; else if(a===0xa000)this.mmc3Mirror=value&1; else if(a===0xc000)this.mmc3Latch=value; else if(a===0xc001)this.mmc3Counter=0; else if(a===0xe000)this.mmc3Irq=false; else if(a===0xe001)this.mmc3Irq=true; return; }
     if (this.rom.mapper !== 1) return;
     // ponytail: instruction-level bus; suppress consecutive-cycle writes when CPU bus timing is implemented.
     if (value & 0x80) {
@@ -97,6 +97,8 @@ export class Cartridge {
     }
     this.shift = 0x10;
   }
+
+  clockScanline(): boolean { if (this.rom.mapper !== 4 || !this.mmc3Irq) return false; if (this.mmc3Counter===0)this.mmc3Counter=this.mmc3Latch; else this.mmc3Counter--; return this.mmc3Counter===0; }
 
   readChr(address: number): number { return this.chr[this.chrAddress(address)]; }
 
