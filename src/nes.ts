@@ -9,7 +9,7 @@ export class Nes implements CpuBus { readonly controller1 = new Controller(); re
   write(address:number,value:number){if(address>=0x2000 && address<0x4000){this.ppu.writeRegister(address,value); return;} if(address<0x2000)this.ram[address&0x7ff]=value&255; else if(address===0x4016){this.controller1.write(value); this.controller2.write(value);} else if(address>=0x8000 && this.rom.mapper===2)this.bank=value&255;}
   reset(){this.ram.fill(0); this.bank=0; this.frame.fill(0xff000000); this.cpu.reset(); this.cycles=0;}
   step(cycles=1){if(!Number.isInteger(cycles)||cycles<1)throw new RangeError('cycles must be a positive integer'); while(this.cycles<cycles){const used=this.cpu.step(); this.cycles+=used; this.ppu.step(used*3);}}
-  saveState(): Uint8Array { const out=new Uint8Array(8+0x800); out.set(this.cpu.save()); out.set(this.ram,8); return out; }
-  loadState(state: Uint8Array): void { if(state.length!==8+0x800) throw new RangeError('Invalid state size'); this.cpu.load(Array.from(state.slice(0,8))); this.ram.set(state.slice(8)); }
+  saveState(): Uint8Array { const out=new Uint8Array(11+0x800); out.set(this.cpu.save()); out.set(this.ram,11); return out; }
+  loadState(state: Uint8Array): void { if(state.length!==11+0x800) throw new RangeError('Invalid state size'); this.cpu.load(Array.from(state.slice(0,11))); this.ram.set(state.slice(11)); }
   runFrame():Frame{this.step(29780); return {pixels:this.frame,width:256,height:240};} get cycleCount(){return this.cycles;}
 }
