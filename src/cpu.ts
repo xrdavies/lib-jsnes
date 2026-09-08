@@ -42,7 +42,7 @@ export class Cpu6502 {
   private indX(){const a=(this.fetch()+this.x)&255; return this.bus.read(a)|(this.bus.read((a+1)&255)<<8);}
   private indY(){const a=this.fetch(), base=this.bus.read(a)|(this.bus.read((a+1)&255)<<8); return (base+this.y)&0xffff;}
   private read16(a:number){return this.bus.read(a)|(this.bus.read((a+1)&0xffff)<<8);}
-  private interrupt(vector:number){this.push(this.pc>>>8); this.push(this.pc); this.push(this.p&~B|U); this.p|=I; this.pc=this.read16(vector); this.cycles+=7;}
+  private interrupt(vector:number){this.push(this.pc>>>8); this.push(this.pc); this.push(this.p&~B|U); this.p|=I; this.pc=this.read16(vector);}
   private push(v:number){this.bus.write(0x100|this.sp,v); this.sp=(this.sp-1)&255;}
   private pop(){this.sp=(this.sp+1)&255; return this.bus.read(0x100|this.sp);}
   private nz(v:number){this.p=(this.p&~(N|Z))|(v?0:Z)|(v&128);}
