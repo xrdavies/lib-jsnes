@@ -15,7 +15,8 @@ npm test
 import { Nes } from 'lib-jsnes';
 const nes = new Nes(await fetch('/game.nes').then(r => r.arrayBuffer()));
 nes.reset();
-const frame = nes.runFrame(); // 256x240 RGBA pixels as Uint32Array
+const frame = nes.runFrame(); // 256x240 packed pixels
+const rgba = nes.frameRgba(); // stable RGBA bytes for ImageData
 ```
 
 ## Publishing

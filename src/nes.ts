@@ -16,6 +16,7 @@ export class Nes implements CpuBus {
   private dmaStall = 0;
 
   get frame(): Uint32Array { return this.ppu.frame; }
+  frameRgba(): Uint8ClampedArray { const out=new Uint8ClampedArray(this.frame.length*4); for(let i=0;i<this.frame.length;i++){const p=this.frame[i]; out[i*4]=p>>>16&255; out[i*4+1]=p>>>8&255; out[i*4+2]=p&255; out[i*4+3]=p>>>24&255;} return out; }
 
   constructor(image: ArrayBuffer | Uint8Array) {
     this.rom = parseRom(image);
