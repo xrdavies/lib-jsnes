@@ -20,10 +20,12 @@ function image(code, start = 0x8000) {
   return rom;
 }
 
-test('WASM and TypeScript execute all 151 official opcodes with identical registers, RAM, and cycles', async () => {
+test('WASM and TypeScript execute official and stable undocumented opcodes with identical state', async () => {
   assert.equal(new Set(official).size, 151);
   const core = await WasmCore.from(binary);
-  for (const opcode of official) for (const seed of [0, 1, 0x7f, 0xff]) {
+  const stable = 'a3 a7 af b3 b7 bf 83 87 8f 97 03 07 0f 13 17 1b 1f 23 27 2f 33 37 3b 3f 43 47 4f 53 57 5b 5f 63 67 6f 73 77 7b 7f c3 c7 cf d3 d7 db df e3 e7 ef f3 f7 fb ff'.split(' ').map(x => parseInt(x, 16));
+  assert.equal(stable.length, 52);
+  for (const opcode of [...official, ...stable]) for (const seed of [0, 1, 0x7f, 0xff]) {
     const prefix = [];
     for (const at of [0, 1, 2, 0x7f, 0x80, 0xff, 0x100, 0x1fe, 0x1ff, 0x200, 0x2ff, 0x300]) {
       prefix.push(0xa9, (at + seed) & 255, 0x8d, at & 255, at >>> 8);

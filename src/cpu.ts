@@ -215,6 +215,27 @@ export class Cpu6502 {
             case 0xc2: this.fetch(); used = 2; break;
             case 0xe2: this.fetch(); used = 2; break;
             case 0xeb: this.adc(this.imm() ^ 255); used = 2; break;
+            case 0xa3: this.a = this.x = this.bus.read(this.indX()); this.nz(this.a); used = 6; break;
+            case 0xa7: this.a = this.x = this.bus.read(this.fetch()); this.nz(this.a); used = 3; break;
+            case 0xaf: this.a = this.x = this.bus.read(this.abs()); this.nz(this.a); used = 4; break;
+            case 0xb3: this.a = this.x = this.bus.read(this.indY(true)); this.nz(this.a); used = 5; break;
+            case 0xb7: this.a = this.x = this.bus.read(this.zpy()); this.nz(this.a); used = 4; break;
+            case 0x87: this.bus.write(this.fetch(), this.a & this.x); used = 3; break;
+            case 0x8f: this.bus.write(this.abs(), this.a & this.x); used = 4; break;
+            case 0x97: this.bus.write(this.zpy(), this.a & this.x); used = 4; break;
+            case 0x1b: this.slo(this.absy()); used = 7; break;
+            case 0x23: this.rla(this.indX()); used = 8; break;
+            case 0x3b: this.rla(this.absy()); used = 7; break;
+            case 0x43: this.sre(this.indX()); used = 8; break;
+            case 0x53: this.sre(this.indY()); used = 8; break;
+            case 0x5b: this.sre(this.absy()); used = 7; break;
+            case 0x63: this.rra(this.indX()); used = 8; break;
+            case 0x73: this.rra(this.indY()); used = 8; break;
+            case 0x7b: this.rra(this.absy()); used = 7; break;
+            case 0xc3: this.dcp(this.indX()); used = 8; break;
+            case 0xd3: this.dcp(this.indY()); used = 8; break;
+            case 0xdb: this.dcp(this.absy()); used = 7; break;
+            case 0xe3: this.isc(this.indX()); used = 8; break;
             case 0xbf: this.a = this.x = this.bus.read(this.absy(true)); this.nz(this.a); used = 4; break;
             case 0x03: { const a = this.indX(); const v = this.shift(this.readForModify(a), false); this.bus.write(a, v); this.a |= v; this.nz(this.a); used = 8; break; }
             case 0x0b:
