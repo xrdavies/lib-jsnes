@@ -63,6 +63,14 @@ test('VBlank clears at pre-render dot 1 and reset clears pending NMI', () => {
   assert.equal(ppu.consumeScanlines(), 0);
 });
 
+test('reading PPUSTATUS during VBlank cancels an undelivered NMI', () => {
+  const { ppu } = consoleWithNmiHandler();
+  ppu.writeRegister(0, 0x80);
+  ppu.step(241 * 341 + 1);
+  assert.equal(ppu.readRegister(2) & 0x80, 0x80);
+  assert.equal(ppu.consumeNmi(), false);
+});
+
 test('Nes executes the NMI handler once per frame and RTI returns to the main loop', () => {
   const nes = consoleWithNmiHandler();
   nes.write(0x2000, 0x80);
