@@ -1,3 +1,5 @@
+import { parseRom } from './rom.js';
+
 export interface WasmExports {
   readonly memory: WebAssembly.Memory;
   romWrite(index: number, value: number): void;
@@ -29,6 +31,7 @@ export class WasmCore {
 
   loadRom(rom: Uint8Array): void {
     if (rom.length > WasmCore.MAX_ROM_SIZE) throw new RangeError('ROM exceeds WASM capacity');
+    parseRom(rom);
     for (let i = 0; i < rom.length; i++) this.exports.romWrite(i, rom[i]);
     this.exports.loadRom(rom.length);
   }
