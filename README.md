@@ -309,7 +309,7 @@ In four-step NTSC mode, the frame IRQ latch is asserted on sequence cycles
 terminal clock can assert it again. IRQ inhibition suppresses all three clocks;
 five-step mode generates no frame IRQ. Tests cover each terminal clock, snapshot
 restoration around the window, and CPU-driven status reads in both builds.
-The APU snapshot layout is unchanged. Status reads occur on their bus cycle,
+The APU snapshot layout is unchanged from the current 131-byte format. Status reads occur on their bus cycle,
 so reading during the terminal window can observe a subsequent IRQ reassertion.
 
 `WasmCore.step(cycles)` and `runFrame(cycles)` accept integer budgets from 1 to

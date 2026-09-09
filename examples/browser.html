@@ -24,7 +24,7 @@
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const candidate = wasmInput.checked
-        ? await WasmCore.from(fetch('../dist-wasm/lib-jsnes.wasm')).then(core => { core.loadRom(bytes); core.reset(); return core; })
+        ? await WasmCore.from(await fetch('../dist-wasm/lib-jsnes.wasm')).then(core => { core.loadRom(bytes); core.reset(); return core; })
         : new Nes(bytes);
       if (!wasmInput.checked) candidate.reset();
       if (generation !== loop) return;
