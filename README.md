@@ -30,7 +30,7 @@ Controllers use `nes.setController(1, Button.A | Button.Start)` with the exporte
 
 Snapshot bytes are an evolving development format. The current APU snapshot stores
 all implemented oscillator registers, timers, lengths, and sampling/frame phases;
-older snapshots with the 32-byte APU section are rejected. Restoring discards queued
+older snapshots with previous APU sections are rejected. Restoring discards queued
 PCM from the abandoned timeline and preserves the phase of newly generated audio.
 This does not imply hardware-accurate audio: sweep, DMC, and full frame sequencing remain incomplete.
 
