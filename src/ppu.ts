@@ -1,5 +1,5 @@
 import type { Cartridge } from './cartridge.js';
-export const PPU_STATE_SIZE = 0x4000 + 32 + 256 + 13 + 245760 + 61440 + 17 + 269 + 42;
+export const PPU_STATE_SIZE = 0x4000 + 32 + 256 + 13 + 245760 + 61440 + 17 + 269 + 45;
 // ponytail: fixed retention measured in scanlines; tune for chip/temperature models if needed.
 const IO_DECAY_SCANLINES = 3 * 262;
 
@@ -19,9 +19,13 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   private readonly secondaryOam = new Uint8Array(32);
   private readonly spriteIds = new Uint8Array(8);
   private spriteCount = 0;
+  private spriteEvalOam = 64;
+  private spriteEvalByte = 0;
+  private spriteEvalStarted = false;
+  private spriteEvalCopying = false;
   private spriteLow = 0;
   private mapperAddress = 0;
-  reset(): void { this.secondaryOam.fill(255); this.spriteIds.fill(255); this.spriteCount=this.spriteLow=0; this.bgLow=this.bgHigh=this.attrLow=this.attrHigh=this.nextTile=this.nextAttr=this.nextLow=this.nextHigh=0; this.spriteLine.fill(0); this.lineOverflow=false; this.readDelay=0; this.oddFrame=false; this.suppressVblank=false; this.renderingEnabled=false; this.ioLatch=0; this.ioDecay.fill(0); this.ctrl=0; this.mask=0; this.status=0; this.backgroundOpaque.fill(0); this.nmiPending=false; this.sprite0Hit=false; this.spriteOverflow=false; this.scrollX=0; this.scrollY=0; this.oamAddr=0; this.addr=0; this.tempAddr=0; this.latch=false; this.data=0; this.scanline=0; this.dot=0; this.scanlineTicks=0; this.frame.fill(0xff000000); }
+  reset(): void { this.secondaryOam.fill(255); this.spriteIds.fill(255); this.spriteCount=0; this.spriteEvalOam=64; this.spriteEvalByte=0; this.spriteEvalStarted=false; this.spriteEvalCopying=false; this.spriteLow=0; this.bgLow=this.bgHigh=this.attrLow=this.attrHigh=this.nextTile=this.nextAttr=this.nextLow=this.nextHigh=0; this.spriteLine.fill(0); this.lineOverflow=false; this.readDelay=0; this.oddFrame=false; this.suppressVblank=false; this.renderingEnabled=false; this.ioLatch=0; this.ioDecay.fill(0); this.ctrl=0; this.mask=0; this.status=0; this.backgroundOpaque.fill(0); this.nmiPending=false; this.sprite0Hit=false; this.spriteOverflow=false; this.scrollX=0; this.scrollY=0; this.oamAddr=0; this.addr=0; this.tempAddr=0; this.latch=false; this.data=0; this.scanline=0; this.dot=0; this.scanlineTicks=0; this.frame.fill(0xff000000); }
   readonly vram = new Uint8Array(0x4000); readonly backgroundOpaque = new Uint8Array(256*240); readonly palette = new Uint8Array(32); readonly oam = new Uint8Array(256); readonly frame = new Uint32Array(256*240);
   private ctrl=0; private mask=0; private scanlineTicks=0; private nmiPending=false; private sprite0Hit=false; private spriteOverflow=false; private scrollX=0; private scrollY=0; private status=0; private oamAddr=0; private addr=0; private latch=false; private data=0; scanline=0; dot=0;
   readRegister(reg: number): number {
@@ -102,23 +106,35 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     if (this.dot === 337 || this.dot === 339) this.readMemory(0x2000 | (this.addr & 0xfff));
   }
 
-  private selectSprites(): void {
+  private beginSpriteEvaluation(): void {
     this.secondaryOam.fill(255); this.spriteIds.fill(255); this.spriteCount = 0;
-    this.spriteLine.fill(0); this.lineOverflow = false;
-    const targetLine = this.scanline === 261 ? 0 : this.scanline + 1;
+    this.spriteEvalOam = 0; this.spriteEvalByte = 0; this.spriteEvalStarted = true; this.spriteEvalCopying = false; this.lineOverflow = false;
+  }
+  private clockSpriteEvaluation(): void {
+    if (!this.spriteEvalStarted || this.spriteEvalOam >= 64) return;
     const height = this.ctrl & 32 ? 16 : 8;
-    // ponytail: select at dot 257; cycle-by-cycle secondary OAM evaluation and
-    // the overflow diagonal-scan bug remain to be implemented.
-    for (let i = 0; i < 64; i++) {
-      const y: number = this.oam[i * 4];
-      const row = targetLine - y;
-      if (row < 0 || row >= height) continue;
-      if (this.spriteCount === 8) { this.lineOverflow = true; break; }
-      const slot = this.spriteCount++;
-      for (let j = 0; j < 4; j++) this.secondaryOam[slot * 4 + j] = this.oam[i * 4 + j];
-      this.spriteIds[slot] = i;
+    const address = this.spriteEvalOam * 4 + this.spriteEvalByte;
+    const value = this.oam[address];
+    const target = this.scanline === 261 ? 0 : this.scanline + 1;
+    const inRange = (<number>value) <= target && target < (<number>value) + height;
+    if (this.spriteEvalCopying || this.spriteCount < 8) {
+      if (this.spriteEvalByte === 0 && inRange) {
+        const slot = this.spriteCount++;
+        this.secondaryOam[slot * 4] = value; this.spriteIds[slot] = this.spriteEvalOam;
+        this.spriteEvalByte = 1; this.spriteEvalCopying = true;
+      } else if (this.spriteEvalByte === 0) {
+        this.spriteEvalOam++;
+      } else {
+        const slot = this.spriteCount - 1;
+        this.secondaryOam[slot * 4 + this.spriteEvalByte] = value;
+        if (++this.spriteEvalByte === 4) { this.spriteEvalByte = 0; this.spriteEvalOam++; this.spriteEvalCopying = false; }
+      }
+      return;
     }
-    if (this.lineOverflow) this.spriteOverflow = true;
+    // Once full, every following byte is tested as if it were a Y coordinate.
+    // This deliberate diagonal scan reproduces the hardware overflow quirk.
+    if (inRange) { this.lineOverflow = true; this.spriteOverflow = true; }
+    this.spriteEvalOam++; this.spriteEvalByte = (this.spriteEvalByte + 1) & 3;
   }
   private spriteAddress(slot: number): number {
     const height = this.ctrl & 32 ? 16 : 8;
@@ -201,6 +217,8 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     out[0x4131] = this.scanlineTicks & 255;
     for (let i = 0; i < this.frame.length; i++) view.setUint32(0x4132 + i * 4, this.frame[i], true);
     out.set(this.backgroundOpaque, 0x4132 + 245760);
+    out[PPU_STATE_SIZE - 326] = this.spriteEvalOam; out[PPU_STATE_SIZE - 325] = this.spriteEvalByte;
+    out[PPU_STATE_SIZE - 324] = (this.spriteEvalStarted ? 1 : 0) | (this.spriteEvalCopying ? 2 : 0);
     out.set(this.secondaryOam, PPU_STATE_SIZE - 323); out.set(this.spriteIds, PPU_STATE_SIZE - 291);
     out[PPU_STATE_SIZE - 283] = this.spriteCount; out[PPU_STATE_SIZE - 282] = this.spriteLow;
     view.setUint16(PPU_STATE_SIZE - 281, this.bgLow, true); view.setUint16(PPU_STATE_SIZE - 279, this.bgHigh, true);
@@ -223,6 +241,7 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     for (let i = 0; i < 256; i++) {
       if (state[PPU_STATE_SIZE - 269 + i] > 127) throw new RangeError('Invalid PPU line state');
     }
+    if (state[PPU_STATE_SIZE - 326] > 64 || state[PPU_STATE_SIZE - 325] > 3 || state[PPU_STATE_SIZE - 324] > 3) throw new RangeError('Invalid PPU sprite evaluation state');
     if (state[PPU_STATE_SIZE - 283] > 8) throw new RangeError('Invalid PPU sprite count');
     for (let i = 0; i < 8; i++) {
       const id = state[PPU_STATE_SIZE - 291 + i];
@@ -251,7 +270,10 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     this.nmiPending = !!state[0x412c]; this.scrollX = state[0x412d]; this.scrollY = state[0x412e];
     this.sprite0Hit = !!state[0x412f]; this.spriteOverflow = !!state[0x4130]; this.scanlineTicks = state[0x4131];
     for (let i = 0; i < this.frame.length; i++) this.frame[i] = view.getUint32(0x4132 + i * 4, true);
-    this.backgroundOpaque.set(state.subarray(0x4132 + 245760, PPU_STATE_SIZE - 323));
+    this.backgroundOpaque.set(state.subarray(0x4132 + 245760, PPU_STATE_SIZE - 326));
+    this.spriteEvalOam = state[PPU_STATE_SIZE - 326]; this.spriteEvalByte = state[PPU_STATE_SIZE - 325];
+    this.spriteEvalStarted = !!(state[PPU_STATE_SIZE - 324] & 1);
+    this.spriteEvalCopying = !!(state[PPU_STATE_SIZE - 324] & 2);
     this.secondaryOam.set(state.subarray(PPU_STATE_SIZE - 323, PPU_STATE_SIZE - 291));
     this.spriteIds.set(state.subarray(PPU_STATE_SIZE - 291, PPU_STATE_SIZE - 283));
     this.spriteCount = state[PPU_STATE_SIZE - 283]; this.spriteLow = state[PPU_STATE_SIZE - 282];
@@ -301,12 +323,17 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
         this.renderPixel(this.dot - 1);
 
       }
-      if (this.dot === 256 && (this.scanline < 240 || this.scanline === 261)) {
-        if (mapperLine) this.selectSprites();
-        else { this.spriteLine.fill(0); this.spriteCount = 0; }
+      if (this.dot === 1 && (this.scanline < 240 || this.scanline === 261)) {
+        if (mapperLine) this.beginSpriteEvaluation();
+        else { this.spriteEvalOam = 64; this.spriteEvalByte = 0; this.spriteEvalStarted = false; this.spriteEvalCopying = false; this.spriteCount = 0; }
       }
       this.mapperAddress = 0;
       if (mapperLine) { this.clockBackground(); this.clockSprites(); }
+      if (mapperLine && this.dot >= 65 && this.dot <= 256) this.clockSpriteEvaluation();
+      if (this.dot === 256 && (this.scanline < 240 || this.scanline === 261)) {
+        this.spriteLine.fill(0);
+        if (!mapperLine) this.spriteCount = 0;
+      }
       this.cartridge.clockA12(this.mapperAddress);
       if (this.dot === 1) {
         if (this.scanline === 241) {

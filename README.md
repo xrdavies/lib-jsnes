@@ -628,7 +628,8 @@ interrupt rejection, reset, snapshot replay and JS/WASM device-clock parity.
 Synthetic ROMs compare complete frames between the two builds and assert known
 background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.
 WASM uses the same pixel output path as TypeScript. Background and sprite pattern
-fetches run in their PPU slots; secondary-OAM selection still occurs at dot 257.
+fetches run in their PPU slots; secondary-OAM evaluation scans one primary-OAM byte
+per PPU dot from dots 65–256.
 Frame views
 use packed `0xAARRGGBB` pixels; they are not RGBA byte views for `ImageData`.
 PPUADDR (`$2006`) uses a temporary address: its first write replaces the high
@@ -648,8 +649,8 @@ Visible pixels are committed at dot x + 1. Palette, grayscale, emphasis, clippin
 and display-mask changes affect subsequent pixels, leaving the already emitted
 portion of the row intact. Forced-blank palette selection also happens per pixel.
 Sprite/background priority and sprite-zero hit use the same prepared color indices;
-hit excludes x=255 and clears at pre-render dot 1. Overflow still uses a ninth
-in-range sprite approximation and is reported at dot 256.
+hit excludes x=255 and clears at pre-render dot 1. Overflow is latched when the
+evaluation circuit encounters the ninth in-range Y byte.
 
 Background fetches run at dots 1/3/5/7 of each eight-dot group: nametable,
 attribute, pattern low and pattern high. Dot 8 loads the fetched bytes into four
@@ -670,14 +671,14 @@ Sprite patterns are fetched for the next line in eight slots during dots
 still fetch pattern bytes. Selected OAM entries retain their original sprite IDs,
 and OAMADDR is held at zero during the fetch window. Pattern bytes are composed
 into a line buffer for output, preserving priority, flipping and sprite-zero hits.
-Secondary OAM selection is still performed together at the end of dot 256; cycle-by-cycle
-evaluation and the overflow diagonal-scan bug remain incomplete. Tests cover
-fetch addresses/order, X/Y wrapping, timed v/t copies,
+The evaluation keeps the first eight matching entries and applies the hardware
+diagonal scan after secondary OAM fills, so overflow timing follows the examined
+primary-OAM byte. Tests cover fetch addresses/order, X/Y wrapping, timed v/t copies,
 mid-line bank changes and snapshots between fetch phases. The 256-byte background
 line buffer is replaced by 12 bytes of shift/fetch state; the sprite line buffer
-and existing timing tail remain. Sprite slot snapshots add 42 bytes for secondary
-OAM, original IDs, count and the low-plane latch; old PPU/system snapshots are
-rejected. The net PPU snapshot is 202 bytes smaller than the previous combined
+and existing timing tail remain. Sprite slot snapshots add 45 bytes for secondary
+OAM, original IDs, count, the low-plane latch and the evaluation cursor; old
+PPU/system snapshots are rejected. The net PPU snapshot is 199 bytes smaller than the previous combined
 background/sprite layout. Hosts should display
 the completed frame after their frame step.
 
