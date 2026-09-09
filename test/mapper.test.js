@@ -143,7 +143,7 @@ test('save/load restores CPU, mapper, PPU memory, and cartridge RAM', () => {
   assert.deepEqual(prgPair(nes), [3, 7]);
   assert.equal(ppuRead(nes, 0x2000), 0x66);
   assert.equal(nes.read(0x6000), 0x77);
-  assert.equal(nes.cycleCount, 0);
+  assert.equal(nes.cycleCount, 0); assert.equal(nes.audioSamples().length, 0);
 });
 
 test('PPU raises one NMI when VBlank begins and NMI output is enabled', () => {
