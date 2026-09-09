@@ -30,13 +30,22 @@ export class Cartridge {
   private pending: boolean = false;
   private ramDisabled: boolean = false;
   private ramProtected: boolean = false;
+  private a12High: boolean = false;
+  private a12Low: i32 = 0;
   get irqPending(): boolean { return this.mapper == 4 && this.pending; }
-  // ponytail: scanline approximation; replace with qualified PPU A12 edges for raster timing.
+  // ponytail: fixed three-dot low filter; board-specific MMC3 revisions can tune it.
   clockScanline(): void {
     if (this.mapper != 4) return;
     if (this.irqCounter == 0) this.irqCounter = this.irqLatch;
     else this.irqCounter--;
     if (this.irqCounter == 0 && this.irqEnabled) this.pending = true;
+  }
+  clockA12(address: i32): void {
+    if (this.mapper != 4) return;
+    const high = (address & 0x1000) != 0;
+    if (high && !this.a12High && this.a12Low >= 3) this.clockScanline();
+    this.a12High = high;
+    this.a12Low = high ? 0 : min(3, this.a12Low + 1);
   }
 
   get mirroring(): string {
@@ -57,7 +66,7 @@ export class Cartridge {
     this.shift = 0x10; this.control = 0x0c; this.chrLow = this.chrHigh = 0;
     this.mmc3Select = 0; this.mmc3Regs.fill(0);
     this.irqLatch = this.irqCounter = 0; this.irqEnabled = this.pending = false;
-    this.ramDisabled = this.ramProtected = false;
+    this.ramDisabled = this.ramProtected = false; this.a12High = false; this.a12Low = 0;
   }
   private get ramEnabled(): boolean { return this.mapper == 4 ? !this.ramDisabled : this.mapper != 1 || (this.bank & 16) == 0; }
   readCpu(address: i32, openBus: i32 = 0): i32 {
@@ -213,8 +222,10 @@ export class Cartridge {
     out.set(this.mmc3Regs, 11); out[19] = this.irqLatch; out[20] = this.irqCounter;
     out[21] = this.irqEnabled ? 1 : 0;
     if (this.mapper == 15 || this.mapper == 225) out[22] = this.bank;
+    else if (this.mapper == 4) out[22] = this.a12Low;
     out[23] = this.mapper == 15 ? this.m15Mode : 14;
     if (this.mapper == 15 || this.mapper == 113 || this.mapper == 177 || this.mapper == 225) out[24] = this.mirror;
+    else if (this.mapper == 4) out[24] = this.a12High ? 1 : 0;
     out[25] = (this.pending ? 1 : 0) | (this.ramDisabled ? 2 : 0) | (this.ramProtected ? 4 : 0);
     out.set(this.prgRam, 26);
     if (!this.hasChrRom) out.set(this.chrRam, 26 + 0x2000);
@@ -222,7 +233,7 @@ export class Cartridge {
     return out;
   }
   validateState(state: Uint8Array): void {
-    if (state.length != this.stateSize || state[10] > 1 || state[21] > 1 || state[24] > 1 || state[25] > 7
+    if (state.length != this.stateSize || state[10] > 1 || state[21] > 1 || (this.mapper == 4 && state[22] > 3) || state[24] > 1 || state[25] > 7
       || (this.mapper == 15 ? state[23] > 3 : state[23] != 13 && state[23] != 14)) throw new RangeError('Invalid cartridge state');
     if (this.mapper == 225) for (let i = state.length - 4; i < state.length; i++) {
       if (state[i] > 15) throw new RangeError('Invalid cartridge state');
@@ -236,6 +247,7 @@ export class Cartridge {
     this.chrBank = this.mapper == 3 || this.mapper == 87 ? state[5] : this.mapper == 79 ? state[8] & 7 : state[8];
     this.highBank = state[7]; this.m15Mode = this.mapper == 15 ? state[23] : 0;
     this.mirror = this.mapper == 4 ? state[10] : this.mapper == 7 ? (this.bank >>> 4) & 1 : state[24];
+    this.a12Low = this.mapper == 4 ? state[22] : 0; this.a12High = this.mapper == 4 && state[24] != 0;
     this.mmc3Select = state[9]; this.mmc3Regs.set(state.subarray(11, 19));
     this.irqLatch = state[19]; this.irqCounter = state[20]; this.irqEnabled = !!state[21];
     this.pending = !!(state[25] & 1); this.ramDisabled = !!(state[25] & 2); this.ramProtected = !!(state[25] & 4);

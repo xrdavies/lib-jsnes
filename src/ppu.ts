@@ -20,6 +20,7 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   private readonly spriteIds = new Uint8Array(8);
   private spriteCount = 0;
   private spriteLow = 0;
+  private mapperAddress = 0;
   reset(): void { this.secondaryOam.fill(255); this.spriteIds.fill(255); this.spriteCount=this.spriteLow=0; this.bgLow=this.bgHigh=this.attrLow=this.attrHigh=this.nextTile=this.nextAttr=this.nextLow=this.nextHigh=0; this.spriteLine.fill(0); this.lineOverflow=false; this.readDelay=0; this.oddFrame=false; this.suppressVblank=false; this.renderingEnabled=false; this.ioLatch=0; this.ioDecay.fill(0); this.ctrl=0; this.mask=0; this.status=0; this.backgroundOpaque.fill(0); this.nmiPending=false; this.sprite0Hit=false; this.spriteOverflow=false; this.scrollX=0; this.scrollY=0; this.oamAddr=0; this.addr=0; this.tempAddr=0; this.latch=false; this.data=0; this.scanline=0; this.dot=0; this.scanlineTicks=0; this.frame.fill(0xff000000); }
   readonly vram = new Uint8Array(0x4000); readonly backgroundOpaque = new Uint8Array(256*240); readonly palette = new Uint8Array(32); readonly oam = new Uint8Array(256); readonly frame = new Uint32Array(256*240);
   private ctrl=0; private mask=0; private scanlineTicks=0; private nmiPending=false; private sprite0Hit=false; private spriteOverflow=false; private scrollX=0; private scrollY=0; private status=0; private oamAddr=0; private addr=0; private latch=false; private data=0; scanline=0; dot=0;
@@ -169,7 +170,8 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   private paletteIndex(address:number):number { const i=address&31; return (i&3)===0 ? (i&0x0f) : i; }
 
   private readMemory(address: number): number {
-    return address < 0x2000 ? this.cartridge.readChr(address) : this.vram[this.map(address)];
+    if (address < 0x2000) { this.mapperAddress = address; return this.cartridge.readChr(address); }
+    return this.vram[this.map(address)];
   }
 
   private writeMemory(address: number, value: number): void {
@@ -303,10 +305,9 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
         if (mapperLine) this.selectSprites();
         else { this.spriteLine.fill(0); this.spriteCount = 0; }
       }
+      this.mapperAddress = 0;
       if (mapperLine) { this.clockBackground(); this.clockSprites(); }
-      // ponytail: libxnes-style scanline approximation; replace with qualified A12
-      // edges when the PPU models individual pattern fetches and board revisions.
-      if (this.dot === 280 && mapperLine) this.cartridge.clockScanline();
+      this.cartridge.clockA12(this.mapperAddress);
       if (this.dot === 1) {
         if (this.scanline === 241) {
           if (!this.suppressVblank) {

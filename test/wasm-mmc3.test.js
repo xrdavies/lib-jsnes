@@ -90,7 +90,7 @@ test('WASM MMC3 mirroring honors four-screen boards and mapper-controlled layout
 
 test('WASM delivers MMC3 IRQ after CPU unmasking and acknowledges via $e000', async () => {
   const p = program(); p.write(0x4017, 0x40); p.write(0xc000, 1); p.write(0xc001, 0); p.write(0xe001, 0);
-  p.write(0x2001, 0x18);
+  p.write(0x2000, 0x10); p.write(0x2001, 0x18);
   // Keep I set for ~25K cycles while scanline clocks assert the IRQ.
   p.code.push(0xa0,20,0xa2,255,0xca,0xd0,0xfd,0x88,0xd0,0xf8,0x58);
   const run = await pair(image(p, 0)); run.step(1000);
@@ -102,7 +102,7 @@ test('WASM delivers MMC3 IRQ after CPU unmasking and acknowledges via $e000', as
 
 test('MMC3 rendering gate suppresses automatic IRQ clocks while both PPU layers are disabled', async () => {
   for (const mask of [0, 8, 16, 24]) {
-    const p = program(); p.write(0x4017, 0x40); p.write(0x2001, mask);
+    const p = program(); p.write(0x4017, 0x40); p.write(0x2000, 0x10); p.write(0x2001, mask);
     p.write(0xc000, 0); p.write(0xc001, 0); p.write(0xe001, 0); p.code.push(0x58);
     const run = await pair(image(p, 0)); run.step(90000);
     assert.equal(run.js.read(0x10), mask ? 1 : 0);
@@ -111,7 +111,7 @@ test('MMC3 rendering gate suppresses automatic IRQ clocks while both PPU layers 
 });
 
 test('MMC3 does not count VBlank lines and resumes on the pre-render line in both builds', async () => {
-  const p = program(); p.write(0x4017, 0x40); p.write(0x2001, 0x18);
+  const p = program(); p.write(0x4017, 0x40); p.write(0x2000, 0x10); p.write(0x2001, 0x18);
   // Wait for VBlank, then enable a zero-latch IRQ. No clocks should occur until line 261.
   p.code.push(0xad, 2, 0x20, 0x10, 0xfb);
   p.write(0xc000, 0); p.write(0xc001, 0); p.write(0xe001, 0); p.code.push(0x58);

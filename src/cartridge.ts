@@ -19,6 +19,8 @@ export class Cartridge {
   private mmc3Pending = false;
   private mmc3RamDisabled = false;
   private mmc3RamProtected = false;
+  private mmc3A12High = false;
+  private mmc3A12Low = 0;
   get irqPending(): boolean { return this.rom.mapper === 4 && this.mmc3Pending; }
 
   constructor(readonly rom: RomImage) {
@@ -46,14 +48,14 @@ export class Cartridge {
   }
 
   /** Reset mapping without discarding cartridge RAM. */
-  saveState(): Uint8Array { const out=new Uint8Array(this.stateSize); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror,...this.mmc3Regs,this.mmc3Latch,this.mmc3Counter,this.mmc3Irq?1:0,this.m15Bank,this.rom.mapper===15?this.m15Mode:14,this.m15Mirror]); out[25]=+this.mmc3Pending | (+this.mmc3RamDisabled << 1) | (+this.mmc3RamProtected << 2); out.set(this.prgRam,26); if(this.rom.chrRam)out.set(this.chr,Cartridge.STATE_SIZE); if(this.rom.mapper===225)out.set(this.extraRam,this.stateSize-4); return out; }
-  validateState(state: Uint8Array): void { if(state.length!==this.stateSize || state[10]>1 || state[21]>1 || (this.rom.mapper===15 ? state[23]>3 : state[23]!==13 && state[23]!==14) || state[24]>1 || state[25]>7 || (this.rom.mapper===225 && state.subarray(this.stateSize-4).some(value=>value>15))) throw new RangeError('Invalid cartridge state'); }
-  loadState(state: Uint8Array): void { this.validateState(state); [this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror]=state; this.mmc3Regs.set(state.subarray(11,19)); this.mmc3Latch=state[19]; this.mmc3Counter=state[20]; this.mmc3Irq=!!state[21]; this.mmc3Pending=!!(state[25]&1); this.mmc3RamDisabled=!!(state[25]&2); this.mmc3RamProtected=!!(state[25]&4); this.m15Bank=state[22]; this.m15Mode=this.rom.mapper===15?state[23]:0; this.m15Mirror=state[24]; this.prgRam.set(state.subarray(26,Cartridge.STATE_SIZE)); if(this.rom.chrRam)this.chr.set(state.subarray(Cartridge.STATE_SIZE,Cartridge.STATE_SIZE+this.chr.length)); if(this.rom.mapper===225)this.extraRam.set(state.subarray(this.stateSize-4)); }
+  saveState(): Uint8Array { const out=new Uint8Array(this.stateSize); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror,...this.mmc3Regs,this.mmc3Latch,this.mmc3Counter,this.mmc3Irq?1:0,this.rom.mapper===4?this.mmc3A12Low:this.m15Bank,this.rom.mapper===15?this.m15Mode:14,this.rom.mapper===4?+this.mmc3A12High:this.m15Mirror]); out[25]=+this.mmc3Pending | (+this.mmc3RamDisabled << 1) | (+this.mmc3RamProtected << 2); out.set(this.prgRam,26); if(this.rom.chrRam)out.set(this.chr,Cartridge.STATE_SIZE); if(this.rom.mapper===225)out.set(this.extraRam,this.stateSize-4); return out; }
+  validateState(state: Uint8Array): void { if(state.length!==this.stateSize || state[10]>1 || state[21]>1 || (this.rom.mapper===15 ? state[23]>3 : state[23]!==13 && state[23]!==14) || (this.rom.mapper===4 && state[22]>3) || state[24]>1 || state[25]>7 || (this.rom.mapper===225 && state.subarray(this.stateSize-4).some(value=>value>15))) throw new RangeError('Invalid cartridge state'); }
+  loadState(state: Uint8Array): void { this.validateState(state); [this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror]=state; this.mmc3Regs.set(state.subarray(11,19)); this.mmc3Latch=state[19]; this.mmc3Counter=state[20]; this.mmc3Irq=!!state[21]; this.mmc3Pending=!!(state[25]&1); this.mmc3RamDisabled=!!(state[25]&2); this.mmc3RamProtected=!!(state[25]&4); this.m15Bank=state[22]; this.m15Mode=this.rom.mapper===15?state[23]:0; this.m15Mirror=state[24]; this.mmc3A12Low=this.rom.mapper===4?state[22]:0; this.mmc3A12High=this.rom.mapper===4?!!state[24]:false; this.prgRam.set(state.subarray(26,Cartridge.STATE_SIZE)); if(this.rom.chrRam)this.chr.set(state.subarray(Cartridge.STATE_SIZE,Cartridge.STATE_SIZE+this.chr.length)); if(this.rom.mapper===225)this.extraRam.set(state.subarray(this.stateSize-4)); }
 
   reset(): void {
     this.shift = 0x10;
     this.control = 0x0c;
-    this.chr0 = this.chr1 = this.prg = this.chrBank = this.axBank = this.gxBank = this.gxChr = this.m15Bank = 0; this.m15Mode=0; this.m15Mirror=0; this.mmc3Select=0; this.mmc3Regs.fill(0); this.mmc3Mirror=0; this.mmc3Latch=0; this.mmc3Counter=0; this.mmc3Irq=false; this.mmc3Pending=false; this.mmc3RamDisabled=false; this.mmc3RamProtected=false;
+    this.chr0 = this.chr1 = this.prg = this.chrBank = this.axBank = this.gxBank = this.gxChr = this.m15Bank = 0; this.m15Mode=0; this.m15Mirror=0; this.mmc3Select=0; this.mmc3Regs.fill(0); this.mmc3Mirror=0; this.mmc3Latch=0; this.mmc3Counter=0; this.mmc3Irq=false; this.mmc3Pending=false; this.mmc3RamDisabled=false; this.mmc3RamProtected=false; this.mmc3A12High=false; this.mmc3A12Low=0;
     if (this.rom.mapper === 225) this.gxBank = 1;
   }
 
@@ -145,13 +147,22 @@ export class Cartridge {
     this.shift = 0x10;
   }
 
-  /** Coarse scanline clock; exact PPU A12 edge qualification remains pending. */
+  /** Compatibility hook for direct mapper tests; system timing uses clockA12. */
   clockScanline(): boolean {
     if (this.rom.mapper !== 4) return false;
     if (this.mmc3Counter === 0) this.mmc3Counter = this.mmc3Latch;
     else this.mmc3Counter--;
     if (this.mmc3Counter === 0 && this.mmc3Irq) this.mmc3Pending = true;
     return this.mmc3Pending;
+  }
+
+  /** Clock MMC3 from the PPU A12 line after its low-period filter. */
+  clockA12(address: number): void {
+    if (this.rom.mapper !== 4) return;
+    const high = (address & 0x1000) !== 0;
+    if (high && !this.mmc3A12High && this.mmc3A12Low >= 3) this.clockScanline();
+    this.mmc3A12High = high;
+    this.mmc3A12Low = high ? 0 : Math.min(3, this.mmc3A12Low + 1);
   }
 
   readChr(address: number): number { return this.chr[this.chrAddress(address)]; }

@@ -368,7 +368,7 @@ layout for inspection. Reserved format markers (header byte 7 bits 2–3 equal t
 objects may omit `consoleType`, in which case `Cartridge` assumes standard NES.
 
 
-The current mapper layer supports NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 bank switching (4), AxROM (7), mapper 15, mapper 79, mapper 87, mapper 113, mapper 140, mapper 177, mapper 225, mapper 241, and GxROM (66). MMC3 scanline IRQ counting is available; advanced mapper variants and exact edge timing remain in progress.
+The current mapper layer supports NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 bank switching (4), AxROM (7), mapper 15, mapper 79, mapper 87, mapper 113, mapper 140, mapper 177, mapper 225, mapper 241, and GxROM (66). MMC3 IRQ counting follows filtered PPU A12 rises; advanced mapper variants and revision-specific edge behavior remain in progress.
 
 MMC3 CHR tests cover all eight 1 KiB windows in both inversion modes, aligned
 R0/R1 pairs, all register-byte values, CHR RAM writes, snapshot restoration,
@@ -376,12 +376,12 @@ and rendered pixels. This covers bank mapping, not cycle-accurate MMC3 IRQs.
 The MMC3 counter continues while its IRQ output is disabled. Once asserted, the
 IRQ remains pending across CPU masking and counter reloads until `$E000` clears
 it. The cartridge snapshot stores this latch in reserved byte 25 without changing
-section length. The PPU clocks MMC3 at dot 280 only when background or sprite
-rendering is enabled and the line is visible or pre-render; VBlank and disabled
-rendering do not decrement the counter. `clockScanline()` remains available for
-direct mapper tests, while the CPU polls `cartridge.irqPending` at instruction
-boundaries. Qualified A12 edges and MMC3 revision-specific behavior remain
-incomplete. Tests cover rendering masks, VBlank exclusion, DMA and snapshot replay.
+section length. VBlank and disabled rendering do not drive CHR fetches. System
+timing clocks the counter on PPU A12 low-to-high transitions after a three-dot low
+filter; `clockScanline()` remains available for direct mapper tests, while the CPU
+polls `cartridge.irqPending` at instruction boundaries. MMC3 revision-specific
+filter behavior remains incomplete. Tests cover rendering masks, VBlank exclusion,
+DMA and snapshot replay.
 
 The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning at
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
@@ -478,15 +478,16 @@ vertical mirroring. TypeScript mappers 79, 113, 140, 177 and 241 now also mirror
 Board-specific bus conflicts and extended variants remain outside this coverage.
 
 WASM MMC3 implements both PRG/CHR bank modes, CHR RAM, mapper mirroring and
-four-screen boards, plus the same coarse scanline IRQ latch as TypeScript.
+four-screen boards, plus the same filtered PPU A12 IRQ clock as TypeScript.
 CPU-driven tests compare memory, rendered frames, PCM, and interrupt handling.
 Both cores implement `$A001` PRG RAM enable (bit 7) and write protection (bit 6).
 Disabled RAM reads retain CPU open-bus data. Reset
 deterministically enables writable RAM without discarding its contents; this is
 an emulator initialization choice, not a guarantee about hardware power-on state.
 The TypeScript cartridge snapshot packs RAM-disable/write-protect into bits 1/2
-of byte 25 alongside IRQ pending in bit 0. A12 edge filtering and revision-specific
-IRQ behavior remain incomplete.
+of byte 25 alongside IRQ pending in bit 0. The filtered A12 phase is retained in
+the mapper-specific snapshot bytes so restoration does not create a false edge.
+MMC3 revision-specific IRQ behavior remains incomplete.
 
 WASM MMC1 supports serial register writes, all four PRG modes, aligned 8 KiB and
 split 4 KiB CHR banks, four mirroring modes, and PRG RAM disable. Tests execute
@@ -670,8 +671,8 @@ still fetch pattern bytes. Selected OAM entries retain their original sprite IDs
 and OAMADDR is held at zero during the fetch window. Pattern bytes are composed
 into a line buffer for output, preserving priority, flipping and sprite-zero hits.
 Secondary OAM selection is still performed together at dot 257; cycle-by-cycle
-evaluation, the overflow diagonal-scan bug and MMC3 qualified A12 edges remain
-incomplete. Tests cover fetch addresses/order, X/Y wrapping, timed v/t copies,
+evaluation and the overflow diagonal-scan bug remain incomplete. Tests cover
+fetch addresses/order, X/Y wrapping, timed v/t copies,
 mid-line bank changes and snapshots between fetch phases. The 256-byte background
 line buffer is replaced by 12 bytes of shift/fetch state; the sprite line buffer
 and existing timing tail remain. Sprite slot snapshots add 42 bytes for secondary
@@ -796,8 +797,8 @@ in both cores:
 The full instruction suite exposed missing immediate LAX and SHY/SHX support;
 those instructions are now implemented. The PPU suite exposed instruction-at-once
 clocking, NMI sampling, VBlank suppression and rendering-gate timing errors;
-those checks now pass. The scanline renderer, DMA arbitration and MMC3 A12
-approximation still limit compatibility. These results do not establish full
+those checks now pass. The scanline renderer, DMA arbitration and
+revision-specific MMC3 behavior still limit compatibility. These results do not establish full
 PPU or game compatibility.
 The additional CPU interrupt suite passes NMI takeover of BRK/IRQ vectoring and
 the OAM DMA boundary after correcting DMA bus parity. The combined DMC/OAM tests
