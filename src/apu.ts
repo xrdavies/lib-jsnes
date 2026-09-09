@@ -26,37 +26,51 @@ class Envelope {
 }
 
 class Pulse {
+  constructor(private readonly negateExtra: number) {}
   sweepDivider = 0;
   sweepReload = false;
 
   regs = new Uint8Array(4);
   readonly envelope = new Envelope();
-  timer = 0; phase = 0; length = 0; linear = 0; linearReload = false; enabled = false;
+  timer = 0; phase = 0; length = 0; enabled = false;
+  get period(): number { return this.regs[2] | ((this.regs[3] & 7) << 8); }
+  private get sweepTarget(): number {
+    const delta = this.period >>> (this.regs[1] & 7);
+    return this.period + (this.regs[1] & 8 ? -delta - this.negateExtra : delta);
+  }
+  private get muted(): boolean { return this.period < 8 || this.sweepTarget > 0x7ff; }
   write(i: number, value: number): void {
     this.regs[i] = value & 255;
     if (i === 1) this.sweepReload = true;
     if (i === 3) {
       if (this.enabled) this.length = LENGTH[value >>> 3];
       this.envelope.start = true;
-      this.sweepReload = true;
       this.phase = 0;
-      this.timer = (this.timer & 255) | ((value & 7) << 8);
     }
   }
   step(): void {
-    if (!this.linear) return;
     if (this.timer-- <= 0) {
-      this.timer = (this.regs[2] | ((this.regs[3] & 7) << 8)) + 1;
+      this.timer = this.period;
       this.phase = (this.phase + 1) & 7;
     }
   }
   clockLength(): void { if (this.length > 0 && !(this.regs[0] & 0x20)) this.length--; }
-
-
-  clockSweep(channel: number): void { const control=this.regs[1], period=((control>>>4)&7)+1, shift=control&7; if(this.sweepReload){this.sweepDivider=period;this.sweepReload=false;return;} if(this.sweepDivider>0){this.sweepDivider--;return;} this.sweepDivider=period; if(!(control&0x80)||!shift)return; const timer=this.regs[2]|((this.regs[3]&7)<<8), delta=timer>>>shift; let next=timer+(control&8 ? -delta-(channel===1?1:0) : delta); if(next<0)next=0;if(next>0x7ff)next=0x7ff; this.regs[2]=next&255;this.regs[3]=(this.regs[3]&0xf8)|(next>>>8); }
+  clockSweep(): void {
+    const control = this.regs[1];
+    if (this.sweepDivider === 0 && (control & 0x80) && (control & 7) && !this.muted) {
+      const target = this.sweepTarget;
+      this.regs[2] = target & 255;
+      this.regs[3] = (this.regs[3] & 0xf8) | (target >>> 8);
+    }
+    if (this.sweepDivider === 0 || this.sweepReload) {
+      this.sweepDivider = (control >>> 4) & 7;
+      this.sweepReload = false;
+    } else this.sweepDivider--;
+  }
   sample(): number {
-    if (!this.enabled || !this.length || (!this.regs[2] && !(this.regs[3] & 7))) return 0;
-    return this.phase < [1, 2, 4, 6][this.regs[0] >>> 6] ? this.envelope.volume(this.regs[0]) : 0;
+    if (!this.enabled || !this.length || this.muted) return 0;
+    return ([0x02, 0x06, 0x1e, 0xf9][this.regs[0] >>> 6] >>> this.phase) & 1
+      ? this.envelope.volume(this.regs[0]) : 0;
   }
 }
 
@@ -105,10 +119,10 @@ class Noise {
   clockLength(): void { if (this.length > 0 && !(this.regs[0] & 0x20)) this.length--; }
   sample(): number { return this.enabled && this.length > 0 && !(this.shift & 1) ? this.envelope.volume(this.regs[0]) : 0; }
 }
-/** Pulse, triangle, and noise synthesis; five-step frame sequencing, sweep, triangle linear counting, and DMC remain incomplete. */
+/** Pulse, triangle, and noise synthesis; five-step frame sequencing, frame IRQ, and DMC remain incomplete. */
 export class Apu {
   static readonly STATE_SIZE = 60;
-  readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(),new Pulse()]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private samples:number[]=[];
+  readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(1),new Pulse(0)]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private samples:number[]=[];
   write(address:number,value:number):void {
     value&=255;
     if(address>=0x4000&&address<0x4008)this.pulse[address<0x4004?0:1].write(address&3,value);
@@ -142,7 +156,7 @@ export class Apu {
     out[36] = +this.triangle.enabled; out[37]=this.pulse[0].sweepDivider; out[38]=this.pulse[1].sweepDivider; out[39]=+this.pulse[0].sweepReload; out[40]=+this.pulse[1].sweepReload;
     view.setUint32(41, this.frac, true);
     view.setUint16(57, this.frame, true);
-    out[46]=this.triangle.linear; out[47]=+this.triangle.linearReload; out[59] = 4; // APU snapshot format version.
+    out[46]=this.triangle.linear; out[47]=+this.triangle.linearReload; out[59] = 5; // APU snapshot format version.
     for (const [i, channel] of [...this.pulse, this.noise].entries()) {
       out.set([+channel.envelope.start, channel.envelope.divider, channel.envelope.decay], 48 + i * 3);
     }
@@ -153,12 +167,14 @@ export class Apu {
     if (state.length !== Apu.STATE_SIZE) throw new RangeError('Invalid APU state size');
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
     const frac = view.getUint32(41, true), frame = view.getUint16(57, true);
-    if (state[59] !== 4 || frac >= CPU_HZ || frame >= 29830
+    if (state[59] !== 5 || frac >= CPU_HZ || frame >= 29830
       || [48, 51, 54].some(offset => state[offset] > 1 || state[offset + 1] > 15 || state[offset + 2] > 15)
       || state[12] > 7 || state[13] > 7 || state[19] > 31
       || view.getUint16(14, true) > 0x7fff
-      || [16, 17, 18, 36].some(offset => state[offset] > 1)
-      || [24, 26, 28].some(offset => view.getUint16(offset, true) > 0x800)
+      || [16, 17, 18, 36, 39, 40, 47].some(offset => state[offset] > 1)
+      || state[37] > 7 || state[38] > 7 || state[46] > 127
+      || [24, 26].some(offset => view.getUint16(offset, true) > 0x7ff)
+      || view.getUint16(28, true) > 0x800
       || view.getUint16(30, true) > 4068) throw new RangeError('Invalid APU state values');
     this.pulse[0].regs.set(state.subarray(0, 4));
     this.pulse[1].regs.set(state.subarray(4, 8));
@@ -191,22 +207,22 @@ export class Apu {
     this.samples = [];
   }
   readStatus():number { return (this.pulse[0].length?1:0)|(this.pulse[1].length?2:0)|(this.triangle.length?4:0)|(this.noise.length?8:0); }
-  step(cycles:number):void {for(let i=0;i<cycles;i++){for(const p of this.pulse)p.step();this.triangle.step();this.noise.step();this.clockFrame();this.frac+=SAMPLE_HZ;if(this.frac>=CPU_HZ){this.frac-=CPU_HZ;if(this.samples.length>=SAMPLE_HZ*2)this.samples.splice(0,1024); this.samples.push((this.pulse[0].sample()+this.pulse[1].sample()+this.triangle.sample()+this.noise.sample())*320-4096);}}}
+  step(cycles:number):void {for(let i=0;i<cycles;i++){if(this.frame&1)for(const p of this.pulse)p.step();this.triangle.step();this.noise.step();this.clockFrame();this.frac+=SAMPLE_HZ;if(this.frac>=CPU_HZ){this.frac-=CPU_HZ;if(this.samples.length>=SAMPLE_HZ*2)this.samples.splice(0,1024); this.samples.push((this.pulse[0].sample()+this.pulse[1].sample()+this.triangle.sample()+this.noise.sample())*320-4096);}}}
   private clockFrame(): void {
     // NTSC four-step sequence, in CPU cycles. $4017 mode switching and frame IRQ are pending.
+    // Its even cycle count also preserves the pulse CPU/2 clock phase across wraps and snapshots.
     this.frame++;
     if (this.frame === 7457 || this.frame === 14913 || this.frame === 22371 || this.frame === 29829) {
       for (const pulse of this.pulse) pulse.envelope.clock(pulse.regs[0]);
-      this.pulse[0].clockSweep(1); this.pulse[1].clockSweep(2);
       this.noise.envelope.clock(this.noise.regs[0]); this.triangle.clockLinear();
     }
     if (this.frame === 14913 || this.frame === 29829) {
-      for (const pulse of this.pulse) pulse.clockLength();
+      for (const pulse of this.pulse) { pulse.clockLength(); pulse.clockSweep(); }
       this.triangle.clockLength();
       this.noise.clockLength();
     }
     if (this.frame === 29830) this.frame = 0;
   }
   drainSamples():Int16Array {const out=Int16Array.from(this.samples);this.samples=[];return out;}
-  reset():void {this.frac=0;this.frame=0;this.samples=[];for(const p of this.pulse){p.envelope.reset();p.regs.fill(0);p.timer=0;p.phase=0;p.length=0;p.enabled=false;}this.triangle.regs.fill(0);this.triangle.timer=0;this.triangle.phase=0;this.triangle.length=0;this.triangle.linear=0;this.triangle.linearReload=false;this.triangle.enabled=false;this.noise.envelope.reset();this.noise.regs.fill(0);this.noise.timer=0;this.noise.shift=1;this.noise.length=0;this.noise.enabled=false;}
+  reset():void {this.frac=0;this.frame=0;this.samples=[];for(const p of this.pulse){p.envelope.reset();p.regs.fill(0);p.timer=0;p.phase=0;p.length=0;p.sweepDivider=0;p.sweepReload=false;p.enabled=false;}this.triangle.regs.fill(0);this.triangle.timer=0;this.triangle.phase=0;this.triangle.length=0;this.triangle.linear=0;this.triangle.linearReload=false;this.triangle.enabled=false;this.noise.envelope.reset();this.noise.regs.fill(0);this.noise.timer=0;this.noise.shift=1;this.noise.length=0;this.noise.enabled=false;}
 }
