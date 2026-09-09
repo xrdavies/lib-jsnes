@@ -45,7 +45,7 @@ export class Nes implements CpuBus {
     return this.cartridge.readCpu(address);
   }
 
-  write(address: number, value: number): void {
+  write(address: number, value: number, consecutive = false): void {
     address &= 0xffff;
     value &= 255;
     if (address < 0x2000) this.ram[address & 0x7ff] = value;
@@ -59,7 +59,7 @@ export class Nes implements CpuBus {
     else if (address === 0x4016) {
       this.controller1.write(value);
       this.controller2.write(value);
-    } else this.cartridge.writeCpu(address, value);
+    } else this.cartridge.writeCpu(address, value, consecutive);
   }
   reset(){this.ram.fill(0); this.cartridge.reset(); this.apu.reset(); this.dmaStall=0; this.ppu.reset(); this.cpu.reset(); this.cycles=0;}
   step(cycles = 1): void {

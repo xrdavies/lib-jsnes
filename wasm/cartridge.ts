@@ -100,7 +100,7 @@ export class Cartridge {
     }
     return this.rom[this.prgStart + selected * 0x4000 + (address & 0x3fff)];
   }
-  writeCpu(address: i32, value: i32): void {
+  writeCpu(address: i32, value: i32, consecutive: boolean = false): void {
     if (this.mapper == 225 && (address & 0xf800) == 0x5800) { this.extraRam[address & 3] = value & 15; return; }
     if (this.mapper == 225 && address >= 0x8000) {
       const high = (address >>> 8) & 64, selected = ((address >>> 6) & 63) | high;
@@ -141,7 +141,7 @@ export class Cartridge {
       }
     }
     else if (address >= 0x8000 && this.mapper == 1) {
-      // ponytail: instruction-level writes; consecutive-cycle suppression needs CPU bus timestamps.
+      if (consecutive) return; // Ignore the second CPU RMW write.
       if (value & 0x80) { this.shift = 0x10; this.control |= 0x0c; return; }
       const complete = this.shift & 1;
       this.shift = (this.shift >>> 1) | ((value & 1) << 4);

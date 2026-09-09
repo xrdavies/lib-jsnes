@@ -1,6 +1,6 @@
 export interface CpuBus {
     read(address: number): number;
-    write(address: number, value: number): void;
+    write(address: number, value: number, consecutive: boolean): void;
 }
 const C = 1, Z = 2, I = 4, D = 8, B = 16, U = 32, V = 64, N = 128;
 export class Cpu6502 {
@@ -18,6 +18,7 @@ export class Cpu6502 {
     lastUnknownOpcode = -1;
     readonly unknownOpcodeCounts = new Uint32Array(256);
     private pageCycles = 0;
+    private consecutiveWrite = false;
     private instructionIrqMasked = true;
     constructor(private readonly bus: CpuBus, private readonly strict = false) { }
     reset(): void { this.halted = false; this.instructionIrqMasked = true; this.sp = 0xfd; this.p = U | I; this.pc = this.read16(0xfffc); this.cycles = 0; this.unknownOpcodes = 0; this.lastUnknownOpcode = -1; this.unknownOpcodeCounts.fill(0); }
@@ -57,7 +58,7 @@ export class Cpu6502 {
         // ponytail: retain the locked CPU state; the repeating JAM bus sequence
         // needs per-cycle bus modeling. Device clocks continue in the host.
         if (this.halted) { this.cycles++; return 1; }
-        this.pageCycles = 0;
+        this.pageCycles = 0; this.consecutiveWrite = false;
         this.instructionIrqMasked = !!(this.p & I);
         const op = this.fetch();
         let used = 2;
@@ -80,16 +81,16 @@ export class Cpu6502 {
             case 0xae: this.x = this.bus.read(this.abs()); this.nz(this.x); used = 4; break;
             case 0xac: this.y = this.bus.read(this.abs()); this.nz(this.y); used = 4; break;
             case 0xbc: this.y = this.bus.read(this.absx(true)); this.nz(this.y); used = 4; break;
-            case 0x8d: this.bus.write(this.abs(), this.a); used = 4; break;
-            case 0x8e: this.bus.write(this.abs(), this.x); used = 4; break;
-            case 0x8c: this.bus.write(this.abs(), this.y); used = 4; break;
-            case 0x81: this.bus.write(this.indX(), this.a); used = 6; break;
-            case 0x91: this.bus.write(this.indY(), this.a); used = 6; break;
-            case 0x95: this.bus.write(this.zpx(), this.a); used = 4; break;
-            case 0x96: this.bus.write(this.zpy(), this.x); used = 4; break;
-            case 0x94: this.bus.write(this.zpx(), this.y); used = 4; break;
-            case 0x9d: this.bus.write(this.absx(), this.a); used = 5; break;
-            case 0x99: this.bus.write(this.absy(), this.a); used = 5; break;
+            case 0x8d: this.write(this.abs(), this.a); used = 4; break;
+            case 0x8e: this.write(this.abs(), this.x); used = 4; break;
+            case 0x8c: this.write(this.abs(), this.y); used = 4; break;
+            case 0x81: this.write(this.indX(), this.a); used = 6; break;
+            case 0x91: this.write(this.indY(), this.a); used = 6; break;
+            case 0x95: this.write(this.zpx(), this.a); used = 4; break;
+            case 0x96: this.write(this.zpy(), this.x); used = 4; break;
+            case 0x94: this.write(this.zpx(), this.y); used = 4; break;
+            case 0x9d: this.write(this.absx(), this.a); used = 5; break;
+            case 0x99: this.write(this.absy(), this.a); used = 5; break;
             case 0xad: this.a = this.bus.read(this.abs()); this.nz(this.a); used = 4; break;
             case 0xbd: this.a = this.bus.read(this.absx(true)); this.nz(this.a); used = 4; break;
             case 0xe8: this.bus.read(this.pc); this.x = (this.x + 1) & 255; this.nz(this.x); used = 2; break;
@@ -169,40 +170,40 @@ export class Cpu6502 {
             case 0xec: this.compare(this.x, this.bus.read(this.abs())); used = 4; break;
             case 0xc4: this.compare(this.y, this.bus.read(this.fetch())); used = 3; break;
             case 0xcc: this.compare(this.y, this.bus.read(this.abs())); used = 4; break;
-            case 0x85: this.bus.write(this.fetch(), this.a); used = 3; break;
-            case 0x86: this.bus.write(this.fetch(), this.x); used = 3; break;
-            case 0x84: this.bus.write(this.fetch(), this.y); used = 3; break;
+            case 0x85: this.write(this.fetch(), this.a); used = 3; break;
+            case 0x86: this.write(this.fetch(), this.x); used = 3; break;
+            case 0x84: this.write(this.fetch(), this.y); used = 3; break;
             case 0xa5: this.a = this.bus.read(this.fetch()); this.nz(this.a); used = 3; break;
             case 0xa6: this.x = this.bus.read(this.fetch()); this.nz(this.x); used = 3; break;
             case 0xa4: this.y = this.bus.read(this.fetch()); this.nz(this.y); used = 3; break;
             case 0x1a: this.bus.read(this.pc); break;
             case 0x3a: this.bus.read(this.pc); break;
-            case 0xe6: { const a = this.fetch(), v = (this.readForModify(a) + 1) & 255; this.bus.write(a, v); this.nz(v); used = 5; break; }
-            case 0xc6: { const a = this.fetch(), v = (this.readForModify(a) - 1) & 255; this.bus.write(a, v); this.nz(v); used = 5; break; }
-            case 0xee: { const a = this.abs(), v = (this.readForModify(a) + 1) & 255; this.bus.write(a, v); this.nz(v); used = 6; break; }
-            case 0xf6: { const a = this.zpx(), v = (this.readForModify(a) + 1) & 255; this.bus.write(a, v); this.nz(v); used = 6; break; }
-            case 0xce: { const a = this.abs(), v = (this.readForModify(a) - 1) & 255; this.bus.write(a, v); this.nz(v); used = 6; break; }
-            case 0xd6: { const a = this.zpx(), v = (this.readForModify(a) - 1) & 255; this.bus.write(a, v); this.nz(v); used = 6; break; }
+            case 0xe6: { const a = this.fetch(), v = (this.readForModify(a) + 1) & 255; this.write(a, v); this.nz(v); used = 5; break; }
+            case 0xc6: { const a = this.fetch(), v = (this.readForModify(a) - 1) & 255; this.write(a, v); this.nz(v); used = 5; break; }
+            case 0xee: { const a = this.abs(), v = (this.readForModify(a) + 1) & 255; this.write(a, v); this.nz(v); used = 6; break; }
+            case 0xf6: { const a = this.zpx(), v = (this.readForModify(a) + 1) & 255; this.write(a, v); this.nz(v); used = 6; break; }
+            case 0xce: { const a = this.abs(), v = (this.readForModify(a) - 1) & 255; this.write(a, v); this.nz(v); used = 6; break; }
+            case 0xd6: { const a = this.zpx(), v = (this.readForModify(a) - 1) & 255; this.write(a, v); this.nz(v); used = 6; break; }
             case 0x0a: this.bus.read(this.pc); this.a = this.shift(this.a, false); used = 2; break;
             case 0x4a: this.bus.read(this.pc); this.a = this.shift(this.a, true); used = 2; break;
             case 0x2a: this.bus.read(this.pc); this.a = this.rotate(this.a, false); used = 2; break;
             case 0x6a: this.bus.read(this.pc); this.a = this.rotate(this.a, true); used = 2; break;
-            case 0x06: { const a = this.fetch(); this.bus.write(a, this.shift(this.readForModify(a), false)); used = 5; break; }
-            case 0x46: { const a = this.fetch(); this.bus.write(a, this.shift(this.readForModify(a), true)); used = 5; break; }
-            case 0x26: { const a = this.fetch(); this.bus.write(a, this.rotate(this.readForModify(a), false)); used = 5; break; }
-            case 0x66: { const a = this.fetch(); this.bus.write(a, this.rotate(this.readForModify(a), true)); used = 5; break; }
-            case 0x0e: { const a = this.abs(); this.bus.write(a, this.shift(this.readForModify(a), false)); used = 6; break; }
-            case 0x4e: { const a = this.abs(); this.bus.write(a, this.shift(this.readForModify(a), true)); used = 6; break; }
-            case 0x2e: { const a = this.abs(); this.bus.write(a, this.rotate(this.readForModify(a), false)); used = 6; break; }
-            case 0x6e: { const a = this.abs(); this.bus.write(a, this.rotate(this.readForModify(a), true)); used = 6; break; }
-            case 0x16: { const a = this.zpx(); this.bus.write(a, this.shift(this.readForModify(a), false)); used = 6; break; }
-            case 0x56: { const a = this.zpx(); this.bus.write(a, this.shift(this.readForModify(a), true)); used = 6; break; }
-            case 0x36: { const a = this.zpx(); this.bus.write(a, this.rotate(this.readForModify(a), false)); used = 6; break; }
-            case 0x76: { const a = this.zpx(); this.bus.write(a, this.rotate(this.readForModify(a), true)); used = 6; break; }
-            case 0x1e: { const a = this.absx(); this.bus.write(a, this.shift(this.readForModify(a), false)); used = 7; break; }
-            case 0x5e: { const a = this.absx(); this.bus.write(a, this.shift(this.readForModify(a), true)); used = 7; break; }
-            case 0x3e: { const a = this.absx(); this.bus.write(a, this.rotate(this.readForModify(a), false)); used = 7; break; }
-            case 0x7e: { const a = this.absx(); this.bus.write(a, this.rotate(this.readForModify(a), true)); used = 7; break; }
+            case 0x06: { const a = this.fetch(); this.write(a, this.shift(this.readForModify(a), false)); used = 5; break; }
+            case 0x46: { const a = this.fetch(); this.write(a, this.shift(this.readForModify(a), true)); used = 5; break; }
+            case 0x26: { const a = this.fetch(); this.write(a, this.rotate(this.readForModify(a), false)); used = 5; break; }
+            case 0x66: { const a = this.fetch(); this.write(a, this.rotate(this.readForModify(a), true)); used = 5; break; }
+            case 0x0e: { const a = this.abs(); this.write(a, this.shift(this.readForModify(a), false)); used = 6; break; }
+            case 0x4e: { const a = this.abs(); this.write(a, this.shift(this.readForModify(a), true)); used = 6; break; }
+            case 0x2e: { const a = this.abs(); this.write(a, this.rotate(this.readForModify(a), false)); used = 6; break; }
+            case 0x6e: { const a = this.abs(); this.write(a, this.rotate(this.readForModify(a), true)); used = 6; break; }
+            case 0x16: { const a = this.zpx(); this.write(a, this.shift(this.readForModify(a), false)); used = 6; break; }
+            case 0x56: { const a = this.zpx(); this.write(a, this.shift(this.readForModify(a), true)); used = 6; break; }
+            case 0x36: { const a = this.zpx(); this.write(a, this.rotate(this.readForModify(a), false)); used = 6; break; }
+            case 0x76: { const a = this.zpx(); this.write(a, this.rotate(this.readForModify(a), true)); used = 6; break; }
+            case 0x1e: { const a = this.absx(); this.write(a, this.shift(this.readForModify(a), false)); used = 7; break; }
+            case 0x5e: { const a = this.absx(); this.write(a, this.shift(this.readForModify(a), true)); used = 7; break; }
+            case 0x3e: { const a = this.absx(); this.write(a, this.rotate(this.readForModify(a), false)); used = 7; break; }
+            case 0x7e: { const a = this.absx(); this.write(a, this.rotate(this.readForModify(a), true)); used = 7; break; }
             case 0xaa: this.bus.read(this.pc); this.x = this.a; this.nz(this.x); used = 2; break;
             case 0xba: this.bus.read(this.pc); this.x = this.sp; this.nz(this.x); used = 2; break;
             case 0x9a: this.bus.read(this.pc); this.sp = this.x; used = 2; break;
@@ -250,7 +251,7 @@ export class Cpu6502 {
             case 0xe7: this.isc(this.fetch()); used = 5; break;
             case 0xef: this.isc(this.abs()); used = 6; break;
             case 0xf7: this.isc(this.zpx()); used = 6; break;
-            case 0xfe: { const a = this.absx(), v = (this.readForModify(a) + 1) & 255; this.bus.write(a, v); this.nz(v); used = 7; break; }
+            case 0xfe: { const a = this.absx(), v = (this.readForModify(a) + 1) & 255; this.write(a, v); this.nz(v); used = 7; break; }
             case 0xff: this.isc(this.absx()); used = 7; break;
             case 0x80: this.fetch(); used = 2; break;
             case 0x82: this.fetch(); used = 2; break;
@@ -263,9 +264,9 @@ export class Cpu6502 {
             case 0xaf: this.a = this.x = this.bus.read(this.abs()); this.nz(this.a); used = 4; break;
             case 0xb3: this.a = this.x = this.bus.read(this.indY(true)); this.nz(this.a); used = 5; break;
             case 0xb7: this.a = this.x = this.bus.read(this.zpy()); this.nz(this.a); used = 4; break;
-            case 0x87: this.bus.write(this.fetch(), this.a & this.x); used = 3; break;
-            case 0x8f: this.bus.write(this.abs(), this.a & this.x); used = 4; break;
-            case 0x97: this.bus.write(this.zpy(), this.a & this.x); used = 4; break;
+            case 0x87: this.write(this.fetch(), this.a & this.x); used = 3; break;
+            case 0x8f: this.write(this.abs(), this.a & this.x); used = 4; break;
+            case 0x97: this.write(this.zpy(), this.a & this.x); used = 4; break;
             case 0x1b: this.slo(this.absy()); used = 7; break;
             case 0x23: this.rla(this.indX()); used = 8; break;
             case 0x3b: this.rla(this.absy()); used = 7; break;
@@ -281,7 +282,7 @@ export class Cpu6502 {
             case 0xe3: this.isc(this.indX()); used = 8; break;
             case 0xbf: this.a = this.x = this.bus.read(this.absy(true)); this.nz(this.a); used = 4; break;
             case 0xbb: this.a = this.x = this.sp = this.bus.read(this.absy(true)) & this.sp; this.nz(this.a); used = 4; break;
-            case 0x03: { const a = this.indX(); const v = this.shift(this.readForModify(a), false); this.bus.write(a, v); this.a |= v; this.nz(this.a); used = 8; break; }
+            case 0x03: { const a = this.indX(); const v = this.shift(this.readForModify(a), false); this.write(a, v); this.a |= v; this.nz(this.a); used = 8; break; }
             case 0x0b:
             case 0x2b: this.a &= this.fetch(); this.nz(this.a); this.p = (this.p & ~C) | (this.a >>> 7); used = 2; break;
             case 0x4b: this.a = this.shift(this.a & this.imm(), true); used = 2; break;
@@ -302,8 +303,8 @@ export class Cpu6502 {
             case 0xfc: this.bus.read(this.absx(true)); used = 4; break;
             case 0x54: this.bus.read(this.zpx()); used = 4; break;
             case 0x34: this.bus.read(this.zpx()); used = 4; break;
-            case 0x83: { this.bus.write(this.indX(), this.a & this.x); used = 6; break; }
-            case 0xde: { const a = this.absx(), v = (this.readForModify(a) - 1) & 255; this.bus.write(a, v); this.nz(v); used = 7; break; }
+            case 0x83: { this.write(this.indX(), this.a & this.x); used = 6; break; }
+            case 0xde: { const a = this.absx(), v = (this.readForModify(a) - 1) & 255; this.write(a, v); this.nz(v); used = 7; break; }
             case 0xda: this.bus.read(this.pc); break;
             case 0xfa: this.bus.read(this.pc); break;
             case 0x5a: this.bus.read(this.pc); break;
@@ -361,17 +362,27 @@ export class Cpu6502 {
     private indY(penalty = false) { const a = this.fetch(), base = this.bus.read(a) | (this.bus.read((a + 1) & 255) << 8); return this.indexed(base, this.y, penalty); }
     private read16(a: number) { return this.bus.read(a) | (this.bus.read((a + 1) & 0xffff) << 8); }
     private interrupt(vector: number) { this.instructionIrqMasked = true; this.bus.read(this.pc); this.bus.read(this.pc); this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p & ~B | U); this.p |= I; this.pc = this.read16(vector); }
-    private push(v: number) { this.bus.write(0x100 | this.sp, v); this.sp = (this.sp - 1) & 255; }
+    private push(v: number) { this.write(0x100 | this.sp, v); this.sp = (this.sp - 1) & 255; }
     private preparePull(): void { this.bus.read(this.pc); this.bus.read(0x100 | this.sp); }
     private pop() { this.sp = (this.sp + 1) & 255; return this.bus.read(0x100 | this.sp); }
     private nz(v: number) { this.p = (this.p & ~(N | Z)) | (v ? 0 : Z) | (v & 128); }
-    private readForModify(address: number) { const value=this.bus.read(address); this.bus.write(address,value); return value; }
-    private slo(a: number) { const v = this.shift(this.readForModify(a), false); this.bus.write(a, v); this.a |= v; this.nz(this.a); }
-    private rla(a: number) { const v = this.rotate(this.readForModify(a), false); this.bus.write(a, v); this.a &= v; this.nz(this.a); }
-    private sre(a: number) { const v = this.shift(this.readForModify(a), true); this.bus.write(a, v); this.a ^= v; this.nz(this.a); }
-    private rra(a: number) { const v = this.rotate(this.readForModify(a), true); this.bus.write(a, v); this.adc(v); }
-    private dcp(a: number) { const v = (this.readForModify(a) - 1) & 255; this.bus.write(a, v); this.compare(this.a, v); }
-    private isc(a: number) { const v = (this.readForModify(a) + 1) & 255; this.bus.write(a, v); this.adc(v ^ 255); }
+    private write(address: number, value: number): void {
+        const consecutive = this.consecutiveWrite;
+        this.consecutiveWrite = false;
+        this.bus.write(address, value, consecutive);
+    }
+    private readForModify(address: number) {
+        const value = this.bus.read(address);
+        this.write(address, value);
+        this.consecutiveWrite = true;
+        return value;
+    }
+    private slo(a: number) { const v = this.shift(this.readForModify(a), false); this.write(a, v); this.a |= v; this.nz(this.a); }
+    private rla(a: number) { const v = this.rotate(this.readForModify(a), false); this.write(a, v); this.a &= v; this.nz(this.a); }
+    private sre(a: number) { const v = this.shift(this.readForModify(a), true); this.write(a, v); this.a ^= v; this.nz(this.a); }
+    private rra(a: number) { const v = this.rotate(this.readForModify(a), true); this.write(a, v); this.adc(v); }
+    private dcp(a: number) { const v = (this.readForModify(a) - 1) & 255; this.write(a, v); this.compare(this.a, v); }
+    private isc(a: number) { const v = (this.readForModify(a) + 1) & 255; this.write(a, v); this.adc(v ^ 255); }
     private shift(v: number, right: boolean) { this.p = (this.p & ~C) | (right ? (v & 1) : ((v >> 7) & 1)); v = right ? v >> 1 : (v << 1) & 255; this.nz(v); return v; }
     private rotate(v: number, right: boolean) { const c = this.p & C ? 1 : 0; this.p = (this.p & ~C) | (right ? (v & 1) : ((v >> 7) & 1)); v = right ? (v >> 1) | (c << 7) : ((v << 1) & 255) | c; this.nz(v); return v; }
     private compare(reg: number, v: number) { const d = (reg - v) & 255; this.p = (this.p & ~C) | (reg >= v ? C : 0); this.nz(d); }

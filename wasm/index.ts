@@ -15,7 +15,7 @@ let frameCompleted: boolean = false;
 class Bus implements CpuBus, DmcBus {
   readDmc(address: i32): i32 { dmaStall += 4; return read(address); }
   read(address: i32): i32 { return read(address); }
-  write(address: i32, value: i32): void { write(address, value); }
+  write(address: i32, value: i32, consecutive: boolean): void { write(address, value, consecutive); }
 }
 const cpu = new Cpu6502(new Bus());
 function read(address: i32): i32 {
@@ -27,7 +27,7 @@ function read(address: i32): i32 {
   if (address == 0x4017) return controller2.read();
   return cartridge.readCpu(address);
 }
-function write(address: i32, value: i32): void {
+function write(address: i32, value: i32, consecutive: boolean): void {
   address &= 0xffff; value &= 255;
   if (address < 0x2000) RAM[address & 0x7ff] = value;
   else if (address < 0x4000) ppu.writeRegister(address, value);
@@ -40,7 +40,7 @@ function write(address: i32, value: i32): void {
     apu.write(address, value);
   } else if (address == 0x4016) {
     controller1.write(value); controller2.write(value);
-  } else cartridge.writeCpu(address, value);
+  } else cartridge.writeCpu(address, value, consecutive);
 }
 export function setController(player: i32, mask: i32): void {
   if (player == 1) controller1.setButtons(mask);

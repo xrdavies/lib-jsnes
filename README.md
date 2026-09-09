@@ -376,8 +376,15 @@ WASM MMC1 supports serial register writes, all four PRG modes, aligned 8 KiB and
 split 4 KiB CHR banks, four mirroring modes, and PRG RAM disable. Tests execute
 register writes through the CPU and compare mapped bytes and rendered frames.
 Extended MMC1 boards (over 256 KiB PRG or 128 KiB CHR) are rejected by both
-cores. Consecutive-cycle MMC1 write suppression and board variants remain
-unimplemented; instruction-level bank tests do not establish cycle accuracy.
+cores. Both cores suppress the second consecutive write of CPU read-modify-write
+instructions to MMC1, including when the first write completes the serial latch
+or the second carries the reset bit. The CPU bus supplies a third `consecutive`
+boolean argument to `write`; two-argument host implementations remain valid and
+may ignore it. Custom hosts forwarding writes to `Cartridge.writeCpu()` should
+forward this marker too (direct calls default to false). Other mappers and devices
+still receive both writes. Tests exercise all absolute RMW instructions, following
+serial transfers and snapshot continuation. Arbitrary external bus schedules and
+board variants remain outside this instruction-level model.
 
 AxROM and GxROM tests cover every bank-register value, both PRG halves, the full CHR window,
 smaller ROM mirroring, CHR RAM, reset, and rendered pixels. CNROM and GxROM reset

@@ -92,7 +92,7 @@ export class Cartridge {
     return this.rom.prgRom[(bank % count) * 0x4000 + (address & 0x3fff)];
   }
 
-  writeCpu(address: number, value: number): void {
+  writeCpu(address: number, value: number, consecutive = false): void {
     address &= 0xffff;
     value &= 255;
     if (this.rom.mapper === 140 && address >= 0x6000 && address < 0x8000) { this.gxChr = value & 15; this.gxBank = (value >>> 4) & 3; return; }
@@ -126,7 +126,7 @@ export class Cartridge {
     if (this.rom.mapper === 66) { this.gxBank=value>>4; this.gxChr=value&3; return; }
     if (this.rom.mapper === 4) { const a=address&0xe001; if(a===0x8000)this.mmc3Select=value; else if(a===0x8001)this.mmc3Regs[this.mmc3Select&7]=value; else if(a===0xa000)this.mmc3Mirror=value&1; else if(a===0xa001){this.mmc3RamDisabled=!(value&0x80);this.mmc3RamProtected=!!(value&0x40);} else if(a===0xc000)this.mmc3Latch=value; else if(a===0xc001)this.mmc3Counter=0; else if(a===0xe000){this.mmc3Irq=false;this.mmc3Pending=false;} else if(a===0xe001)this.mmc3Irq=true; return; }
     if (this.rom.mapper !== 1) return;
-    // ponytail: instruction-level bus; suppress consecutive-cycle writes when CPU bus timing is implemented.
+    if (consecutive) return; // MMC1 ignores the second write of CPU RMW instructions.
     if (value & 0x80) {
       this.shift = 0x10;
       this.control |= 0x0c;
