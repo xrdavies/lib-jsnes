@@ -98,7 +98,38 @@ export class Nes implements CpuBus {
     this.ppu.step(cycles * 3);
     this.apu.step(cycles);
   }
-  saveState(): Uint8Array { const cart=this.cartridge.saveState(), ppu=this.ppu.saveState(), apu=this.apu.saveState(), c1=this.controller1.saveState(), c2=this.controller2.saveState(), out=new Uint8Array(11+cart.length+ppu.length+apu.length+8+0x800); let o=0; out.set(this.cpu.save(),o);o+=11;out.set(cart,o);o+=cart.length;out.set(ppu,o);o+=ppu.length;out.set(apu,o);o+=apu.length;out.set(c1,o);o+=4;out.set(c2,o);o+=4;out.set(this.ram,o);return out; }
-  loadState(state: Uint8Array): void { const cartSize=this.cartridge.stateSize, ppuSize=PPU_STATE_SIZE, apuSize=Apu.STATE_SIZE, size=11+cartSize+ppuSize+apuSize+8+0x800; if(state.length!==size)throw new RangeError('Invalid state size'); let o=0;this.cpu.load(Array.from(state.subarray(o,o+=11)));this.cycles=this.cpu.cycles;this.dmaStall=0;this.cartridge.loadState(state.subarray(o,o+=cartSize));this.ppu.loadState(state.subarray(o,o+=ppuSize));this.apu.loadState(state.subarray(o,o+=apuSize));this.controller1.loadState(state.subarray(o,o+=4));this.controller2.loadState(state.subarray(o,o+=4));this.ram.set(state.subarray(o)); }
+  saveState(): Uint8Array {
+    const cart = this.cartridge.saveState(), ppu = this.ppu.saveState(), apu = this.apu.saveState();
+    const out = new Uint8Array(11 + cart.length + ppu.length + apu.length + 8 + this.ram.length + 8);
+    let offset = 0;
+    out.set(this.cpu.save(), offset); offset += 11;
+    out.set(cart, offset); offset += cart.length;
+    out.set(ppu, offset); offset += ppu.length;
+    out.set(apu, offset); offset += apu.length;
+    out.set(this.controller1.saveState(), offset); offset += 4;
+    out.set(this.controller2.saveState(), offset); offset += 4;
+    out.set(this.ram, offset); offset += this.ram.length;
+    // Preserve the JS counter, including multiple DMA requests queued by a host.
+    new DataView(out.buffer).setFloat64(offset, this.dmaStall, true);
+    return out;
+  }
+  loadState(state: Uint8Array): void {
+    const cartSize = this.cartridge.stateSize, ppuSize = PPU_STATE_SIZE, apuSize = Apu.STATE_SIZE;
+    const size = 11 + cartSize + ppuSize + apuSize + 8 + this.ram.length + 8;
+    if (state.length !== size) throw new RangeError('Invalid state size');
+    const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
+    const dmaStall = view.getFloat64(size - 8, true);
+    if (!Number.isSafeInteger(dmaStall) || dmaStall < 0) throw new RangeError('Invalid DMA state');
+    let offset = 0;
+    this.cpu.load(Array.from(state.subarray(offset, offset += 11)));
+    this.cycles = this.cpu.cycles;
+    this.cartridge.loadState(state.subarray(offset, offset += cartSize));
+    this.ppu.loadState(state.subarray(offset, offset += ppuSize));
+    this.apu.loadState(state.subarray(offset, offset += apuSize));
+    this.controller1.loadState(state.subarray(offset, offset += 4));
+    this.controller2.loadState(state.subarray(offset, offset += 4));
+    this.ram.set(state.subarray(offset, offset + this.ram.length));
+    this.dmaStall = dmaStall;
+  }
   runFrame(cycles = 29780): Frame { this.step(cycles); return { pixels: this.frame, width: 256, height: 240 }; } get cycleCount(){return this.cpu.cycles;}
 }

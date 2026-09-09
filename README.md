@@ -59,6 +59,11 @@ RAM prefix. Old CHR RAM snapshots that omitted pattern memory are rejected.
 Restoring copies both RAM regions, including currently hidden CHR banks, so
 subsequent frames redraw from the saved tiles. This applies to `Nes` snapshots;
 the WASM wrapper does not yet expose a snapshot API.
+`Nes` snapshots also append an eight-byte little-endian DMA stall counter after
+CPU RAM. Restoring mid-transfer keeps the CPU halted for the remaining cycles
+while PPU and APU clocks advance. Older snapshots without this field are rejected.
+OAM bytes are still copied at the DMA request; per-cycle DMA bus transfers remain
+outside the current timing model.
 Pulse channels implement all four duty patterns, CPU/2 timer clocks, and half-frame
 sweeps with channel-specific negate and target-overflow muting. Tests check output
 frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains
