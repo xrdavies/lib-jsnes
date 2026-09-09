@@ -33,7 +33,8 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   private renderBackground(y: number): void {
     // Rebuild for this line so register writes and restored state affect future lines.
     for (let i = 0; i < 32; i++) this.framePalette[i] = 0xff000000 | this.color(i);
-    this.frame.fill(this.framePalette[0], y * 256, (y + 1) * 256);
+    const backdrop = !(this.mask & 0x18) && (this.addr & 0x3f00) === 0x3f00 ? this.addr & 31 : 0;
+    this.frame.fill(this.framePalette[backdrop], y * 256, (y + 1) * 256);
     this.backgroundOpaque.fill(0, y * 256, (y + 1) * 256);
     if (!(this.mask & 8)) return;
     const wy = y + this.scrollY, sy = wy % 240;

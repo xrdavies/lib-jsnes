@@ -528,6 +528,14 @@ reads, preserving the stored colors for later color output. Tests cover all 64
 palette codes, background/sprite output, and WASM parity. Color emphasis and
 analog video output remain approximations.
 
+With both background and sprite rendering disabled, a VRAM address in
+`$3F00–$3FFF` selects the forced-blank output color from that palette entry,
+including palette mirrors and grayscale. Otherwise the backdrop remains palette
+entry zero. PPUDATA address increments can change the selected color. This uses
+the current scanline renderer, so changes affect subsequent line draws rather
+than individual pixels. Tests cover all palette addresses, rendering gates,
+snapshot continuation and known CPU-driven pixels in TypeScript and WASM.
+
 Both builds now retain a PPU I/O bus latch. Writes to every PPU register, including
 the read-only status port and register mirrors, refresh it. Reads of write-only
 ports return the retained value; PPUSTATUS combines its status flags with the
