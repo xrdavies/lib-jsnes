@@ -25,7 +25,8 @@ function channel(base, mask, control) {
       for (const offset of [24, 26, 28, 30]) view.setUint16(offset, 100, true);
       view.setUint32(41, 1789773 - 44100, true);
       const probe = new Apu(); probe.loadState(saved); probe.step(1);
-      const c = 44100 / (Math.PI * 90), gain = c / (c + 1);
+      const c = 44100 / (Math.PI * 90), h = 44100 / (Math.PI * 440), l = 44100 / (Math.PI * 14000);
+      const gain = c / (c + 1) * h / (h + 1) / (l + 1);
       const level = probe.drainSamples()[0] / gain / 32767;
       return Math.round(base === 0x400c ? level * 24329 / (2 * (163.67 - 100 * level))
         : level * 8128 / (95.52 - 100 * level));

@@ -19,12 +19,20 @@ function period(apu, channel = 0) {
 test('both pulse channels produce the programmed frequency and duty cycle', () => {
   for (const channel of [0, 1]) for (const duty of [0, 1, 2, 3]) {
     const apu = pulse(channel, 99, duty);
-    apu.step(160000); // 100 periods of 16 * (99 + 1) CPU cycles.
+    // Inspect the pre-filter mixer sample for DAC duty; filtered sign is no
+    // longer a duty indicator because the analog stages reshape the waveform.
+    let cycles = 0, high = 0, samples = 0;
+    for (let i = 1; Math.ceil(i * 1789773 / 44100) <= 160000; i++) {
+      const target = Math.ceil(i * 1789773 / 44100);
+      apu.step(target - cycles); cycles = target;
+      if (new DataView(apu.saveState().buffer).getFloat64(79, true) > 0) high++;
+      samples++;
+    }
     const pcm = apu.drainSamples();
     let rises = 0;
     for (let i = 1; i < pcm.length; i++) if (pcm[i] > 0 && pcm[i - 1] <= 0) rises++;
     assert.ok(Math.abs(rises - 100) <= 1, `channel ${channel}, duty ${duty}: ${rises} rises`);
-    const highRatio = pcm.filter(value => value > 0).length / pcm.length;
+    const highRatio = high / samples;
     assert.ok(Math.abs(highRatio - [0.125, 0.25, 0.5, 0.75][duty]) < 0.01);
   }
 });

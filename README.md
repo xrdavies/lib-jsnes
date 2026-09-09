@@ -158,7 +158,7 @@ outside the current timing model.
 Pulse channels implement all four duty patterns, CPU/2 timer clocks, and half-frame
 sweeps with channel-specific negate and target-overflow muting. Tests check output
 frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains
-incomplete: exact frame edge timing and the remaining analog output filters are not implemented.
+approximate: exact frame edge timing, resampling and board-specific analog characteristics are not modeled.
 
 The pulse CPU/2 divider runs independently of the frame sequencer. Writes to
 `$4017` restart frame sequencing without shifting the pulse timer clock phase.
@@ -182,7 +182,7 @@ output, seven-bit DAC limits, address wrap, looping, and completion IRQs. Both
 system cores read samples through their current CPU cartridge mapping and charge
 four stall cycles per fetch. This is an instruction-level DMA approximation:
 read-cycle alignment, OAM/DMC arbitration, and controller-read glitches are not
-modeled. The output feeds the shared nonlinear mixer; analog filtering remains incomplete.
+modeled. The output feeds the shared nonlinear mixer and three-stage filter chain.
 
 The mixer uses generated transfer-curve tables: `95.52 / (8128 / p + 100)`
 for the sum of the two pulse DACs, and `163.67 / (24329 / tnd + 100)` for
@@ -191,14 +191,16 @@ This weighted TND lookup is an approximation of the analog circuit, following
 the reference core's mixing model. Each table is scaled by 32767 and truncated
 before summing, keeping TypeScript and WASM PCM identical. Tests cover all 31
 pulse sums and 203 weighted TND inputs, compression and DMC-dependent gain.
-The old linear gains and fixed negative bias are removed. The unipolar mix passes through a 90 Hz one-pole high-pass filter before signed
-Int16 PCM conversion, removing steady DAC offsets. The filter uses a bilinear
-transform with `c = sampleRate / (PI * 90)`, feed-forward gain `c / (c + 1)` and
-feedback `(c - 1) / (c + 1)`. Previous input/output retain Float64 precision;
-only emitted PCM is rounded. Draining audio does not reset filter history.
-This implements the reference chain's first stage; the additional 440 Hz
-high-pass and 14 kHz low-pass stages remain unimplemented. Tests check the exact
-DC step response, signed release transient, 20 Hz/1 kHz gain, and snapshot replay.
+The old linear gains and fixed negative bias are removed. The unipolar mix passes through one-pole 90 Hz and 440 Hz high-pass stages, then
+a 14 kHz low-pass stage before signed Int16 PCM conversion. Coefficients use the
+bilinear transform with `c = sampleRate / (PI * cutoff)`: high-pass feed-forward
+gains are `c / (c + 1)` and its negation; low-pass gains are both `1 / (c + 1)`.
+Each stage feeds back `(c - 1) / (c + 1)` times its previous output. History keeps
+Float64 precision, and only the final output is rounded and saturated to Int16.
+Draining audio does not reset this history. This follows the reference core's
+three-stage approximation rather than a transistor-level model. Tests check DC
+step/release behavior, gain against analytic transfer functions from 20 Hz to
+20 kHz, saturation, snapshot continuation and JS/WASM PCM parity.
 
 `new Apu()` remains valid for standalone synthesis, including direct `$4011` DAC
 writes. For DMC sample playback, supply `new Apu({ readDmc(address) { ... } })`;
@@ -207,10 +209,11 @@ connect this bus automatically. Reading `$4015` clears only the frame IRQ;
 writing `$4015` or disabling IRQ in `$4010` acknowledges DMC IRQ. Stopping the
 reader leaves buffered output and the current DAC level intact.
 
-The APU snapshot is now 95 bytes and includes the DMC reader, prefetch byte,
+The APU snapshot is now 127 bytes and includes the DMC reader, prefetch byte,
 shift register, timer, DAC, IRQ, independent pulse-clock phase and filter history.
-Filter input/output are stored as little-endian Float64 values at offsets 79/87.
-Previous 62-byte, 78-byte and 79-byte APU snapshots are rejected.
+The three previous-input/output pairs are little-endian Float64 values at
+offsets 79/87, 95/103 and 111/119. Earlier APU snapshots without the full filter
+history are rejected.
 DMC tests cover all rates, maximum length, mapper wrap, output limits, CPU IRQs,
 continued output after stopping, and snapshot replay in TypeScript, with PCM and
 CPU parity checks in WASM.
@@ -578,7 +581,7 @@ Raw ABI consumers call `audioDrain()` to obtain the sample count, then use
 view before the next drain, reset, or memory growth. `sampleRate()` returns Hz.
 
 Audio tests compare both frame modes, each implemented channel, full-width timer
-periods, mixed PCM, and DMA/NMI/IRQ timing between builds. The shared APU uses nonlinear mixing; analog filters and exact frame-edge timing remain incomplete.
+periods, mixed PCM, and DMA/NMI/IRQ timing between builds. The shared APU uses nonlinear mixing and the three-stage output filter; exact frame-edge timing and band-limited resampling remain incomplete.
 
 
 ## Publishing

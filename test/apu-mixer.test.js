@@ -31,8 +31,8 @@ test('nonlinear mixer covers every pulse sum and weighted TND index without clip
     const expected = Math.floor(32767 * 95.52 / (pulses ? 8128 / pulses + 100 : Infinity))
       + Math.floor(32767 * 163.67 / (tnd ? 24329 / tnd + 100 : Infinity));
     const pcm = sample(Math.min(15, pulses), Math.max(0, pulses - 15), triangle, n, d);
-    const c = 44100 / (Math.PI * 90);
-    assert.equal(pcm, Math.floor(expected * c / (c + 1) + 0.5), `pulse sum ${pulses}, TND index ${tnd}`);
+    const c = 44100 / (Math.PI * 90), h = 44100 / (Math.PI * 440), l = 44100 / (Math.PI * 14000);
+    assert.equal(pcm, Math.floor(expected * c / (c + 1) * h / (h + 1) / (l + 1) + 0.5), `pulse sum ${pulses}, TND index ${tnd}`);
     assert.ok(pcm >= 0 && pcm <= 32767);
   }
 });
