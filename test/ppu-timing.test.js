@@ -71,6 +71,27 @@ test('reading PPUSTATUS during VBlank cancels an undelivered NMI', () => {
   assert.equal(ppu.consumeNmi(), false);
 });
 
+test('batched PPU clocks match single-dot execution across timing events and frame wraps', () => {
+  for (const [line, dot] of [[0, 0], [100, 173], [240, 340], [241, 0], [260, 340], [261, 0], [261, 340]]) {
+    const batched = consoleWithNmiHandler().ppu, single = consoleWithNmiHandler().ppu;
+    for (const ppu of [batched, single]) {
+      ppu.scanline = line; ppu.dot = dot;
+      ppu.writeRegister(0, 0x80);
+      ppu.palette[0] = 0x2a;
+    }
+    for (const dots of [0, -1, 1, 2, 1.5, 337, 341, 342, 262 * 341 * 2 + 13]) {
+      const frame = batched.step(dots);
+      let singleFrame = false;
+      for (let i = 0; i < dots; i++) singleFrame = single.step() || singleFrame;
+      assert.equal(frame, singleFrame, `frame at ${line}:${dot} + ${dots}`);
+      assert.deepEqual(batched.saveState(), single.saveState());
+      assert.equal(batched.consumeScanlines(), single.consumeScanlines());
+      assert.equal(batched.consumeNmi(), single.consumeNmi());
+      assert.equal(batched.readRegister(2), single.readRegister(2));
+    }
+  }
+});
+
 test('Nes executes the NMI handler once per frame and RTI returns to the main loop', () => {
   const nes = consoleWithNmiHandler();
   nes.write(0x2000, 0x80);

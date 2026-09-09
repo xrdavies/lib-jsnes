@@ -32,6 +32,13 @@ to 2.30 ms/frame in WASM. The optimized binary is about 50.6 kB versus 62.6 kB.
 WASM remains slower than TypeScript in this measurement. Browser performance
 must be measured separately; faster WASM execution is not yet established.
 
+The PPU now skips idle dots between the events implemented by its current timing
+model. On the same Node/macOS arm64 setup, a before/after synthetic run measured
+about 0.97 to 0.86 ms/frame in TypeScript and 2.48 to 2.31 ms/frame in WASM.
+Boundary tests compare batch advances against individual dots, including VBlank,
+NMI, scanline counts and multiple frame wraps. This optimization preserves the
+existing frame-batched renderer; it does not add raster-effect accuracy.
+
 ## API
 
 ```ts

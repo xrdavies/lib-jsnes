@@ -110,6 +110,10 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   step(dots = 1): boolean {
     let frame = false;
     while (dots-- > 0) {
+      // The current timing model has events only at dot 1 and the line boundary.
+      // Skip idle dots while preserving the event order and partial-line position.
+      const skip = Math.min(Math.floor(dots), this.dot === 0 ? 0 : 340 - this.dot);
+      if (skip > 0) { this.dot += skip; dots -= skip; }
       if (++this.dot === 341) {
         this.dot = 0;
         this.scanlineTicks++;
