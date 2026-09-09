@@ -201,9 +201,12 @@ PPU serialization also compiles from the shared source. Its existing layout now
 uses explicit little-endian DataView reads/writes for registers, timers and frame
 pixels, including unaligned input views. Cross-build tests continue partial
 frames through VBlank and odd-frame boundaries, exercise register reads and
-reject invalid timing fields before changing state. The production ABI still
-lacks full-system save/restore; APU and cartridge serialization must be connected
-before these component snapshots can restore a running NES.
+reject invalid timing fields before changing state. APU serialization also uses
+the shared source and retains its 131-byte layout. Cross-build tests compare PCM,
+IRQ status and DMC reads after restoring both frame modes, pending writes and
+deferred sample fetches. Invalid oscillator, filter and timing values leave live
+state and queued PCM intact. The production ABI still lacks full-system
+save/restore; cartridge serialization and system assembly remain to be connected.
 OAM DMA now alternates one CPU-bus read and one OAMDATA write per CPU cycle,
 after one or two halt/alignment cycles. Relative to this core's cycle count, an
 odd-cycle `$4014` write takes 513 DMA cycles and an even-cycle write takes 514;

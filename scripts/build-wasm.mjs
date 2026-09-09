@@ -7,8 +7,8 @@ const debug = process.argv.includes('--debug');
 if (process.argv.slice(2).some(arg => arg !== '--debug')) throw new Error('Usage: build-wasm.mjs [--debug]');
 
 // Compile the shared CPU/PPU/APU/controller code, adding AssemblyScript's required
-// integer annotations. CPU/PPU/controller/DMA snapshots compile in both languages; the other
-// component serializers still contain JS-only marshaling and are omitted.
+// integer annotations. Shared component byte snapshots compile in both languages;
+// the legacy CPU number-array adapters are JS-only.
 const sources = ['cpu', 'ppu', 'apu', 'controller', 'dma'];
 const program = ts.createProgram(sources.map(name => `src/${name}.ts`), { target: ts.ScriptTarget.ES2020 });
 const checker = program.getTypeChecker();
@@ -49,14 +49,14 @@ function compileSource(name) {
       }
       // JS DataView narrows numbers on write; AssemblyScript requires that cast.
       if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
-        && node.expression.name.text === 'setUint16'
+        && ['setUint16', 'setUint32'].includes(node.expression.name.text)
         && checker.getTypeAtLocation(node.expression.expression).symbol?.name === 'DataView') {
         const args = node.arguments.map(arg => ts.visitNode(arg, visit));
-        args[1] = f.createAsExpression(args[1], f.createTypeReferenceNode('u16'));
+        args[1] = f.createAsExpression(args[1], f.createTypeReferenceNode(node.expression.name.text === 'setUint16' ? 'u16' : 'u32'));
         return f.updateCallExpression(node, node.expression, node.typeArguments, args);
       }
       if (ts.isMethodDeclaration(node) && ['save', 'load', 'saveState', 'loadState', 'validateState'].includes(node.name.getText(source))
-        && !['ppu', 'controller', 'dma'].includes(name)
+        && !['apu', 'ppu', 'controller', 'dma'].includes(name)
         && !(name === 'cpu' && ['saveState', 'loadState'].includes(node.name.getText(source)))) return undefined;
       if (ts.isImportDeclaration(node) && node.moduleSpecifier.text === './cartridge.js') {
         return f.updateImportDeclaration(node, node.modifiers, f.updateImportClause(node.importClause, false, node.importClause.name, node.importClause.namedBindings), f.createStringLiteral('../wasm/cartridge'), node.attributes);

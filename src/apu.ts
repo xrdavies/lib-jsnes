@@ -267,12 +267,14 @@ export class Apu {
     out[36] = +this.triangle.enabled; out[37]=this.pulse[0].sweepDivider; out[38]=this.pulse[1].sweepDivider; out[39]=+this.pulse[0].sweepReload; out[40]=+this.pulse[1].sweepReload;
     view.setUint32(41, this.frac, true);
     view.setUint16(57, this.frame, true);
-    out[45]=+this.mode5; out[46]=this.triangle.linear; out[47]=+this.triangle.linearReload; out[59] = 6; out[60] = 8; out[61]=+this.frameIrq | (+this.irqInhibit << 1); // APU snapshot format version.
-    for (const [i, channel] of [...this.pulse, this.noise].entries()) {
-      out.set([+channel.envelope.start, channel.envelope.divider, channel.envelope.decay], 48 + i * 3);
+    out[45]=+this.mode5; out[46]=this.triangle.linear; out[47]=+this.triangle.linearReload; out[59] = 6; out[60] = 8; out[61]=(this.frameIrq ? 1 : 0) | (this.irqInhibit ? 2 : 0); // APU snapshot format version.
+    for (let i = 0; i < 3; i++) {
+      const envelope = i < 2 ? this.pulse[i].envelope : this.noise.envelope;
+      const offset = 48 + i * 3;
+      out[offset] = envelope.start ? 1 : 0; out[offset + 1] = envelope.divider; out[offset + 2] = envelope.decay;
     }
     out.set(this.dmc.regs, 62);
-    out[66] = this.dmc.output; out[67] = +this.dmc.silence | (+this.dmc.irq << 1) | (+this.dmc.fetchPending << 2);
+    out[66] = this.dmc.output; out[67] = (this.dmc.silence ? 1 : 0) | (this.dmc.irq ? 2 : 0) | (this.dmc.fetchPending ? 4 : 0);
     out[68] = this.dmc.bits; out[69] = this.dmc.shift;
     view.setUint16(70, this.dmc.buffer, true); view.setUint16(72, this.dmc.address, true);
     view.setUint16(74, this.dmc.remaining, true); view.setUint16(76, this.dmc.timer, true);
@@ -286,25 +288,28 @@ export class Apu {
   static validateState(state: Uint8Array): void {
     if (state.length !== Apu.STATE_SIZE) throw new RangeError('Invalid APU state size');
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
-    const frac = view.getUint32(41, true), frame = view.getUint16(57, true);
+    const frac: number = view.getUint32(41, true), frame: number = view.getUint16(57, true);
     const previousInput = view.getFloat64(79, true), previousOutput = view.getFloat64(87, true);
     if (!Number.isInteger(previousInput) || previousInput < 0 || previousInput > 32767
       || !Number.isFinite(previousOutput) || previousOutput > DC_B0 * previousInput + 1e-6
       || previousOutput < DC_B0 * (previousInput - 32767) - 1e-6) throw new RangeError('Invalid APU filter state');
-    for (const offset of [95, 103, 111, 119]) {
+    for (let offset = 95; offset <= 119; offset += 8) {
       const value = view.getFloat64(offset, true);
       if (!Number.isFinite(value) || Math.abs(value) > 65534) throw new RangeError('Invalid APU filter state');
     }
     if (view.getFloat64(95, true) !== previousOutput || view.getFloat64(111, true) !== view.getFloat64(103, true)) {
       throw new RangeError('Invalid APU filter state');
     }
+    for (let offset = 48; offset <= 54; offset += 3) {
+      if (state[offset] > 1 || state[offset + 1] > 15 || state[offset + 2] > 15) throw new RangeError('Invalid APU state values');
+    }
     if (state[127] > 4 || state[128] > 1 || state[129] > 1 || state[78] > 1 || state[59] !== 6 || state[60] !== 8 || state[61] > 3 || frac >= CPU_HZ || frame >= (state[45] ? 37282 : 29830)
-      || [48, 51, 54].some(offset => state[offset] > 1 || state[offset + 1] > 15 || state[offset + 2] > 15)
       || state[12] > 7 || state[13] > 7 || state[19] > 31
+      || state[16] > 1 || state[17] > 1 || state[18] > 1 || state[36] > 1
+      || state[39] > 1 || state[40] > 1 || state[45] > 1 || state[47] > 1
       || view.getUint16(14, true) > 0x7fff
-      || [16, 17, 18, 36, 39, 40, 45, 47].some(offset => state[offset] > 1)
       || state[37] > 7 || state[38] > 7 || state[46] > 127
-      || [24, 26].some(offset => view.getUint16(offset, true) > 0x7ff)
+      || view.getUint16(24, true) > 0x7ff || view.getUint16(26, true) > 0x7ff
       || view.getUint16(28, true) > 0x800
       || view.getUint16(30, true) > 4068) throw new RangeError('Invalid APU state values');
     if (state[130] > 3 || state[66] > 127 || state[67] > 7 || state[68] < 1 || state[68] > 8
@@ -316,7 +321,7 @@ export class Apu {
   loadState(state: Uint8Array): void {
     Apu.validateState(state);
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
-    const frac = view.getUint32(41, true), frame = view.getUint16(57, true);
+    const frac: number = view.getUint32(41, true), frame: number = view.getUint16(57, true);
     for (let i = 0; i < this.filterState.length; i++) this.filterState[i] = view.getFloat64(79 + i * 8, true);
     this.frameWriteDelay = state[127]; this.pendingMode5 = !!state[128]; this.frameClockBlock = state[129];
     this.pulseClock = !!state[78];
@@ -350,11 +355,12 @@ export class Apu {
     this.frac = frac;
     this.frame = frame;
     this.scheduleFrameEvent();
-    for (const [i, channel] of [...this.pulse, this.noise].entries()) {
+    for (let i = 0; i < 3; i++) {
+      const envelope = i < 2 ? this.pulse[i].envelope : this.noise.envelope;
       const offset = 48 + i * 3;
-      channel.envelope.start = !!state[offset];
-      channel.envelope.divider = state[offset + 1];
-      channel.envelope.decay = state[offset + 2];
+      envelope.start = !!state[offset];
+      envelope.divider = state[offset + 1];
+      envelope.decay = state[offset + 2];
     }
     this.samples = [];
   }

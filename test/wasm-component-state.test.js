@@ -4,10 +4,10 @@ import { cp, mkdtemp, readFile, rm, symlink, appendFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { join, resolve, delimiter } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { Cpu6502, Controller, Nes, PPU_STATE_SIZE } from '../dist/index.js';
+import { Cpu6502, Controller, Nes, PPU_STATE_SIZE, Apu } from '../dist/index.js';
 import { OamDma, DmcDma } from '../dist/dma.js';
 
-test('shared CPU/PPU/controller/DMA snapshots restore and continue identically in JS and WASM', async () => {
+test('shared component snapshots restore and continue identically in JS and WASM', async () => {
   const fixture = await mkdtemp(join(tmpdir(), 'lib-jsnes-component-state-'));
   try {
     for (const name of ['src', 'wasm', 'scripts']) await cp(resolve(name), join(fixture, name), { recursive: true });
@@ -29,9 +29,14 @@ class StateBus implements OamDmaBus, DmcDmaBus {
 const stateController = new Controller();
 const stateOam = new OamDma(new StateBus());
 const stateDmc = new DmcDma(new StateBus());
+class SampleBus implements DmcBus {
+  readDmc(a: i32): i32 { events.push(a); return (a ^ (a >> 8)) & 255; }
+}
+const stateApu = new Apu(new SampleBus());
+let stateAudio = new Int16Array(0);
 export function componentSave(kind: i32): usize {
   __collect();
-  testState = kind == 0 ? stateController.saveState() : kind == 1 ? stateOam.saveState() : kind == 2 ? stateDmc.saveState() : ppu.saveState();
+  testState = kind == 0 ? stateController.saveState() : kind == 1 ? stateOam.saveState() : kind == 2 ? stateDmc.saveState() : kind == 3 ? ppu.saveState() : stateApu.saveState();
   return changetype<usize>(testState.buffer);
 }
 export function componentLoad(kind: i32, length: i32): void {
@@ -42,7 +47,8 @@ export function componentLoad(kind: i32, length: i32): void {
   else {
     const padded = new Uint8Array(bytes.length + 7);
     padded.set(bytes, 3);
-    ppu.loadState(padded.subarray(3, 3 + bytes.length));
+    if (kind == 3) ppu.loadState(padded.subarray(3, 3 + bytes.length));
+    else stateApu.loadState(padded.subarray(3, 3 + bytes.length));
   }
 }
 export function componentStep(kind: i32, odd: boolean, busy: boolean, held: i32): i32 {
@@ -57,6 +63,12 @@ export function ppuStep(dots: i32): boolean { return ppu.step(dots); }
 export function ppuRead(reg: i32): i32 { return ppu.readRegister(reg); }
 export function ppuWrite(reg: i32, value: i32): void { ppu.writeRegister(reg, value); }
 export function ppuNmi(): boolean { return ppu.consumeNmi(); }
+export function apuStep(cycles: i32): void { events.length = 0; stateApu.step(cycles); }
+export function apuStatus(): i32 { return stateApu.readStatus(); }
+export function apuWrite(a: i32, v: i32): void { stateApu.write(a, v); }
+export function apuComplete(v: i32): void { stateApu.completeDmc(v); }
+export function apuDrain(): i32 { stateAudio = stateApu.drainSamples(); return stateAudio.length; }
+export function apuSample(i: i32): i32 { return stateAudio[i]; }
 `);
     const build = spawnSync(process.execPath, ['scripts/build-wasm.mjs'], {
       cwd: fixture, encoding: 'utf8', timeout: 30000,
@@ -221,5 +233,72 @@ export function ppuNmi(): boolean { return ppu.consumeNmi(); }
       assert.deepEqual(ppu.saveState(), ppuBefore);
     }
     assert.throws(() => loadComponent(3, ppuBefore, ppuBefore.length - 1), /Invalid/);
+    const sampleReads = [], sampleBus = { readDmc(a) { sampleReads.push(a); return (a ^ (a >>> 8)) & 255; } };
+    const drainWasm = () => Int16Array.from({ length: wasm.apuDrain() }, (_, i) => wasm.apuSample(i));
+    function compareAudio(apu, cycles) {
+      sampleReads.length = 0; apu.step(cycles); wasm.apuStep(cycles);
+      assert.deepEqual(Array.from({ length: wasm.eventCount() }, (_, i) => wasm.eventAt(i)), sampleReads);
+      assert.equal(wasm.apuStatus(), apu.readStatus());
+      assert.deepEqual(drainWasm(), apu.drainSamples(), 'restored filters and oscillators produce identical PCM');
+      assert.deepEqual(saveComponent(4, Apu.STATE_SIZE), apu.saveState());
+    }
+    for (const mode of [0, 0x80]) for (const position of [1, 2, 7456, 14912, 29827, 37280]) {
+      const apu = new Apu(sampleBus); apu.write(0x4015, 31);
+      for (const base of [0x4000, 0x4004, 0x4008, 0x400c]) {
+        apu.write(base, base === 0x4008 ? 0x83 : 0xbf); apu.write(base + 1, 0x8a);
+        apu.write(base + 2, base === 0x400c ? 0x8f : 99); apu.write(base + 3, 0x18);
+      }
+      apu.write(0x4010, 0xcf); apu.write(0x4011, 64); apu.write(0x4012, 0xff); apu.write(0x4013, 4);
+      apu.write(0x4017, mode); apu.step(position);
+      // Save a scheduled frame-counter change as well as active filter history.
+      apu.write(0x4017, mode ^ 0x80);
+      const saved = apu.saveState();
+      wasm.apuStep(4000); // Restoration must discard pre-existing queued PCM.
+      loadComponent(4, saved); assert.equal(wasm.apuDrain(), 0);
+      const storage = Buffer.alloc(saved.length + 9); storage.set(saved, 3);
+      apu.loadState(storage.subarray(3, 3 + saved.length));
+      assert.deepEqual(saveComponent(4, Apu.STATE_SIZE), saved);
+      for (const cycles of [1, 3, 128, 16000]) compareAudio(apu, cycles);
+      apu.loadState(saveComponent(4, Apu.STATE_SIZE));
+      apu.write(0x4015, 0); wasm.apuWrite(0x4015, 0); compareAudio(apu, 1000);
+    }
+    const pending = new Apu({ readDmc() { return 256; } });
+    pending.write(0x4010, 0x8f); pending.write(0x4015, 16); pending.step(2);
+    const waiting = pending.saveState(); assert.ok(waiting[67] & 4);
+    loadComponent(4, waiting); compareAudio(pending, 100);
+    pending.completeDmc(0xa5); wasm.apuComplete(0xa5); compareAudio(pending, 3000);
+    const apuBefore = pending.saveState();
+    const invalidStates = [];
+    for (const [offset, value] of [[12, 8], [13, 8], [19, 32], [16, 2], [17, 2], [18, 2], [36, 2],
+      [39, 2], [40, 2], [45, 2], [47, 2], [48, 2], [49, 16], [53, 16], [55, 16],
+      [59, 0], [60, 0], [61, 4], [66, 128], [67, 8], [68, 0], [68, 9],
+      [127, 5], [128, 2], [129, 2], [130, 4]]) {
+      const invalid = apuBefore.slice(); invalid[offset] = value; invalidStates.push(invalid);
+    }
+    for (const [offset, value] of [[14, 0x8000], [24, 0x800], [26, 0x800], [28, 0x801],
+      [30, 4069], [57, 0xffff], [70, 257], [72, 0x7fff], [74, 4082], [76, 428]]) {
+      const invalid = apuBefore.slice(); new DataView(invalid.buffer).setUint16(offset, value, true); invalidStates.push(invalid);
+    }
+    for (const offset of [79, 87, 95, 103, 111, 119]) {
+      const invalid = apuBefore.slice(); new DataView(invalid.buffer).setFloat64(offset, NaN, true); invalidStates.push(invalid);
+    }
+    for (const [offset, value] of [[79, 1.5], [79, -1], [79, 32768], [87, 65535],
+      [95, -65535], [103, 65535], [111, -65535], [119, 65535]]) {
+      const invalid = apuBefore.slice(); new DataView(invalid.buffer).setFloat64(offset, value, true); invalidStates.push(invalid);
+    }
+    const badFraction = apuBefore.slice(); new DataView(badFraction.buffer).setUint32(41, 1789773, true); invalidStates.push(badFraction);
+    const badHistory = apuBefore.slice();
+    new DataView(badHistory.buffer).setFloat64(95, new DataView(badHistory.buffer).getFloat64(87, true) + 1, true);
+    invalidStates.push(badHistory);
+    for (const invalid of invalidStates) {
+      const apu = new Apu(sampleBus); apu.loadState(apuBefore); loadComponent(4, apuBefore);
+      apu.step(1000); wasm.apuStep(1000); // Rejected input must leave queued PCM intact.
+      const unchanged = apu.saveState();
+      assert.throws(() => apu.loadState(invalid), /Invalid/);
+      assert.throws(() => loadComponent(4, invalid), /Invalid/);
+      assert.deepEqual(apu.saveState(), unchanged); assert.deepEqual(saveComponent(4, Apu.STATE_SIZE), unchanged);
+      assert.deepEqual(drainWasm(), apu.drainSamples());
+    }
+    assert.throws(() => loadComponent(4, apuBefore, Apu.STATE_SIZE - 1), /Invalid/);
   } finally { await rm(fixture, { recursive: true, force: true }); }
 });
