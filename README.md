@@ -185,6 +185,15 @@ RAM prefix. Old CHR RAM snapshots that omitted pattern memory are rejected.
 Restoring copies both RAM regions, including currently hidden CHR banks, so
 subsequent frames redraw from the saved tiles. This applies to `Nes` snapshots;
 the WASM wrapper does not yet expose a snapshot API.
+The shared CPU now exposes `saveState(): Uint8Array` and
+`loadState(bytes: Uint8Array)` using the same 16-byte layout in TypeScript and
+AssemblyScript. The existing `save()`/`load()` number-array API remains available
+in JavaScript. Byte views with offsets (including Node Buffers) are supported;
+invalid sizes, flag bits and cycle counts are rejected before changing CPU state.
+An isolated WASM test build exercises the actual shared serializer across
+long-running cycle counts, JAM/NMI flags and subsequent execution. This is the
+first component of WASM snapshot support: the production ABI still lacks full
+system save/restore, and CPU-only state cannot restore a running NES.
 OAM DMA now alternates one CPU-bus read and one OAMDATA write per CPU cycle,
 after one or two halt/alignment cycles. Relative to this core's cycle count, an
 odd-cycle `$4014` write takes 513 DMA cycles and an even-cycle write takes 514;

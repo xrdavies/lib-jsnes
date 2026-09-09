@@ -28,32 +28,45 @@ export class Cpu6502 {
     constructor(private readonly bus: CpuBus, private readonly strict = false) { }
     reset(): void { this.nmiPending = this.interruptEntry = this.interruptPollEarly = false; this.halted = false; this.instructionIrqMasked = true; this.sp = 0xfd; this.p = U | I; this.pc = this.bus.read(0xfffc, false) | (this.bus.read(0xfffd, false) << 8); this.cycles = this.busCycles = 0; this.unknownOpcodes = 0; this.lastUnknownOpcode = -1; this.unknownOpcodeCounts.fill(0); }
     save(): number[] {
+        return Array.from(this.saveState());
+    }
+    saveState(): Uint8Array {
         if (!Number.isSafeInteger(this.cycles) || this.cycles < 0) throw new RangeError('Invalid CPU cycle count');
         const bytes = new Uint8Array(Cpu6502.STATE_SIZE);
-        bytes.set([this.a, this.x, this.y, this.sp, this.p, this.pc & 255, this.pc >>> 8]);
+        bytes[0] = this.a; bytes[1] = this.x; bytes[2] = this.y;
+        bytes[3] = this.sp; bytes[4] = this.p; bytes[5] = this.pc & 255; bytes[6] = this.pc >>> 8;
         new DataView(bytes.buffer).setFloat64(7, this.cycles, true);
-        bytes[15] = +this.halted | (+this.nmiPending << 1);
-        return Array.from(bytes);
+        bytes[15] = (this.halted ? 1 : 0) | (this.nmiPending ? 2 : 0);
+        return bytes;
     }
     static validateState(v: number[]): void {
         if (v.length !== Cpu6502.STATE_SIZE || v[15] > 3) throw new RangeError('Invalid CPU state');
         for (const value of v) {
             if (!Number.isInteger(value) || value < 0 || value > 255) throw new RangeError('Invalid CPU state');
         }
-        const cycles = new DataView(Uint8Array.from(v).buffer).getFloat64(7, true);
-        if (!Number.isSafeInteger(cycles) || cycles < 0) throw new RangeError('Invalid CPU state cycle count');
+        Cpu6502.validateSnapshot(Uint8Array.from(v));
     }
     load(v: number[]): void {
         Cpu6502.validateState(v);
+        this.loadState(Uint8Array.from(v));
+    }
+    static validateSnapshot(bytes: Uint8Array): void {
+        if (bytes.length !== Cpu6502.STATE_SIZE || bytes[15] > 3) throw new RangeError('Invalid CPU state');
+        const cycles = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getFloat64(7, true);
+        if (!Number.isSafeInteger(cycles) || cycles < 0) throw new RangeError('Invalid CPU state cycle count');
+    }
+    loadState(bytes: Uint8Array): void {
+        Cpu6502.validateSnapshot(bytes);
         this.busCycles = 0;
         this.interruptPollEarly = false;
         this.interruptEntry = false;
-        [this.a, this.x, this.y, this.sp, this.p] = v;
-        this.halted = !!(v[15] & 1);
-        this.nmiPending = !!(v[15] & 2);
+        this.a = bytes[0]; this.x = bytes[1]; this.y = bytes[2]; this.sp = bytes[3]; this.p = bytes[4];
+        this.halted = !!(bytes[15] & 1);
+        this.nmiPending = !!(bytes[15] & 2);
         this.instructionIrqMasked = !!(this.p & I);
-        this.pc = v[5] | (v[6] << 8);
-        this.cycles = new DataView(Uint8Array.from(v).buffer).getFloat64(7, true);
+        const high: number = bytes[6];
+        this.pc = bytes[5] | (high << 8);
+        this.cycles = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getFloat64(7, true);
     }
     irq(): boolean { if (this.halted || (this.p & I)) return false; this.interrupt(0xfffe); return true; }
     /** Poll a pending IRQ immediately after step(), using the instruction's I-bit timing. */
