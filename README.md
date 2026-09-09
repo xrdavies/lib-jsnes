@@ -625,8 +625,8 @@ interrupt rejection, reset, snapshot replay and JS/WASM device-clock parity.
 
 Synthetic ROMs compare complete frames between the two builds and assert known
 background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.
-WASM uses the same pixel output path as TypeScript. Background fetches and scroll updates run per dot; sprite evaluation and
-sprite pattern fetches still use a line-level approximation. Frame views
+WASM uses the same pixel output path as TypeScript. Background and sprite fetches
+run per dot; sprite evaluation still uses a line-level approximation. Frame views
 use packed `0xAARRGGBB` pixels; they are not RGBA byte views for `ImageData`.
 PPUADDR (`$2006`) uses a temporary address: its first write replaces the high
 six bits without changing the active PPUDATA address, and its second write
@@ -662,13 +662,20 @@ next frame normally. Hosts writing palette/VRAM must set scroll afterward, as
 PPUADDR and PPUSCROLL share t. Tests that inspect a static frame allow a pre-render
 pass rather than assuming scroll writes take effect immediately.
 
-Sprite patterns still use a line buffer built at dot 1; secondary OAM evaluation,
-sprite fetch slots, delayed PPUADDR commits and MMC3 qualified A12 edges remain
-incomplete. Tests cover fetch addresses/order, X/Y wrapping, timed v/t copies,
+Sprite patterns are fetched for the next line in eight slots during dots
+257–320, with separate low/high-plane reads at slot offsets 4 and 6. Empty slots
+still fetch pattern bytes. Selected OAM entries retain their original sprite IDs,
+and OAMADDR is held at zero during the fetch window. Pattern bytes are composed
+into a line buffer for output, preserving priority, flipping and sprite-zero hits.
+Secondary OAM selection is still performed together at dot 257; cycle-by-cycle
+evaluation, the overflow diagonal-scan bug, delayed PPUADDR commits and MMC3
+qualified A12 edges remain incomplete. Tests cover fetch addresses/order, X/Y wrapping, timed v/t copies,
 mid-line bank changes and snapshots between fetch phases. The 256-byte background
 line buffer is replaced by 12 bytes of shift/fetch state; the sprite line buffer
 and existing timing tail remain. PPU snapshots are 244 bytes smaller than the
-previous layout, and old PPU/system snapshots are rejected. Hosts should display
+previous background-line layout. Sprite slot snapshots add 42 bytes for secondary
+OAM, original IDs, count and the low-plane latch; old PPU/system snapshots are
+rejected. Hosts should display
 the completed frame after their frame step.
 
 The NTSC PPU skips the final pre-render dot on odd frames when either background

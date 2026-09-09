@@ -195,7 +195,7 @@ test('background tile-row reuse preserves fine scrolling, clipping, and nametabl
     nes.ppu.writeRegister(5, scroll); nes.ppu.writeRegister(5, 239);
     if (nes.ppu.scanline < 240) nes.ppu.step(241 * 341 + 1);
     reads = 0; render(nes, clip ? 8 : 10);
-    assert.ok(reads <= 2 * 34 * 241, '34 fetch groups on each visible/pre-render line');
+    assert.ok(reads <= 2 * (34 + 8) * 241, '34 background and 8 sprite fetch groups per rendering line');
     for (let y = 0; y < 240; y++) for (let x = 0; x < 256; x++) {
       const wx = x + scroll, wy = y + 239, nt = (wx >= 256 ? 1 : 0) + (wy >= 240 ? 2 : 0);
       const color = clip && x < 8 ? 0 : (nt + ((wy % 240) % 8) + (wx % 8)) % 4;

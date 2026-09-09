@@ -1,5 +1,5 @@
 import type { Cartridge } from './cartridge.js';
-export const PPU_STATE_SIZE = 0x4000 + 32 + 256 + 13 + 245760 + 61440 + 17 + 269;
+export const PPU_STATE_SIZE = 0x4000 + 32 + 256 + 13 + 245760 + 61440 + 17 + 269 + 42;
 // ponytail: fixed retention measured in scanlines; tune for chip/temperature models if needed.
 const IO_DECAY_SCANLINES = 3 * 262;
 
@@ -16,7 +16,11 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   private nextTile = 0; private nextAttr = 0; private nextLow = 0; private nextHigh = 0;
   private readonly spriteLine = new Uint8Array(256);
   private lineOverflow = false;
-  reset(): void { this.bgLow=this.bgHigh=this.attrLow=this.attrHigh=this.nextTile=this.nextAttr=this.nextLow=this.nextHigh=0; this.spriteLine.fill(0); this.lineOverflow=false; this.readDelay=0; this.oddFrame=false; this.suppressVblank=false; this.renderingEnabled=false; this.ioLatch=0; this.ioDecay.fill(0); this.ctrl=0; this.mask=0; this.status=0; this.backgroundOpaque.fill(0); this.nmiPending=false; this.sprite0Hit=false; this.spriteOverflow=false; this.scrollX=0; this.scrollY=0; this.oamAddr=0; this.addr=0; this.tempAddr=0; this.latch=false; this.data=0; this.scanline=0; this.dot=0; this.scanlineTicks=0; this.frame.fill(0xff000000); }
+  private readonly secondaryOam = new Uint8Array(32);
+  private readonly spriteIds = new Uint8Array(8);
+  private spriteCount = 0;
+  private spriteLow = 0;
+  reset(): void { this.secondaryOam.fill(255); this.spriteIds.fill(255); this.spriteCount=this.spriteLow=0; this.bgLow=this.bgHigh=this.attrLow=this.attrHigh=this.nextTile=this.nextAttr=this.nextLow=this.nextHigh=0; this.spriteLine.fill(0); this.lineOverflow=false; this.readDelay=0; this.oddFrame=false; this.suppressVblank=false; this.renderingEnabled=false; this.ioLatch=0; this.ioDecay.fill(0); this.ctrl=0; this.mask=0; this.status=0; this.backgroundOpaque.fill(0); this.nmiPending=false; this.sprite0Hit=false; this.spriteOverflow=false; this.scrollX=0; this.scrollY=0; this.oamAddr=0; this.addr=0; this.tempAddr=0; this.latch=false; this.data=0; this.scanline=0; this.dot=0; this.scanlineTicks=0; this.frame.fill(0xff000000); }
   readonly vram = new Uint8Array(0x4000); readonly backgroundOpaque = new Uint8Array(256*240); readonly palette = new Uint8Array(32); readonly oam = new Uint8Array(256); readonly frame = new Uint32Array(256*240);
   private ctrl=0; private mask=0; private scanlineTicks=0; private nmiPending=false; private sprite0Hit=false; private spriteOverflow=false; private scrollX=0; private scrollY=0; private status=0; private oamAddr=0; private addr=0; private latch=false; private data=0; scanline=0; dot=0;
   readRegister(reg: number): number {
@@ -97,34 +101,49 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     if (this.dot === 337 || this.dot === 339) this.readMemory(0x2000 | (this.addr & 0xfff));
   }
 
-  private renderSprites(y: number): void {
-    const height = this.ctrl & 32 ? 16 : 8;
+  private selectSprites(): void {
+    this.secondaryOam.fill(255); this.spriteIds.fill(255); this.spriteCount = 0;
     this.spriteLine.fill(0); this.lineOverflow = false;
-    let count = 0;
-    for (let i = 0; i < 256; i += 4) {
-      const spriteY: number = this.oam[i];
-      const row = y - spriteY - 1;
+    if (this.scanline === 261) return; // No sprite evaluation for scanline zero.
+    const height = this.ctrl & 32 ? 16 : 8;
+    // ponytail: select at dot 257; cycle-by-cycle secondary OAM evaluation and
+    // the overflow diagonal-scan bug remain to be implemented.
+    for (let i = 0; i < 64; i++) {
+      const y: number = this.oam[i * 4];
+      const row = this.scanline - y;
       if (row < 0 || row >= height) continue;
-      if (++count > 8) {
-        // ponytail: ninth in-range sprite; hardware overflow's diagonal OAM scan needs dot-level evaluation.
-        this.lineOverflow = true;
-        break;
-      }
-      const tile = this.oam[i + 1], attr = this.oam[i + 2], x = this.oam[i + 3];
-      const sy = attr & 0x80 ? height - 1 - row : row;
-      const table = height === 16 ? (tile & 1) * 0x1000 : (this.ctrl & 8 ? 0x1000 : 0);
-      const tileId = height === 16 ? (tile & 0xfe) + (sy >>> 3) : tile;
-      const base = table + tileId * 16 + (sy & 7);
-      const lo = this.readMemory(base), hi = this.readMemory(base + 8);
-      for (let px = 0; px < 8 && x + px < 256; px++) {
-        const dx = x + px;
-        if (this.spriteLine[dx]) continue;
-        const shift = attr & 0x40 ? px : 7 - px;
-        const color = ((lo >>> shift) & 1) | (((hi >>> shift) & 1) << 1);
-        if (!color) continue;
-        // OAM priority is resolved before background priority, even if this sprite is hidden.
-        this.spriteLine[dx] = (16 + (attr & 3) * 4 + color) | (attr & 0x20) | (i === 0 ? 0x40 : 0);
-      }
+      if (this.spriteCount === 8) { this.lineOverflow = true; break; }
+      const slot = this.spriteCount++;
+      for (let j = 0; j < 4; j++) this.secondaryOam[slot * 4 + j] = this.oam[i * 4 + j];
+      this.spriteIds[slot] = i;
+    }
+    if (this.lineOverflow) this.spriteOverflow = true;
+  }
+  private spriteAddress(slot: number): number {
+    const height = this.ctrl & 32 ? 16 : 8;
+    const tile: number = this.secondaryOam[slot * 4 + 1];
+    const attr: number = this.secondaryOam[slot * 4 + 2];
+    const y: number = this.secondaryOam[slot * 4];
+    const row = (this.scanline - y) & (height - 1);
+    const sy = attr & 0x80 ? height - 1 - row : row;
+    return height === 16 ? (tile & 1) * 0x1000 + ((tile & 0xfe) + (sy >>> 3)) * 16 + (sy & 7)
+      : (this.ctrl & 8 ? 0x1000 : 0) + tile * 16 + sy;
+  }
+  private clockSprites(): void {
+    if (this.dot < 257 || this.dot > 320) return;
+    this.oamAddr = 0;
+    const slot = (this.dot - 257) >>> 3, phase = (this.dot - 257) & 7;
+    if (phase === 0 || phase === 2) { this.readMemory(0x2000 | (this.addr & 0xfff)); return; }
+    if (phase === 4) { this.spriteLow = this.readMemory(this.spriteAddress(slot)); return; }
+    if (phase !== 6) return;
+    const hi = this.readMemory(this.spriteAddress(slot) + 8);
+    if (slot >= this.spriteCount || this.scanline === 261) return;
+    const x: number = this.secondaryOam[slot * 4 + 3], attr: number = this.secondaryOam[slot * 4 + 2];
+    for (let px = 0; px < 8 && x + px < 256; px++) {
+      const dx = x + px; if (this.spriteLine[dx]) continue;
+      const shift = attr & 0x40 ? px : 7 - px;
+      const color = ((this.spriteLow >>> shift) & 1) | (((hi >>> shift) & 1) << 1);
+      if (color) this.spriteLine[dx] = (16 + (attr & 3) * 4 + color) | (attr & 0x20) | (this.spriteIds[slot] === 0 ? 0x40 : 0);
     }
   }
   private renderPixel(x: number): void {
@@ -179,6 +198,8 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     out[0x4131] = this.scanlineTicks & 255;
     for (let i = 0; i < this.frame.length; i++) view.setUint32(0x4132 + i * 4, this.frame[i], true);
     out.set(this.backgroundOpaque, 0x4132 + 245760);
+    out.set(this.secondaryOam, PPU_STATE_SIZE - 323); out.set(this.spriteIds, PPU_STATE_SIZE - 291);
+    out[PPU_STATE_SIZE - 283] = this.spriteCount; out[PPU_STATE_SIZE - 282] = this.spriteLow;
     view.setUint16(PPU_STATE_SIZE - 281, this.bgLow, true); view.setUint16(PPU_STATE_SIZE - 279, this.bgHigh, true);
     view.setUint16(PPU_STATE_SIZE - 277, this.attrLow, true); view.setUint16(PPU_STATE_SIZE - 275, this.attrHigh, true);
     out[PPU_STATE_SIZE - 273] = this.nextTile; out[PPU_STATE_SIZE - 272] = this.nextAttr;
@@ -198,6 +219,11 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     if (state.length !== PPU_STATE_SIZE || state[PPU_STATE_SIZE-1] > 1 || state[PPU_STATE_SIZE-3] > 0x7f || state[PPU_STATE_SIZE-11] > 3 || state[PPU_STATE_SIZE-12] > 6 || state[PPU_STATE_SIZE-13] > 1) throw new RangeError('Invalid PPU state');
     for (let i = 0; i < 256; i++) {
       if (state[PPU_STATE_SIZE - 269 + i] > 127) throw new RangeError('Invalid PPU line state');
+    }
+    if (state[PPU_STATE_SIZE - 283] > 8) throw new RangeError('Invalid PPU sprite count');
+    for (let i = 0; i < 8; i++) {
+      const id = state[PPU_STATE_SIZE - 291 + i];
+      if (id > 63 && id !== 255) throw new RangeError('Invalid PPU sprite ID');
     }
     if (state[PPU_STATE_SIZE - 272] > 3) throw new RangeError('Invalid PPU attribute state');
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
@@ -222,7 +248,10 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     this.nmiPending = !!state[0x412c]; this.scrollX = state[0x412d]; this.scrollY = state[0x412e];
     this.sprite0Hit = !!state[0x412f]; this.spriteOverflow = !!state[0x4130]; this.scanlineTicks = state[0x4131];
     for (let i = 0; i < this.frame.length; i++) this.frame[i] = view.getUint32(0x4132 + i * 4, true);
-    this.backgroundOpaque.set(state.subarray(0x4132 + 245760, PPU_STATE_SIZE - 281));
+    this.backgroundOpaque.set(state.subarray(0x4132 + 245760, PPU_STATE_SIZE - 323));
+    this.secondaryOam.set(state.subarray(PPU_STATE_SIZE - 323, PPU_STATE_SIZE - 291));
+    this.spriteIds.set(state.subarray(PPU_STATE_SIZE - 291, PPU_STATE_SIZE - 283));
+    this.spriteCount = state[PPU_STATE_SIZE - 283]; this.spriteLow = state[PPU_STATE_SIZE - 282];
     this.bgLow = view.getUint16(PPU_STATE_SIZE - 281, true); this.bgHigh = view.getUint16(PPU_STATE_SIZE - 279, true);
     this.attrLow = view.getUint16(PPU_STATE_SIZE - 277, true); this.attrHigh = view.getUint16(PPU_STATE_SIZE - 275, true);
     this.nextTile = state[PPU_STATE_SIZE - 273]; this.nextAttr = state[PPU_STATE_SIZE - 272];
@@ -266,15 +295,14 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
         }
       }
       if (this.scanline < 240 && this.dot > 0 && this.dot <= 256) {
-        if (this.dot === 1) {
-          // ponytail: sprite patterns are still prepared per line; secondary OAM
-          // evaluation and sprite fetch slots remain to be implemented.
-          this.renderSprites(this.scanline);
-        }
         this.renderPixel(this.dot - 1);
-        if (this.dot === 256 && (this.mask & 16) && this.lineOverflow) this.spriteOverflow = true;
+
       }
-      if (mapperLine) this.clockBackground();
+      if (this.dot === 257 && (this.scanline < 240 || this.scanline === 261)) {
+        if (mapperLine) this.selectSprites();
+        else { this.spriteLine.fill(0); this.spriteCount = 0; }
+      }
+      if (mapperLine) { this.clockBackground(); this.clockSprites(); }
       // ponytail: libxnes-style scanline approximation; replace with qualified A12
       // edges when the PPU models individual pattern fetches and board revisions.
       if (this.dot === 280 && mapperLine) this.cartridge.clockScanline();
