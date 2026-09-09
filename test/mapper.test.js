@@ -190,3 +190,7 @@ test('PPU enables an immediate NMI when NMI output is turned on during VBlank', 
 test('PPU status reads preserve sprite hit and overflow bits', () => {
   const nes=new Nes(image(0,1,1)); nes.ppu.writeRegister(1,8); nes.ppu.step(262*341); nes.ppu.oam[0]=0; nes.ppu.oam[1]=0; nes.ppu.oam[2]=0; nes.ppu.oam[3]=0; nes.ppu.step(1); const first=nes.ppu.readRegister(2); const second=nes.ppu.readRegister(2); assert.equal(first&0x60,second&0x60);
 });
+
+test('PPU palette reads refresh the buffered data port', () => {
+  const nes=new Nes(image(0,1,1)); ppuWrite(nes,0x2f00,0x2a); address(nes,0x3f00); assert.equal(nes.read(0x2007),0); address(nes,0x2f00); assert.equal(nes.read(0x2007),0x2a);
+});
