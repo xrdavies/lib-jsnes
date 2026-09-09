@@ -90,5 +90,6 @@ export function cpuRegister(index: i32): i32 {
 }
 export function unknownOpcodeCount(): i32 { return cpu.unknownOpcodes; }
 export function ramRead(index:i32):i32{return index>=0&&index<RAM.length?RAM[index]:0;}
+export function chrRead(index:i32):i32{return cartridge.readChr(index);}
 export function framePointer():usize{return changetype<usize>(ppu.frame.buffer)+ppu.frame.byteOffset;}
 export function frameLength():i32{return ppu.frame.length;}
