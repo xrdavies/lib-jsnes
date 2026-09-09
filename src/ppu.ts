@@ -8,7 +8,43 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   readRegister(reg:number):number { switch(reg&7){case 2: {const v=this.status|(this.sprite0Hit?0x40:0)|(this.spriteOverflow?0x20:0); this.status&=0x7f; this.latch=false; return v;} case 4:return this.oam[this.oamAddr]; case 7:{const a=this.addr&0x3fff; const v=a>=0x3f00?this.palette[this.paletteIndex(a)]:this.data; if(a<0x3f00)this.data=this.readMemory(a); else this.data=this.readMemory((a-0x1000)&0x3fff); this.addr=(a+(this.ctrl&4?32:1))&0x3fff; return v;} default:return 0;} }
   writeRegister(reg:number,value:number):void {value&=255; switch(reg&7){case 0:{const was=this.ctrl;this.ctrl=value;if(!(was&0x80)&&(value&0x80)&&(this.status&0x80))this.nmiPending=true;break;}case 1:this.mask=value;break;case 3:this.oamAddr=value;break;case 4:this.oam[this.oamAddr++]=value;break;case 5:if(!this.latch)this.scrollX=value;else this.scrollY=value;this.latch=!this.latch;break;case 6:if(!this.latch)this.addr=(value&0x3f)<<8;else this.addr=(this.addr&0x3f00)|value;this.latch=!this.latch;break;case 7:{const a=this.addr&0x3fff; if(a>=0x3f00)this.palette[this.paletteIndex(a)]=value; else this.writeMemory(a,value); this.addr=(a+(this.ctrl&4?32:1))&0x3fff; break;}}}
   private renderBackground():void { if(!(this.mask&8)){this.backgroundOpaque.fill(0);this.frame.fill(0xff000000);return;} for(let y=0;y<240;y++)for(let x=0;x<256;x++){if(x<8&&!(this.mask&2)){this.backgroundOpaque[y*256+x]=0;this.frame[y*256+x]=0xff000000;continue;} const wx=x+this.scrollX, wy=y+this.scrollY, nx=Math.floor(wx/256)&1, ny=Math.floor(wy/240)&1, sx=((wx%256)+256)%256, sy=((wy%240)+240)%240, nt=((this.ctrl&3)+nx+ny*2)&3, tx=sx>>>3, ty=sy>>>3, table=0x2000+nt*0x400, tile=this.readMemory(table+ty*32+tx), attr=this.readMemory(table+0x3c0+(ty>>>2)*8+(tx>>>2)), shift=((ty&2)?4:0)+((tx&2)?2:0), palette=(attr>>shift)&3; const base=(this.ctrl&16?0x1000:0)+tile*16, row=sy&7, col=sx&7, lo=this.readMemory(base+row), hi=this.readMemory(base+row+8), c=((lo>>(7-col))&1)|(((hi>>(7-col))&1)<<1); this.backgroundOpaque[y*256+x]=c?1:0; this.frame[y*256+x]=0xff000000|this.color((palette*4+c)&63);}}
-  private renderSprites():void { if(!(this.mask&16))return; const tall=!!(this.ctrl&32); const counts=new Uint8Array(240); for(let i=0;i<256;i+=4){const y=this.oam[i]+1, tile=this.oam[i+1], attr=this.oam[i+2], x=this.oam[i+3], height=tall?16:8, table=tall?(tile&1)*0x1000:((this.ctrl&8)?0x1000:0), base=table+(tall?(tile&0xfe)*16:tile*16); for(let py=0;py<height;py++){if(y+py>=0&&y+py<240&&++counts[y+py]===9)this.spriteOverflow=true; const sy=(attr&0x80)?height-1-py:py, tbase=base+(sy>=8&&tall?16:0), row=sy&7, lo=this.readMemory(tbase+row), hi=this.readMemory(tbase+row+8); for(let px=0;px<8;px++){const sx=(attr&0x40)?px:7-px, c=((lo>>sx)&1)|(((hi>>sx)&1)<<1); if(!c)continue; const dx=x+px, dy=y+py; if(dx>=256||dy>=240||((dx<8)&&!(this.mask&4)))continue; if(i===0&&this.backgroundOpaque[dy*256+dx])this.sprite0Hit=true; if(attr&0x20&&this.frame[dy*256+dx]!==0xff000000)continue; const pal=16+((attr&3)<<2); this.frame[dy*256+dx]=0xff000000|this.color((pal+c)&63);}}}}
+  private renderSprites(): void {
+    if (!(this.mask & 16)) return;
+    const height = this.ctrl & 32 ? 16 : 8;
+    const occupied = new Uint8Array(256);
+    for (let y = 0; y < 240; y++) {
+      occupied.fill(0);
+      let count = 0;
+      for (let i = 0; i < 256; i += 4) {
+        const row = y - (this.oam[i] + 1);
+        if (row < 0 || row >= height) continue;
+        if (++count > 8) {
+          // ponytail: ninth in-range sprite; hardware overflow's diagonal OAM scan needs dot-level evaluation.
+          this.spriteOverflow = true;
+          break;
+        }
+        const tile = this.oam[i + 1], attr = this.oam[i + 2], x = this.oam[i + 3];
+        const sy = attr & 0x80 ? height - 1 - row : row;
+        const table = height === 16 ? (tile & 1) * 0x1000 : (this.ctrl & 8 ? 0x1000 : 0);
+        const tileId = height === 16 ? (tile & 0xfe) + (sy >>> 3) : tile;
+        const base = table + tileId * 16 + (sy & 7);
+        const lo = this.readMemory(base), hi = this.readMemory(base + 8);
+        for (let px = 0; px < 8 && x + px < 256; px++) {
+          const dx = x + px;
+          if (occupied[dx] || (dx < 8 && !(this.mask & 4))) continue;
+          const shift = attr & 0x40 ? px : 7 - px;
+          const color = ((lo >>> shift) & 1) | (((hi >>> shift) & 1) << 1);
+          if (!color) continue;
+          // OAM priority is resolved before background priority, even if this sprite is hidden.
+          occupied[dx] = 1;
+          const pixel = y * 256 + dx, background = this.backgroundOpaque[pixel];
+          if (i === 0 && dx < 255 && background) this.sprite0Hit = true;
+          if (background && (attr & 0x20)) continue;
+          this.frame[pixel] = 0xff000000 | this.color(16 + (attr & 3) * 4 + color);
+        }
+      }
+    }
+  }
   private color(index:number):number { let c=NES_PALETTE[this.palette[this.paletteIndex(index)]&63]; if(this.mask&1){const y=(((c>>>16)&255)*77+((c>>>8)&255)*150+(c&255)*29)>>8;c=(y<<16)|(y<<8)|y;} const e=(this.mask>>>5)&7; if(e){let r=c>>>16&255,g=c>>>8&255,b=c&255;if(e&1)r=Math.min(255,r+32);if(e&2)g=Math.min(255,g+32);if(e&4)b=Math.min(255,b+32);c=(r<<16)|(g<<8)|b;} return c; }
   private paletteIndex(address:number):number { const i=address&31; return (i&3)===0 ? (i&0x0f) : i; }
 
