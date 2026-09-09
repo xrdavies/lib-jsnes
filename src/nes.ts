@@ -19,6 +19,8 @@ export class Nes implements CpuBus {
   readonly apu = new Apu(this);
   private readonly ram = new Uint8Array(0x800);
   private cycles = 0;
+  // ponytail: retain bus charge indefinitely; analog decay needs a hardware model.
+  private openBus = 0;
   private frameCompleted = false;
   private readonly oamDma = new OamDma(this);
   private dmaStall = 0; private readonly rgba = new Uint8ClampedArray(FRAME_WIDTH*FRAME_HEIGHT*4);
@@ -39,17 +41,22 @@ export class Nes implements CpuBus {
 
   read(address: number): number {
     address &= 0xffff;
-    if (address < 0x2000) return this.ram[address & 0x7ff];
-    if (address < 0x4000) return this.ppu.readRegister(address);
-    if (address === 0x4015) return this.apu.readStatus();
-    if (address === 0x4016) return this.controller1.read();
-    if (address === 0x4017) return this.controller2.read();
-    return this.cartridge.readCpu(address);
+    // APU status is internal to the CPU and does not drive its external data bus.
+    if (address === 0x4015) return this.apu.readStatus() | (this.openBus & 0x20);
+    let value = this.openBus;
+    if (address < 0x2000) value = this.ram[address & 0x7ff];
+    else if (address < 0x4000) value = this.ppu.readRegister(address);
+    else if (address === 0x4016) value = this.controller1.read() | (this.openBus & 0xe0);
+    else if (address === 0x4017) value = this.controller2.read() | (this.openBus & 0xe0);
+    else if (address >= 0x4020) value = this.cartridge.readCpu(address, this.openBus);
+    this.openBus = value;
+    return value;
   }
 
   write(address: number, value: number, consecutive = false, oddCycle = !!(this.cpu.cycles & 1)): void {
     address &= 0xffff;
     value &= 255;
+    this.openBus = value;
     if (address < 0x2000) this.ram[address & 0x7ff] = value;
     else if (address < 0x4000) this.ppu.writeRegister(address, value);
     else if (address === 0x4014) {
@@ -95,7 +102,7 @@ export class Nes implements CpuBus {
   }
 
   readDma(address: number): number { return this.read(address); }
-  writeDma(value: number): void { this.ppu.writeRegister(4, value); }
+  writeDma(value: number): void { this.openBus = value; this.ppu.writeRegister(4, value); }
 
   readDmc(address: number): number {
     // ponytail: four-cycle fetch stall; bus-phase alignment and OAM overlap need cycle-level DMA.
@@ -110,7 +117,7 @@ export class Nes implements CpuBus {
   }
   saveState(): Uint8Array {
     const cart = this.cartridge.saveState(), ppu = this.ppu.saveState(), apu = this.apu.saveState();
-    const out = new Uint8Array(Cpu6502.STATE_SIZE + cart.length + ppu.length + apu.length + 8 + this.ram.length + OamDma.STATE_SIZE + 8);
+    const out = new Uint8Array(Cpu6502.STATE_SIZE + cart.length + ppu.length + apu.length + 8 + this.ram.length + 1 + OamDma.STATE_SIZE + 8);
     let offset = 0;
     out.set(this.cpu.save(), offset); offset += Cpu6502.STATE_SIZE;
     out.set(cart, offset); offset += cart.length;
@@ -119,6 +126,7 @@ export class Nes implements CpuBus {
     out.set(this.controller1.saveState(), offset); offset += 4;
     out.set(this.controller2.saveState(), offset); offset += 4;
     out.set(this.ram, offset); offset += this.ram.length;
+    out[offset++] = this.openBus;
     out.set(this.oamDma.saveState(), offset); offset += OamDma.STATE_SIZE;
     // Preserve pending DMC stall cycles.
     new DataView(out.buffer).setFloat64(offset, this.dmaStall, true);
@@ -126,7 +134,7 @@ export class Nes implements CpuBus {
   }
   loadState(state: Uint8Array): void {
     const cartSize = this.cartridge.stateSize, ppuSize = PPU_STATE_SIZE, apuSize = Apu.STATE_SIZE;
-    const size = Cpu6502.STATE_SIZE + cartSize + ppuSize + apuSize + 8 + this.ram.length + OamDma.STATE_SIZE + 8;
+    const size = Cpu6502.STATE_SIZE + cartSize + ppuSize + apuSize + 8 + this.ram.length + 1 + OamDma.STATE_SIZE + 8;
     if (state.length !== size) throw new RangeError('Invalid state size');
     state = new Uint8Array(state); // Validate and apply the same bytes, including shared-memory inputs.
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
@@ -156,6 +164,7 @@ export class Nes implements CpuBus {
     this.controller1.loadState(controller1);
     this.controller2.loadState(controller2);
     this.ram.set(state.subarray(offset, offset + this.ram.length));
+    this.openBus = state[offset + this.ram.length];
     this.oamDma.loadState(dmaState);
     this.dmaStall = dmaStall;
   }

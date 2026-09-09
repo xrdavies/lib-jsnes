@@ -54,8 +54,8 @@ test('MMC1 disable and MMC3 write protection do not block host persistence or ch
     const bytes = new Uint8Array(8192).fill(0x55); wasm.loadBatteryRam(bytes);
     assert.deepEqual(wasm.saveBatteryRam(), bytes);
     wasm.step(20); // Protected CPU write + two edge reads.
-    assert.equal(wasm.exports.ramRead(0), protect ? 0x55 : 0);
-    assert.equal(wasm.exports.ramRead(1), protect ? 0x55 : 0);
+    assert.equal(wasm.exports.ramRead(0), protect ? 0x55 : 0x60);
+    assert.equal(wasm.exports.ramRead(1), protect ? 0x55 : 0x7f);
     assert.deepEqual(wasm.saveBatteryRam(), bytes);
     wasm.step((mapper === 1 ? 30 : 6) + 14);
     assert.equal(wasm.exports.ramRead(0), 0x55); assert.equal(wasm.exports.ramRead(1), 0x55);

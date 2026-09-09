@@ -12,7 +12,8 @@ function rom(code) {
 }
 const readPair = offset => [0xad, 0x16, 0x40, 0x85, offset, 0xad, 0x17, 0x40, 0x85, offset + 16];
 const latch = [0xa9, 1, 0x8d, 0x16, 0x40, 0xa9, 0, 0x8d, 0x16, 0x40];
-const expected = mask => Array.from({ length: 10 }, (_, i) => i < 8 ? (mask >>> i) & 1 : 1);
+// Absolute reads leave the operand's high byte ($40) on the undriven bus bits.
+const expected = mask => Array.from({ length: 10 }, (_, i) => 0x40 | (i < 8 ? (mask >>> i) & 1 : 1));
 
 test('WASM CPU reads both controllers for every mask, with identical TypeScript results', async () => {
   const image = rom([...latch, ...Array.from({ length: 10 }, (_, i) => readPair(i)).flat()]);
@@ -38,7 +39,7 @@ test('WASM strobe tracks live A then freezes both masks; $4017 writes do not rel
   const core = await WasmCore.from(binary); core.loadRom(image); core.reset();
   core.setController(1, 0); core.setController(2, 1); core.step(6);
   core.setController(1, 1); core.setController(2, 0); core.step(14);
-  assert.equal(core.exports.ramRead(0), 1); assert.equal(core.exports.ramRead(16), 0);
+  assert.equal(core.exports.ramRead(0), 0x41); assert.equal(core.exports.ramRead(16), 0x40);
   core.setController(1, 0x55); core.setController(2, 0xaa); core.step(6);
   core.setController(1, 0); core.setController(2, 0); core.step(146);
   assert.deepEqual(Array.from({ length: 10 }, (_, i) => core.exports.ramRead(1 + i)), expected(0x55));
@@ -51,5 +52,5 @@ test('WASM rejects invalid controller ports and does not change valid input stat
   for (const player of [0, 3, 1.5, NaN]) assert.throws(() => core.setController(player, 0), /player/);
   assert.throws(() => core.exports.setController(3, 0));
   core.step(26);
-  assert.equal(core.exports.ramRead(0), 1);
+  assert.equal(core.exports.ramRead(0), 0x41);
 });

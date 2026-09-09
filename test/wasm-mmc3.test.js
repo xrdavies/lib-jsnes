@@ -149,8 +149,8 @@ test('MMC3 $A001 gates RAM reads and writes for every control byte in both build
     p.write(0xa001, 0x80); p.read(0x6000, 4); p.read(0x7fff, 5);
     const run = await pair(image(p, 0)); run.step(1000);
     const enabled = !!(control & 0x80), writable = enabled && !(control & 0x40);
-    run.ram([enabled ? 0x12 : 0, enabled ? 0x34 : 0,
-      enabled ? (writable ? 0x56 : 0x12) : 0, enabled ? (writable ? 0x78 : 0x34) : 0,
+    run.ram([enabled ? 0x12 : 0x60, enabled ? 0x34 : 0x7f,
+      enabled ? (writable ? 0x56 : 0x12) : 0x60, enabled ? (writable ? 0x78 : 0x34) : 0x7f,
       writable ? 0x56 : 0x12, writable ? 0x78 : 0x34]);
     run.js.write(0xa001, 0); // Re-disable only the JS side before reset.
     run.js.reset(); run.wasm.reset(); run.step(7);
@@ -171,7 +171,7 @@ test('MMC3 snapshot restores RAM protection independently of IRQ state', () => {
     nes.write(0xa001, 0x80); nes.write(0x6000, 0xff); nes.write(0xe000, 0);
     nes.loadState(saved);
     assert.equal(nes.cartridge.irqPending, pending);
-    assert.equal(nes.read(0x6000), control & 0x80 ? 0x5a : 0);
+    assert.equal(nes.read(0x6000), control & 0x80 ? 0x5a : pending ? 0 : control);
     nes.write(0x6000, 0x33); nes.write(0xa001, 0x80);
     assert.equal(nes.read(0x6000), control === 0x80 ? 0x33 : 0x5a);
     nes.write(0xa001, 0); nes.reset();

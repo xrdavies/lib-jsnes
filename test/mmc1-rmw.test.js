@@ -42,6 +42,7 @@ test('MMC1 ignores an RMW second write even when the first completes a serial tr
   assert.deepEqual([js.read(0), js.read(1)], [1, 2]);
   assert.deepEqual([0, 1].map(i => wasm.exports.ramRead(i)), [1, 2]);
   const final = js.saveState(); js.loadState(saved); js.step(100);
+  assert.deepEqual([js.read(0), js.read(1)], [1, 2]);
   assert.deepEqual(js.saveState(), final);
 });
 

@@ -60,10 +60,10 @@ export class Cartridge {
     this.ramDisabled = this.ramProtected = false;
   }
   private get ramEnabled(): boolean { return this.mapper == 4 ? !this.ramDisabled : this.mapper != 1 || (this.bank & 16) == 0; }
-  readCpu(address: i32): i32 {
+  readCpu(address: i32, openBus: i32 = 0): i32 {
     if (this.mapper == 225 && (address & 0xf800) == 0x5800) return this.extraRam[address & 3];
-    if (address < 0x6000 || this.prgBanks == 0) return 0;
-    if (address < 0x8000) return this.ramEnabled ? this.prgRam[address - 0x6000] : 0;
+    if (address < 0x6000 || this.prgBanks == 0) return openBus;
+    if (address < 0x8000) return this.ramEnabled ? this.prgRam[address - 0x6000] : openBus;
     if (this.mapper == 225) {
       const selected = address < 0xc000 ? this.bank : this.highBank;
       return this.rom[this.prgStart + (selected % this.prgBanks) * 0x4000 + (address & 0x3fff)];

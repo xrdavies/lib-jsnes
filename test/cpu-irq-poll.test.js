@@ -50,6 +50,7 @@ test('pending APU IRQ waits for the instruction after CLI, including across host
   assert.equal(js.read(0x10), 1); assert.equal(wasm.exports.ramRead(0x10), 1);
   assert.equal(js.read(0x1fc), 3); assert.equal(wasm.exports.ramRead(0x1fc), 3);
   const after = js.saveState(); js.loadState(saved); js.step(1);
+  assert.equal(js.read(0x10), 1); assert.equal(js.read(0x1fc), 3);
   assert.deepEqual(js.saveState(), after);
   assert.equal(wasm.cycleCount, js.cycleCount);
 });

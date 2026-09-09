@@ -14,9 +14,10 @@ const controller1 = new Controller(), controller2 = new Controller();
 let dmaStall: i32 = 0;
 let collectionCycles: i32 = 0;
 let frameCompleted: boolean = false;
+let openBus: i32 = 0;
 class Bus implements CpuBus, DmcBus, OamDmaBus {
   readDma(address: i32): i32 { return read(address); }
-  writeDma(value: i32): void { ppu.writeRegister(4, value); }
+  writeDma(value: i32): void { openBus = value; ppu.writeRegister(4, value); }
   readDmc(address: i32): i32 { dmaStall += 4; return read(address); }
   read(address: i32): i32 { return read(address); }
   write(address: i32, value: i32, consecutive: boolean, oddCycle: boolean): void { write(address, value, consecutive, oddCycle); }
@@ -24,15 +25,19 @@ class Bus implements CpuBus, DmcBus, OamDmaBus {
 const cpu = new Cpu6502(new Bus());
 function read(address: i32): i32 {
   address &= 0xffff;
-  if (address < 0x2000) return RAM[address & 0x7ff];
-  if (address < 0x4000) return ppu.readRegister(address);
-  if (address == 0x4015) return apu.readStatus();
-  if (address == 0x4016) return controller1.read();
-  if (address == 0x4017) return controller2.read();
-  return cartridge.readCpu(address);
+  if (address == 0x4015) return apu.readStatus() | (openBus & 0x20);
+  let value = openBus;
+  if (address < 0x2000) value = RAM[address & 0x7ff];
+  else if (address < 0x4000) value = ppu.readRegister(address);
+  else if (address == 0x4016) value = controller1.read() | (openBus & 0xe0);
+  else if (address == 0x4017) value = controller2.read() | (openBus & 0xe0);
+  else if (address >= 0x4020) value = cartridge.readCpu(address, openBus);
+  openBus = value;
+  return value;
 }
 function write(address: i32, value: i32, consecutive: boolean, oddCycle: boolean): void {
   address &= 0xffff; value &= 255;
+  openBus = value;
   if (address < 0x2000) RAM[address & 0x7ff] = value;
   else if (address < 0x4000) ppu.writeRegister(address, value);
   else if (address == 0x4014) {

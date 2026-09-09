@@ -79,7 +79,7 @@ test('WASM MMC1 CHR RAM follows bank mapping and PRG RAM survives disable and re
   p.ppuAddress(0); p.write(0x2007, 0xa5); p.ppuAddress(0x1000); p.write(0x2007, 0x5a);
   p.serial(0x8000, 0x1c); p.serial(0xa000, 1); p.serial(0xc000, 0);
   p.ppuRead(0, 2); p.ppuRead(0x1000, 3);
-  const { core } = await check(p, [0, 0x5a, 0x5a, 0xa5], 0);
+  const { core } = await check(p, [0x60, 0x5a, 0x5a, 0xa5], 0);
   core.reset(); core.step(7); assert.equal(core.exports.ramRead(4), 0x5a); assert.equal(core.exports.chrRead(0), 0xa5); assert.equal(core.exports.chrRead(0x1000), 0x5a);
 });
 

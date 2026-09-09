@@ -113,6 +113,18 @@ const sampleRate = nes.apu.sampleRate; // 44.1 kHz
 
 Controllers use `nes.setController(1, Button.A | Button.Start)` with the exported `Button` constants. `saveState()` and `loadState()` preserve CPU, mapper, PPU, audio, controller, and RAM state. Use `saveBatteryRam()` and `loadBatteryRam()` to persist cartridge battery RAM in browser storage or Node.
 
+CPU reads and writes retain the external data-bus byte in both cores. Unmapped
+reads and disabled MMC1/MMC3 RAM return that byte. Standard NES controller ports
+retain bits 5–7, so ordinary absolute reads return `$40` or `$41`; indexed dummy
+reads can leave different upper bits. Read bit 0 for the serial button value.
+`$4015` retains bit 5 and leaves the external bus unchanged. The PPU's I/O latch
+is separate. Host `Nes.read()` and `write()` are bus operations with these side
+effects; WASM diagnostic `ramRead()` inspects RAM without a bus access. Tests cover
+operand/dummy reads, both controller ports, disabled RAM and OAM DMA transfers.
+This models the standard NES ports; Famicom expansion devices and analog bus
+decay are not modeled. Full `Nes` snapshots add one bus byte immediately before
+the OAM DMA section; previous full-system layouts are rejected.
+
 Both cores preserve A/X/Y on `reset()`, following the shared CPU reset behavior.
 They reset PC from the cartridge vector, SP to `$FD`, status to `$24`, cycle count
 to zero and clear JAM. A new `Nes` instance and a successful WASM `loadRom()` start
@@ -160,8 +172,8 @@ OAM DMA now alternates one CPU-bus read and one OAMDATA write per CPU cycle,
 after one or two alignment cycles (513/514 cycles total). Source bytes are read
 when their transfer cycle occurs; OAM fills progressively instead of changing
 immediately on `$4014`. The source page, byte index, read latch, alignment count
-and read/write phase are stored in a six-byte snapshot section after CPU RAM,
-followed by the existing eight-byte DMC stall counter. Earlier full-system
+and read/write phase are stored in a six-byte snapshot section after CPU RAM and
+the CPU bus byte, followed by the existing eight-byte DMC stall counter. Earlier full-system
 snapshots lacking the new section are rejected. Tests restore every transfer
 phase, change source memory mid-transfer and check CPU-visible OAM in both builds.
 Repeated host writes before stepping replace the pending page rather than queue
@@ -362,7 +374,7 @@ the PRG mode. Write data does not affect these selectors. Reset selects PRG bank
 implement four 4-bit registers mirrored across `$5800–$5FFF`, addressed by the low
 two address bits, as described by the
 [FCEUX mapper 225 implementation](https://github.com/TASEmulators/fceux/blob/master/src/boards/225.cpp).
-Unmapped expansion reads still return zero rather than CPU open-bus data.
+Unmapped expansion reads retain CPU open-bus data.
 Tests sweep every selector address through the CPU, including outer banks and
 small-ROM wrapping, and check nibble-register aliases, reset and PPU output.
 TypeScript mapper-225 snapshots append four register bytes after any CHR RAM;
@@ -397,7 +409,7 @@ WASM MMC3 implements both PRG/CHR bank modes, CHR RAM, mapper mirroring and
 four-screen boards, plus the same coarse scanline IRQ latch as TypeScript.
 CPU-driven tests compare memory, rendered frames, PCM, and interrupt handling.
 Both cores implement `$A001` PRG RAM enable (bit 7) and write protection (bit 6).
-Disabled RAM reads currently return zero rather than CPU open-bus data. Reset
+Disabled RAM reads retain CPU open-bus data. Reset
 deterministically enables writable RAM without discarding its contents; this is
 an emulator initialization choice, not a guarantee about hardware power-on state.
 The TypeScript cartridge snapshot packs RAM-disable/write-protect into bits 1/2

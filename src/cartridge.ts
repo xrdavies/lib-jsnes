@@ -57,11 +57,11 @@ export class Cartridge {
     if (this.rom.mapper === 225) this.gxBank = 1;
   }
 
-  readCpu(address: number): number {
+  readCpu(address: number, openBus = 0): number {
     address &= 0xffff;
     if (this.rom.mapper === 225 && (address & 0xf800) === 0x5800) return this.extraRam[address & 3];
-    if (address < 0x6000) return 0;
-    if (address < 0x8000) return this.ramEnabled ? this.prgRam[address - 0x6000] : 0;
+    if (address < 0x6000) return openBus;
+    if (address < 0x8000) return this.ramEnabled ? this.prgRam[address - 0x6000] : openBus;
     const slot = (address - 0x8000) >>> 14;
     const count = this.rom.prgRom.length / 0x4000;
     let bank = slot;

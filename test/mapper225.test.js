@@ -76,7 +76,7 @@ test('mapper 225 nibble registers alias across $5800–$5FFF and survive reset',
   for (let i = 0; i < read.length; i++) wasm.exports.romWrite(16 + 0x100 + i, read[i]);
   wasm.reset(); wasm.step(14);
   assert.equal(wasm.exports.ramRead(4), 15);
-  assert.equal(wasm.exports.ramRead(5), 0);
+  assert.equal(wasm.exports.ramRead(5), 0x50, 'unmapped read retains the address high byte');
   wasm.loadRom(bytes); wasm.reset();
   for (let i = 0; i < read.length; i++) wasm.exports.romWrite(16 + 0x100 + i, read[i]);
   wasm.step(14); assert.equal(wasm.exports.ramRead(4), 0);
@@ -87,8 +87,9 @@ test('mapper 225 snapshots restore both aligned and repeated windows; write data
   for (const address of [0x8041, 0x9041, 0xc041, 0xd041, 0xffff]) {
     nes.write(address, 0);
     const state = nes.saveState(), pair = [nes.read(0x8000), nes.read(0xc000)];
+    const mapping = nes.cartridge.saveState();
     nes.write(address, 255);
-    assert.deepEqual(nes.saveState(), state);
+    assert.deepEqual(nes.cartridge.saveState(), mapping);
     nes.write(0x8000, 0); nes.loadState(state);
     assert.deepEqual([nes.read(0x8000), nes.read(0xc000)], pair);
     assert.equal(nes.cartridge.readChr(0), 0x80 + (address & 63) + (address & 0x4000 ? 64 : 0));
