@@ -25,6 +25,8 @@ export class Nes implements CpuBus {
   private nmiPending = false;
   private nmiPolled = false;
   private irqPolled = false;
+  private nmiEarlier = false;
+  private irqEarlier = false;
   private readonly oamDma = new OamDma(this);
   private dmaStall = 0; private readonly rgba = new Uint8ClampedArray(FRAME_WIDTH*FRAME_HEIGHT*4);
 
@@ -78,7 +80,7 @@ export class Nes implements CpuBus {
     } else this.cartridge.writeCpu(address, value, consecutive);
     if (cpuCycle) this.endCpuCycle();
   }
-  reset(){this.nmiPending=this.nmiPolled=this.irqPolled=false;this.ram.fill(0); this.cartridge.reset(); this.apu.reset(); this.oamDma.reset(); this.dmaStall=0; this.ppu.reset(); this.cpu.reset(); this.cycles=0;}
+  reset(){this.nmiPending=this.nmiPolled=this.irqPolled=this.nmiEarlier=this.irqEarlier=false;this.ram.fill(0); this.cartridge.reset(); this.apu.reset(); this.oamDma.reset(); this.dmaStall=0; this.ppu.reset(); this.cpu.reset(); this.cycles=0;}
   step(cycles = 1): void {
     if (!Number.isInteger(cycles) || cycles < 1) throw new RangeError('cycles must be a positive integer');
     // The final instruction can overshoot by 7 cycles (8-cycle instruction with
@@ -102,10 +104,10 @@ export class Nes implements CpuBus {
       const used = this.cpu.step();
       if (used > this.cpu.busCycles) this.clockDevices(used - this.cpu.busCycles);
       this.ppu.consumeScanlines();
-      if (this.nmiPolled) {
+      if (this.cpu.interruptPollEarly ? this.nmiEarlier : this.nmiPolled) {
         this.nmiPending = false;
         if (this.cpu.nmi()) this.cpu.cycles += 7;
-      } else if (this.irqPolled && this.cpu.irqAfterInstruction()) {
+      } else if (this.irqPolled && (!this.cpu.interruptPollEarly || this.irqEarlier) && this.cpu.irqAfterInstruction()) {
         this.cpu.cycles += 7;
       }
     }
@@ -128,6 +130,7 @@ export class Nes implements CpuBus {
   private clockPpu(dots: number): void { this.frameCompleted = this.ppu.step(dots) || this.frameCompleted; }
   private beginCpuCycle(): void {
     // Poll the previous cycle, then place the access before the final PPU dot.
+    this.nmiEarlier = this.nmiPolled; this.irqEarlier = this.irqPolled;
     this.nmiPolled = this.nmiPending;
     this.irqPolled = this.apu.irqPending || this.cartridge.irqPending;
     this.clockPpu(2); this.apu.step(1);
@@ -186,7 +189,7 @@ export class Nes implements CpuBus {
     this.ram.set(state.subarray(offset, offset + this.ram.length));
     this.openBus = state[offset + this.ram.length];
     this.nmiPending = !!state[offset + this.ram.length + 1];
-    this.nmiPolled = this.irqPolled = false;
+    this.nmiPolled = this.irqPolled = this.nmiEarlier = this.irqEarlier = false;
     this.oamDma.loadState(dmaState);
     this.dmaStall = dmaStall;
   }

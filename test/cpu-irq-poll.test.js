@@ -35,6 +35,51 @@ function rom(code) {
 }
 const binary = await readFile(new URL('../dist-wasm/lib-jsnes.wasm', import.meta.url));
 
+test('a same-page taken branch delays an IRQ that a three-cycle JMP would accept', async () => {
+  for (const branch of [false, true]) {
+    const code = [0x58, ...Array((29826 - 2) / 2).fill(0xea)];
+    const next = 0x8000 + code.length + (branch ? 2 : 3);
+    code.push(...(branch ? [0x90, 0] : [0x4c, next & 255, next >>> 8]), 0xe6, 0x10);
+    const bytes = rom(code), js = new Nes(bytes), wasm = await WasmCore.from(binary);
+    js.reset(); wasm.loadRom(bytes); wasm.reset(); js.step(29826); wasm.step(29826);
+    js.step(1); wasm.step(1); // IRQ asserts during the operand cycle at 29828.
+    assert.equal(js.cpu.pc, branch ? next : 0xf000);
+    assert.equal(wasm.programCounter, js.cpu.pc);
+    assert.equal(js.read(0x10), 0); assert.equal(wasm.exports.ramRead(0x10), 0);
+    if (branch) {
+      js.step(1); wasm.step(1);
+      assert.equal(js.cpu.pc, 0xf000); assert.equal(wasm.programCounter, 0xf000);
+      assert.equal(js.read(0x10), 1); assert.equal(wasm.exports.ramRead(0x10), 1);
+    }
+    assert.equal(wasm.cycleCount, js.cycleCount);
+    assert.deepEqual(wasm.audioSamples(), js.audioSamples());
+  }
+});
+
+test('a same-page branch also retains a late NMI until the next instruction, including snapshot replay', () => {
+  const js = new Nes(rom([0x90, 0, 0xe6, 0x10])); js.reset();
+  js.write(0x2000, 0x80); js.ppu.step(241 * 341 - 4);
+  js.step(1); assert.equal(js.cpu.pc, 0x8002);
+  const saved = js.saveState();
+  js.step(1); assert.equal(js.read(0x10), 1); assert.equal(js.cpu.pc, 0xf000);
+  const after = js.saveState();
+  js.loadState(saved); js.step(1); assert.equal(js.read(0x10), 1);
+  assert.deepEqual(js.saveState(), after);
+});
+
+test('the earlier branch sample cannot revive an IRQ cleared before the normal poll', () => {
+  const nes = new Nes(rom([0x90, 0])); nes.reset(); nes.cpu.p &= ~4;
+  nes.apu.step(29828);
+  const read = nes.read.bind(nes);
+  nes.read = (address, tick) => {
+    const value = read(address, tick);
+    if (address === 0x8001) nes.apu.readStatus();
+    return value;
+  };
+  nes.step(1);
+  assert.equal(nes.cpu.pc, 0x8002); assert.equal(nes.apu.irqPending, false);
+});
+
 test('pending APU IRQ waits for the instruction after CLI, including across host calls and snapshots', async () => {
   const bytes = rom([0x4c, 0, 0x80]);
   bytes.set([0x58, 0xe6, 0x10, 0x4c, 3, 0x81], 16 + 256);

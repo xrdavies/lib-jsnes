@@ -24,9 +24,12 @@ test('all branch opcodes read the discarded fetch and provisional address only w
       if (taken !== set) cpu.p &= ~flag;
       const flags = cpu.p;
       assert.equal(cpu.step(), taken ? 2 + extra.length : 2);
+      assert.equal(cpu.interruptPollEarly, taken && extra.length === 1);
       assert.deepEqual(reads, [start, (start + 1) & 65535, ...(taken ? extra : [])]);
       assert.equal(cpu.pc, taken ? target : (start + 2) & 65535);
       assert.deepEqual([cpu.a, cpu.x, cpu.y, cpu.p, cpu.sp], [0x43, 0x21, 0x87, flags, 0xfd]);
+      memory[cpu.pc] = 0xea; cpu.step();
+      assert.equal(cpu.interruptPollEarly, false, 'the following instruction uses the normal poll');
     }
   }
 });
