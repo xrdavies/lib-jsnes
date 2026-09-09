@@ -191,8 +191,8 @@ AssemblyScript. The existing `save()`/`load()` number-array API remains availabl
 in JavaScript. Byte views with offsets (including Node Buffers) are supported;
 invalid sizes, flag bits and cycle counts are rejected before changing CPU state.
 An isolated WASM test build exercises the actual shared serializer across
-long-running cycle counts, JAM/NMI flags and subsequent execution. This is the
-first component of WASM snapshot support. Controller and both DMA serializers
+long-running cycle counts, JAM/NMI flags and subsequent execution. Controller and
+both DMA serializers
 now also compile from the shared sources, preserving the existing four-byte
 controller, six-byte OAM DMA and three-byte DMC DMA layouts. The isolated test
 build restores controller shift positions and every DMA phase, then checks serial
@@ -636,8 +636,8 @@ PPUSCROLL updates temporary coarse/fine scroll fields. Both ports share the
 write toggle cleared by reading PPUSTATUS. PPUDATA increments the active address
 without overwriting the temporary one. Tests cover half-written addresses,
 interleaved register writes, mirrors and snapshot replay in both builds.
-PPU snapshots add two temporary-address bytes before the I/O latch and parity
-bytes; older PPU/system snapshots are rejected. The renderer still uses its
+PPU snapshots include temporary-address, read-recovery, decay and parity bytes;
+older PPU/system snapshots are rejected. The renderer still uses its
 scanline scroll model; timed v/t copies and the full per-dot scroll pipeline
 remain unimplemented.
 
@@ -667,8 +667,8 @@ therefore alternate between 89,342 and 89,341 PPU clocks during rendering; with
 both layers disabled they remain 89,342 clocks. Parity advances even while
 rendering is disabled, and reset starts on an even frame. Tests cover mask changes
 at the boundary, single-dot versus batched advancement, snapshots and the 200th
-VBlank deadline in both builds. PPU snapshots append a parity byte after the I/O
-latch; previous PPU and full-system snapshots lacking that byte are rejected.
+VBlank deadline in both builds. Previous PPU and full-system snapshots lacking
+the current timing tail are rejected.
 `runFrame()` without an argument now finishes the current PPU frame, accounting
 for odd-frame skipping. From a partial frame it draws only the remaining lines;
 from a frame boundary it runs the next frame. CPU instructions and interrupt entry
