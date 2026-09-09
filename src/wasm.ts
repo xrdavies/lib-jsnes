@@ -8,6 +8,7 @@ export interface WasmExports {
   step(cycles: number): void;
   cycleCount(): number;
   programCounter(): number;
+  ramRead(index: number): number;
   framePointer(): number;
   frameLength(): number;
 }
@@ -31,7 +32,10 @@ export class WasmCore {
 
   loadRom(rom: Uint8Array): void {
     if (rom.length > WasmCore.MAX_ROM_SIZE) throw new RangeError('ROM exceeds WASM capacity');
-    parseRom(rom);
+    const image = parseRom(rom);
+    if ((rom[7] & 0x0c) !== 0) throw new Error('WASM requires iNES 1.0');
+    if (image.mapper !== 0 && image.mapper !== 2) throw new Error(`Unsupported WASM mapper: ${image.mapper}`);
+    if (image.mapper === 0 && image.prgRom.length > 0x8000) throw new Error('Invalid NROM PRG size');
     for (let i = 0; i < rom.length; i++) this.exports.romWrite(i, rom[i]);
     this.exports.loadRom(rom.length);
   }

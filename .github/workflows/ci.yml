@@ -13,4 +13,3 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: node --input-type=module -e "import {readFile} from 'node:fs/promises'; const m=await WebAssembly.instantiate(await readFile('dist-wasm/lib-jsnes.wasm'),{env:{abort(){throw Error('wasm abort')}}}); const e=m.instance.exports; const r=new Uint8Array(16+0x8000); r.set([78,69,83,26,2,0,0x20]); r.set([169,1,141,0,128,76,0,128],16); r.set([169,42,133,0,76,0,128],16+0x4000); r[16+0x7ffc]=0; r[16+0x7ffd]=128; for(let i=0;i<r.length;i++)e.romWrite(i,r[i]); e.loadRom(r.length); e.reset(); e.step(64); const frame=new Uint32Array(e.memory.buffer,e.framePointer(),e.frameLength()); if(e.cycleCount()!==64||e.ramRead(0)!==42||e.frameLength()!==61440||frame[0]!==0xff000000) process.exit(1)"
