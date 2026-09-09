@@ -52,11 +52,11 @@ model. On the same Node/macOS arm64 setup, a before/after synthetic run measured
 about 0.97 to 0.86 ms/frame in TypeScript and 2.48 to 2.31 ms/frame in WASM.
 Boundary tests compare batch advances against individual dots, including VBlank,
 NMI, scanline counts and multiple frame wraps. This optimization preserves the
-existing frame-batched renderer; it does not add raster-effect accuracy.
+event ordering; the renderer now completes individual scanlines as described below.
 
 Profiling also identified repeated per-pixel color conversion and per-cycle APU
 frame-sequencer dispatch. The renderer now builds its 32 packed colors once per
-frame, and the APU dispatches only at its next sequencer event while continuing
+scanline, and the APU dispatches only at its next sequencer event while continuing
 to clock oscillators every CPU cycle. Recent synthetic Node runs on this machine measured roughly 0.67 ms/frame in
 TypeScript and 0.55 ms/frame in WASM. The current optimized binary is about 40 kB;
 exact values vary with Node and host hardware. Both derived caches are rebuilt after their inputs change or snapshots
@@ -393,9 +393,24 @@ instructions and CPU jam behavior remain outside this coverage.
 
 Synthetic ROMs compare complete frames between the two builds and assert known
 background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.
-WASM uses the same frame-batched renderer as TypeScript: raster effects, exact
-sprite evaluation, and per-bus-cycle PPU timing remain incomplete. Frame views
+WASM uses the same scanline renderer as TypeScript: within-line raster effects,
+exact sprite evaluation, and per-bus-cycle PPU timing remain incomplete. Frame views
 use packed `0xAARRGGBB` pixels; they are not RGBA byte views for `ImageData`.
+Each visible line is drawn at dot 256 using the current scroll, nametables,
+pattern banks, palette, mask and OAM. Later register writes affect subsequent
+lines and leave completed lines intact, allowing vertical splits and mapper IRQ
+bank changes within a frame. The visible image is complete before VBlank begins.
+Sprite-zero hit and overflow are set during the relevant line's rendering and
+cleared at pre-render dot 1. This is still a line-level approximation: writes
+within a line apply to that whole line, sprite-hit timing is at dot 256, and the
+PPU does not yet implement the hardware's per-dot fetch/scroll pipeline.
+Tests cover mid-frame palette, scroll, mask and CHR changes, partial-frame
+snapshot replay, status timing and CPU-driven split-frame parity in WASM.
+The frame view updates progressively as the PPU advances; hosts should display it
+after their frame step. Snapshot size is unchanged; completed rows are saved
+alongside the current PPU position. Palette and sprite scratch buffers are rebuilt
+for each line, so they do not need separate serialization.
+
 PPUMASK grayscale masks palette codes with `$30` for rendering and palette-port
 reads, preserving the stored colors for later color output. Tests cover all 64
 palette codes, background/sprite output, and WASM parity. Color emphasis and

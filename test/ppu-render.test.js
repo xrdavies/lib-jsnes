@@ -21,7 +21,10 @@ function sprite(nes, id, x, y, tile = 1, attr = 0) {
 }
 function render(nes, mask = 0x1e) {
   nes.ppu.writeRegister(1, mask);
-  nes.ppu.step(262 * 341);
+  // Inspect the completed visible frame during VBlank, before pre-render clears flags.
+  const position = nes.ppu.scanline * 341 + nes.ppu.dot;
+  const untilVblank = (241 * 341 + 1 - position + 262 * 341) % (262 * 341);
+  nes.ppu.step(untilVblank || 262 * 341);
 }
 const rgb = index => (0xff000000 | NES_PALETTE[index]) >>> 0;
 const pixel = (nes, x, y) => nes.frame[y * 256 + x];

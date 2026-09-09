@@ -23,9 +23,10 @@ test('CPU writes to every mirrored PPU register refresh the I/O latch in both co
     js.reset(); wasm.loadRom(bytes); wasm.reset();
     for (let value = 0; value < 256; value++) {
       js.step(27); wasm.step(27);
-      const expected = [value, value & 31, value & 31];
-      assert.deepEqual([0, 1, 2].map(a => js.read(a)), expected, `${reg}:${value}`);
-      assert.deepEqual([0, 1, 2].map(a => wasm.exports.ramRead(a)), expected, `${reg}:${value}`);
+      assert.equal(js.read(0), value);
+      assert.equal(js.read(1) & 31, value & 31);
+      assert.equal(js.read(2), js.read(1), 'write-only read retains status flags in latch');
+      assert.deepEqual([0, 1, 2].map(a => wasm.exports.ramRead(a)), [0, 1, 2].map(a => js.read(a)), `${reg}:${value}`);
     }
   }
 });
