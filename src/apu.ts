@@ -123,6 +123,7 @@ class Noise {
 export class Apu {
   static readonly STATE_SIZE = 62;
   readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(1),new Pulse(0)]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private mode5=false; private frameIrq=false; private irqInhibit=false; private samples:number[]=[];
+  get irqPending(): boolean { return this.frameIrq; }
   write(address:number,value:number):void {
     value&=255;
     if(address>=0x4000&&address<0x4008)this.pulse[address<0x4004?0:1].write(address&3,value);
