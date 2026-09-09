@@ -104,7 +104,9 @@
     const buffer = audioContext.createBuffer(1, samples.length, nes.sampleRate ?? nes.apu.sampleRate);
     const channel = buffer.getChannelData(0);
     for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
-    audioAt = Math.max(audioAt, audioContext.currentTime + 0.02);
+    const now = audioContext.currentTime;
+    // ponytail: drop excessive backlog instead of growing latency forever.
+    audioAt = audioAt < now || audioAt > now + 0.2 ? now + 0.02 : audioAt;
     const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioGain); source.start(audioAt);
     audioAt += buffer.duration;
   }
