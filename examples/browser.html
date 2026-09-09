@@ -8,12 +8,13 @@
 </style>
 <h1>lib-jsnes</h1>
 <p><label>NES ROM <input id="rom" type="file" accept=".nes"></label>
+<label><input id="wasm" type="checkbox" checked> WASM</label>
 <button id="pause" type="button" disabled>Pause</button></p>
 <canvas id="screen" width="256" height="240"></canvas>
 <p id="status" role="status">Choose a ROM.</p>
 <script type="module">
-  import { Nes } from '../dist/index.js';
-  const input = document.querySelector('#rom'), pause = document.querySelector('#pause'), canvas = document.querySelector('#screen');
+  import { Nes, WasmCore } from '../dist/index.js';
+  const input = document.querySelector('#rom'), wasmInput = document.querySelector('#wasm'), pause = document.querySelector('#pause'), canvas = document.querySelector('#screen');
   const context = canvas.getContext('2d'), status = document.querySelector('#status');
   let loop = 0, paused = false, last = 0, elapsed = 0, nes;
   const image = context.createImageData(256, 240);
@@ -21,7 +22,11 @@
     const file = input.files[0]; if (!file) return;
     const generation = ++loop; paused = false; pause.disabled = true; status.textContent = 'Loading…';
     try {
-      const candidate = new Nes(new Uint8Array(await file.arrayBuffer())); candidate.reset();
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const candidate = wasmInput.checked
+        ? await WasmCore.from(fetch('../dist-wasm/lib-jsnes.wasm')).then(core => { core.loadRom(bytes); core.reset(); return core; })
+        : new Nes(bytes);
+      if (!wasmInput.checked) candidate.reset();
       if (generation !== loop) return;
       nes = candidate; pause.disabled = false; last = performance.now(); elapsed = 0;
       requestAnimationFrame(frame);
