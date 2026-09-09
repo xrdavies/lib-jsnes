@@ -26,3 +26,20 @@ test('WasmCore rejects invalid cycle budgets like the JavaScript core', async ()
   const rom = new Uint8Array(16 + 0x4000); rom.set([78,69,83,26,1,0]); rom.set([0xea], 16); rom[16 + 0x3ffc] = 0; rom[16 + 0x3ffd] = 0x80;
   core.loadRom(rom); core.reset(); core.step(1); assert.equal(core.cycleCount, 2);
 });
+
+test('WasmCore rejects cycle budgets that would wrap at the i32 ABI before changing state', async () => {
+  const core = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
+  const rom = new Uint8Array(16 + 0x4000);
+  rom.set([78, 69, 83, 26, 1, 0]); rom.set([0xea, 0x4c, 0, 0x80], 16);
+  rom[16 + 0x3ffd] = 0x80;
+  core.loadRom(rom); core.reset();
+  for (const cycles of [2 ** 31, 2 ** 32, 2 ** 32 + 1, Number.MAX_SAFE_INTEGER, 2 ** 53]) {
+    assert.throws(() => core.step(cycles), /must not exceed 2147483647/);
+    assert.throws(() => core.runFrame(cycles), /must not exceed 2147483647/);
+    assert.equal(core.cycleCount, 0);
+    assert.equal(core.programCounter, 0x8000);
+  }
+  assert.equal(core.audioSamples().length, 0);
+  core.step(1);
+  assert.equal(core.cycleCount, 2);
+});

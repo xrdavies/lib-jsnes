@@ -81,6 +81,7 @@ export class WasmCore {
   }
   step(cycles: number): void {
     if (!Number.isInteger(cycles) || cycles < 1) throw new RangeError('cycles must be a positive integer');
+    if (cycles > 0x7fffffff) throw new RangeError('cycles must not exceed 2147483647 per WASM step');
     this.exports.step(cycles);
   }
   runFrame(cycles = WasmCore.FRAME_CYCLES): Uint32Array { this.step(cycles); return this.frame(); }

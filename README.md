@@ -171,6 +171,13 @@ The CPU advances the APU after each instruction, DMA stall, and interrupt entry.
 Audio register changes and status reads therefore take effect within a host
 `step()` call. Timing within individual CPU instructions is still approximate.
 
+`WasmCore.step(cycles)` and `runFrame(cycles)` accept integer budgets from 1 to
+2,147,483,647 per call. Larger values are rejected before entering WASM, preventing
+the signed 32-bit ABI from silently truncating them. Split longer runs into
+multiple calls; the cumulative cycle count remains a JavaScript number rather
+than a 32-bit counter. Raw callers of `exports.step` must enforce this bound
+before crossing the ABI, where the original JavaScript value is no longer available.
+
 ## Cartridge support
 
 The current mapper layer supports NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 bank switching (4), AxROM (7), mapper 15, mapper 79, mapper 87, mapper 113, mapper 140, mapper 177, mapper 225, mapper 241, and GxROM (66). MMC3 scanline IRQ counting is available; advanced mapper variants and exact edge timing remain in progress.
