@@ -401,6 +401,9 @@ Passing a valid but unrelated WebAssembly module fails with a clear ABI error
 before any ROM or emulator state is created. Use a binary produced by the matching
 `build:wasm` script; older binaries without `romAllocate` are intentionally
 rejected.
+The validation covers every public typed-wrapper operation, including controller,
+audio, CPU diagnostics, frame, CHR and battery-RAM exports, so a partially
+compatible module fails at construction rather than during a later call.
 
 `setController(player, mask)` accepts player 1 or 2 and the same `Button` masks
 as `Nes`. The CPU reads the shared serial controller implementation at `$4016`
