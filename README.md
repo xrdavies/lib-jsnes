@@ -351,6 +351,14 @@ eight branch opcodes, forward/backward crossings and 16-bit wrap, with a real
 PPUSTATUS side-effect check and WASM cycle/PC regression coverage. Devices still
 advance after each instruction, so this does not establish cycle-exact bus timing.
 
+Absolute-X, absolute-Y and indirect-Y stores and read-modify-write instructions
+also perform the mandatory provisional-address read, even without a page crossing.
+The address combines the original high byte with the indexed low byte. Their
+cycle counts remain fixed; indexed read instructions retain their conditional
+page-cross penalty. Tests check access order for all implemented instructions
+using these write modes, including 16-bit wrap, and verify PPUSTATUS/APU status
+side effects through CPU-driven programs in both builds.
+
 The shared CPU also implements ALR (`$4B`), ARR (`$6B`) and AXS (`$CB`) immediate
 instructions, in addition to ANC (`$0B/$2B`) and the SBC alias (`$EB`). They consume
 the operand and take two cycles. ARR sets carry from result bit 6 and overflow

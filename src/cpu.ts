@@ -308,8 +308,10 @@ export class Cpu6502 {
     private abs() { const lo = this.fetch(), hi = this.fetch(); return lo | (hi << 8); }
     private indexed(base: number, index: number, penalty: boolean): number {
         const address = (base + index) & 0xffff;
-        if (penalty && (base & 0xff00) !== (address & 0xff00)) {
-            this.pageCycles++;
+        // Stores and RMW instructions always read the provisional address; reads
+        // do so only when correcting the high byte after a page crossing.
+        if (!penalty || (base & 0xff00) !== (address & 0xff00)) {
+            if (penalty) this.pageCycles++;
             this.bus.read((base & 0xff00) | (address & 255));
         }
         return address;
