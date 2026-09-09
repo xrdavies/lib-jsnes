@@ -20,7 +20,7 @@ for (const parity of [0, 1]) test(`snapshot retains remaining OAM DMA cycles wit
   source.step(100); source.audioSamples();
   const saved = source.saveState(), pc = source.cpu.pc, value = source.read(0x10), cycles = source.cycleCount;
   const target = machine(); target.loadState(saved);
-  const remaining = 513 + parity - 100;
+  const remaining = 514 - parity - 100;
   for (const core of [source, target]) {
     core.step(remaining);
     assert.equal(core.cpu.pc, pc);
@@ -65,7 +65,7 @@ test('DMA snapshot metadata validates before mutation and accepts offset views',
 test('a later host DMA request replaces the pending source page', () => {
   const nes = machine(); nes.write(0x200, 0x79); nes.write(0x4014, 0); nes.write(0x4014, 2);
   const target = machine(); target.loadState(nes.saveState());
-  target.step(513); assert.equal(target.cpu.pc, 0x8000); assert.equal(target.cycleCount, 513);
+  target.step(514); assert.equal(target.cpu.pc, 0x8000); assert.equal(target.cycleCount, 514);
   assert.equal(target.ppu.oam[0], 0x79);
   target.step(1); assert.equal(target.read(0x10), 1);
 });

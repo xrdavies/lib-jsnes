@@ -35,7 +35,7 @@ test('CPU-requested OAM DMA uses write-cycle parity for every relevant store mod
       js.step(1); wasm.step(1);
       const before = 12 + offset + duration, pc = 0x8000 + prefix.length + instruction.length;
       assert.equal(js.cycleCount, before); assert.equal(wasm.cycleCount, before);
-      const stall = 513 + (before % 2);
+      const stall = before % 2 ? 513 : 514;
       const saved = js.saveState();
       js.step(stall - 1); wasm.step(stall - 1);
       assert.equal(js.cpu.pc, pc); assert.equal(wasm.programCounter, pc);

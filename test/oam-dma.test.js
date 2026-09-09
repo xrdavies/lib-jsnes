@@ -9,14 +9,18 @@ test('OAM DMA alternates one read/write per cycle after alignment, and replays e
     const events = [], bus = { readDma(a) { events.push(['r', a]); return a & 255; },
       writeDma(v) { events.push(['w', v]); } };
     const dma = new OamDma(bus); dma.start(2, odd);
-    for (let cycle = 0; cycle < 513 + Number(odd); cycle++) {
+    for (let cycle = 0; cycle < 514 - Number(odd); cycle++) {
       const saved = dma.saveState(), otherEvents = [];
       const restored = new OamDma({ readDma(a) { otherEvents.push(['r', a]); return a & 255; },
         writeDma(v) { otherEvents.push(['w', v]); } }); restored.loadState(saved);
       const before = events.length; dma.step(); restored.step();
+      if (events.length > before) {
+        const parity = (Number(odd) + cycle + 1) % 2;
+        assert.equal(parity, events.at(-1)[0] === 'r' ? 1 : 0, 'gets are odd; puts are even');
+      }
       assert.deepEqual(otherEvents, events.slice(before));
       assert.deepEqual(restored.saveState(), dma.saveState());
-      assert.equal(dma.active, cycle !== 512 + Number(odd));
+      assert.equal(dma.active, cycle !== 513 - Number(odd));
     }
     assert.deepEqual(events, Array.from({ length: 256 }, (_, i) => [['r', 512 + i], ['w', i]]).flat());
   }
@@ -30,7 +34,7 @@ test('system DMA reads source data when its read cycle occurs and retains a buff
   const nes = new Nes(rom()); nes.reset(); nes.ppu.oam.fill(0x77);
   nes.write(0x2003, 255); nes.write(0x200, 0x12); nes.write(0x201, 0x34); nes.write(0x4014, 2);
   assert.equal(nes.ppu.oam[255], 0x77);
-  nes.step(2); // One alignment cycle, then read byte zero.
+  nes.step(3); // Halt + alignment, then read byte zero on an odd CPU cycle.
   const saved = nes.saveState(); nes.write(0x200, 0xff); nes.write(0x201, 0x56);
   nes.step(1); assert.equal(nes.ppu.oam[255], 0x12, 'write uses the byte already read');
   nes.step(2); assert.equal(nes.ppu.oam[0], 0x56, 'later reads observe current RAM');
@@ -53,7 +57,7 @@ test('WASM DMA observes source changes between read cycles through CPU-visible O
   js.rom.prgRom.set(prefix); prefix.forEach((v, i) => wasm.exports.romWrite(16 + i, v));
   js.step(12); wasm.step(12);
   assert.equal(js.ppu.oam[0], 0);
-  js.step(2); wasm.step(2); assert.equal(js.ppu.oam[0], 0);
+  js.step(3); wasm.step(3); assert.equal(js.ppu.oam[0], 0);
   js.rom.prgRom[0] = 0x77; wasm.exports.romWrite(16, 0x77);
   js.rom.prgRom[1] = 0x66; wasm.exports.romWrite(17, 0x66);
   js.step(1); wasm.step(1); assert.equal(js.ppu.oam[0], 0xa9);
@@ -62,4 +66,21 @@ test('WASM DMA observes source changes between read cycles through CPU-visible O
   assert.equal(js.read(0x10), 0x66); assert.equal(wasm.exports.ramRead(0x10), 0x66);
   assert.equal(wasm.programCounter, js.cpu.pc); assert.equal(wasm.cycleCount, js.cycleCount);
   assert.deepEqual(wasm.frame(), js.frame); assert.deepEqual(wasm.audioSamples(), js.audioSamples());
+});
+
+test('NMI edges are latched during OAM DMA and survive status acknowledgement and snapshot replay', () => {
+  const bytes = rom(); bytes.set([0, 0x90], 16 + 0x3ffa);
+  const nes = new Nes(bytes); nes.reset(); nes.write(0x2000, 0x80);
+  nes.ppu.step(241 * 341 - 2); nes.write(0x4014, 2); nes.step(1);
+  assert.equal(nes.cpu.nmiPending, true);
+  assert.equal(nes.read(0x2002) & 0x80, 0x80);
+  const saved = nes.saveState();
+  let expected;
+  for (let replay = 0; replay < 2; replay++) {
+    if (replay) nes.loadState(saved);
+    nes.step(513); assert.equal(nes.cpu.pc, 0x8000);
+    assert.equal(nes.cpu.nmiPending, true);
+    nes.step(1); assert.equal(nes.cpu.pc, 0x9000); assert.equal(nes.cycleCount, 524);
+    if (replay) assert.deepEqual(nes.saveState(), expected); else expected = nes.saveState();
+  }
 });

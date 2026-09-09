@@ -100,7 +100,7 @@ export function step(count: i32): void {
       clockDevices(used);
       continue;
     }
-    if (oamDma.active) { oamDma.step(); cpu.cycles++; remaining--; clockDevices(1); continue; }
+    if (oamDma.active) { beginCpuCycle(); oamDma.step(); endCpuCycle(); cpu.cycles++; remaining--; continue; }
     const used = cpu.step(); remaining -= used;
     if (used > cpu.busCycles) clockDevices(used - cpu.busCycles);
     ppu.consumeScanlines();

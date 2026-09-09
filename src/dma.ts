@@ -15,7 +15,9 @@ export class OamDma {
   get active(): boolean { return this.index < 256; }
   start(page: number, odd: boolean): void {
     this.page = page & 255; this.index = 0; this.latch = 0;
-    this.dummy = odd ? 2 : 1; this.writing = false;
+    // With this core's cycle count, DMA reads finish on odd cycles and writes
+    // on even cycles. An even write needs halt + alignment before the first read.
+    this.dummy = odd ? 1 : 2; this.writing = false;
   }
   step(): void {
     if (!this.active) return;

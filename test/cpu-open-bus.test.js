@@ -55,7 +55,7 @@ test('CPU operand and page-crossing dummy reads determine open bus in both cores
 
 test('snapshots restore CPU open bus and pending OAM DMA drives its buffered byte', () => {
   const nes = new Nes(rom()); nes.reset();
-  nes.write(0x200, 0xe6); nes.write(0x4014, 2); nes.step(2);
+  nes.write(0x200, 0xe6); nes.write(0x4014, 2); nes.step(3);
   assert.equal(nes.read(0x5000), 0xe6, 'DMA read drives the bus');
   const saved = nes.saveState();
   nes.write(0x5000, 0x11); nes.step(1);

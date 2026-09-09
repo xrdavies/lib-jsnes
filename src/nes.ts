@@ -98,7 +98,7 @@ export class Nes implements CpuBus {
         continue;
       }
       if (this.oamDma.active) {
-        this.oamDma.step(); this.cpu.cycles++; this.clockDevices(1); continue;
+        this.beginCpuCycle(); this.oamDma.step(); this.endCpuCycle(); this.cpu.cycles++; continue;
       }
       const used = this.cpu.step();
       if (used > this.cpu.busCycles) this.clockDevices(used - this.cpu.busCycles);
