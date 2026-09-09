@@ -16,14 +16,14 @@ export class Nes implements CpuBus {
   readonly apu = new Apu();
   private readonly ram = new Uint8Array(0x800);
   private cycles = 0;
-  private dmaStall = 0;
+  private dmaStall = 0; private readonly rgba = new Uint8ClampedArray(256*240*4);
 
   get frame(): Uint32Array { return this.ppu.frame; }
   setController(player: 1|2, mask: number): void { if(player===1)this.controller1.setButtons(mask); else if(player===2)this.controller2.setButtons(mask); else throw new RangeError('player must be 1 or 2'); }
   audioSamples(): Int16Array { return this.apu.drainSamples(); }
   saveBatteryRam(): Uint8Array { return this.cartridge.prgRam.slice(); }
   loadBatteryRam(data: Uint8Array): void { if(data.length!==0x2000)throw new RangeError('Battery RAM must be 8192 bytes'); this.cartridge.prgRam.set(data); }
-  frameRgba(): Uint8ClampedArray { const out=new Uint8ClampedArray(this.frame.length*4); for(let i=0;i<this.frame.length;i++){const p=this.frame[i]; out[i*4]=p>>>16&255; out[i*4+1]=p>>>8&255; out[i*4+2]=p&255; out[i*4+3]=p>>>24&255;} return out; }
+  frameRgba(): Uint8ClampedArray { const out=this.rgba; for(let i=0;i<this.frame.length;i++){const p=this.frame[i]; out[i*4]=p>>>16&255; out[i*4+1]=p>>>8&255; out[i*4+2]=p&255; out[i*4+3]=p>>>24&255;} return out; }
 
   constructor(image: ArrayBuffer | Uint8Array) {
     this.rom = parseRom(image);
