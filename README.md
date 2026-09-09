@@ -61,9 +61,9 @@ choose a local `.nes` file. It loads the ESM entry point, lets you select the
 WASM core (default) or TypeScript fallback, renders `frameRgba()` into a 256×240
 Canvas, and schedules frames at the NTSC rate. It cancels the previous animation
 when a new ROM is selected, pauses while the tab is hidden, and drains audio while
-muted. It has no gamepad or audio policy; applications should wire
-`setController()` and schedule `audioSamples()` according to their own input and
-Web Audio pipeline.
+muted. Arrow keys, Z/X, Enter and Shift control player 1. It has no gamepad or
+audio policy; applications should wire `setController()` and schedule
+`audioSamples()` according to their own input and Web Audio pipeline.
 
 The benchmark has changed as the renderer and runtime have evolved. Run
 `node scripts/benchmark.mjs` on the current checkout for reproducible numbers;

@@ -12,13 +12,18 @@
 <label><input id="wasm" type="checkbox" checked> Use WASM for next ROM</label>
 <button id="pause" type="button" disabled>Pause</button></p>
 <canvas id="screen" width="256" height="240" aria-label="NES game screen"></canvas>
-<p id="status" role="status">Choose a ROM.</p>
+<p id="status" role="status">Choose a ROM. Keyboard: arrows, Z, X, Enter, Shift.</p>
 <script type="module">
-  import { Nes, WasmCore, NTSC_FRAME_RATE } from '../dist/index.js';
+  import { Nes, WasmCore, NTSC_FRAME_RATE, Button } from '../dist/index.js';
   const input = document.querySelector('#rom'), wasmInput = document.querySelector('#wasm'), pause = document.querySelector('#pause'), canvas = document.querySelector('#screen');
   const context = canvas.getContext('2d'), status = document.querySelector('#status');
   let generation = 0, animation = null, paused = false, last = 0, elapsed = 0, nes;
   const image = context?.createImageData(256, 240);
+  const keys = new Map([
+    ['ArrowUp', Button.Up], ['ArrowDown', Button.Down], ['ArrowLeft', Button.Left], ['ArrowRight', Button.Right],
+    ['KeyZ', Button.A], ['KeyX', Button.B], ['Enter', Button.Start], ['ShiftLeft', Button.Select], ['ShiftRight', Button.Select],
+  ]);
+  let buttons = 0;
   if (!context) { input.disabled = true; status.textContent = 'Canvas 2D is unavailable.'; }
   function stop() {
     if (animation !== null) cancelAnimationFrame(animation);
@@ -47,6 +52,14 @@
       nes = candidate; pause.disabled = false; status.textContent = 'Ready. Audio is muted.';
       start();
     } catch (error) { if (load === generation) status.textContent = `Failed: ${error.message}`; }
+  });
+  addEventListener('keydown', event => {
+    const bit = keys.get(event.code); if (bit === undefined) return;
+    event.preventDefault(); buttons |= bit; if (nes) nes.setController(1, buttons);
+  });
+  addEventListener('keyup', event => {
+    const bit = keys.get(event.code); if (bit === undefined) return;
+    event.preventDefault(); buttons &= ~bit; if (nes) nes.setController(1, buttons);
   });
   pause.addEventListener('click', () => {
     if (!nes) return;
