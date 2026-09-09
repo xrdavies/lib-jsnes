@@ -84,7 +84,8 @@ NMI, scanline counts and multiple frame wraps. This optimization preserves the
 event ordering; visible pixels are committed individually as described below.
 
 The renderer fetches background tiles on their PPU dots and shifts the fetched
-pattern and attribute bits per pixel. Sprite indices are still prepared per line.
+pattern and attribute bits per pixel. Sprite selection is still prepared per line;
+pattern bytes are fetched in the hardware sprite slots.
 The palette and display mask are resolved at each visible dot. The APU dispatches
 frame-sequencer events only at their scheduled cycles while clocking oscillators
 every CPU cycle. Tests cover palette/mask changes, reset and snapshot continuation.
@@ -625,8 +626,9 @@ interrupt rejection, reset, snapshot replay and JS/WASM device-clock parity.
 
 Synthetic ROMs compare complete frames between the two builds and assert known
 background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.
-WASM uses the same pixel output path as TypeScript. Background and sprite fetches
-run per dot; sprite evaluation still uses a line-level approximation. Frame views
+WASM uses the same pixel output path as TypeScript. Background and sprite pattern
+fetches run in their PPU slots; secondary-OAM selection still occurs at dot 257.
+Frame views
 use packed `0xAARRGGBB` pixels; they are not RGBA byte views for `ImageData`.
 PPUADDR (`$2006`) uses a temporary address: its first write replaces the high
 six bits without changing the active PPUDATA address, and its second write
@@ -668,14 +670,14 @@ still fetch pattern bytes. Selected OAM entries retain their original sprite IDs
 and OAMADDR is held at zero during the fetch window. Pattern bytes are composed
 into a line buffer for output, preserving priority, flipping and sprite-zero hits.
 Secondary OAM selection is still performed together at dot 257; cycle-by-cycle
-evaluation, the overflow diagonal-scan bug, delayed PPUADDR commits and MMC3
-qualified A12 edges remain incomplete. Tests cover fetch addresses/order, X/Y wrapping, timed v/t copies,
+evaluation, the overflow diagonal-scan bug and MMC3 qualified A12 edges remain
+incomplete. Tests cover fetch addresses/order, X/Y wrapping, timed v/t copies,
 mid-line bank changes and snapshots between fetch phases. The 256-byte background
 line buffer is replaced by 12 bytes of shift/fetch state; the sprite line buffer
-and existing timing tail remain. PPU snapshots are 244 bytes smaller than the
-previous background-line layout. Sprite slot snapshots add 42 bytes for secondary
+and existing timing tail remain. Sprite slot snapshots add 42 bytes for secondary
 OAM, original IDs, count and the low-plane latch; old PPU/system snapshots are
-rejected. Hosts should display
+rejected. The net PPU snapshot is 202 bytes smaller than the previous combined
+background/sprite layout. Hosts should display
 the completed frame after their frame step.
 
 The NTSC PPU skips the final pre-render dot on odd frames when either background
@@ -788,6 +790,7 @@ in both cores:
 | `cpu_interrupts_v2/rom_singles/` | All 5 tests pass |
 | `cpu_dummy_reads/cpu_dummy_reads.nes` | Screen output: `Passed` |
 | `sprdma_and_dmc_dma/` | Both combined-DMA timing tests pass |
+| `sprite_hit_tests_2005.10.05/` | All 11 screen-output tests pass |
 | `dmc_dma_during_read4/` | Screen/serial protocol; not supported by the `$6000` runner (see below) |
 
 The full instruction suite exposed missing immediate LAX and SHY/SHX support;
