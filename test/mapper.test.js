@@ -172,6 +172,16 @@ test('mapper 15 supports 16KB and 8KB PRG windows with mirroring control', () =>
   assert.deepEqual(prgPair(nes), [1, 2]);
 });
 
+test('mapper 79 switches 32KB PRG and 8KB CHR banks from $4100', () => {
+  const nes = new Nes(image(79, 8, 8));
+  nes.write(0x4100, 0x09);
+  assert.deepEqual(prgPair(nes), [2, 3]);
+  assert.deepEqual(chrPair(nes), [0x42, 0x43]);
+  const state = nes.saveState(); nes.write(0x4100, 0); nes.loadState(state);
+  assert.deepEqual(prgPair(nes), [2, 3]);
+  assert.deepEqual(chrPair(nes), [0x42, 0x43]);
+});
+
 test('MMC3 selects 8KB PRG slots and 1KB CHR banks', () => {
   const nes = new Nes(image(4, 8, 4)); nes.write(0x8000, 6); nes.write(0x8001, 3); assert.equal(nes.read(0x8000), 1); nes.write(0x8000, 0); nes.write(0x8001, 5); assert.equal(nes.cartridge.readChr(0), 0x41); nes.write(0x8000, 0x46); nes.write(0x8001, 2); assert.equal(nes.read(0x8000), 7);
 });
