@@ -10,3 +10,4 @@ const nes2 = new Uint8Array(16 + 0x4000 + 0x2000); nes2.set([0x4e,0x45,0x53,0x1a
 const exponent = new Uint8Array(16); exponent.set([0x4e,0x45,0x53,0x1a,0xff,0,0,0x08]); assert.throws(() => parseRom(exponent), /too large/);
 nes.write(0x2003, 0xfe); for(let i=0;i<256;i++)nes.write(i, i); nes.write(0x4014,0); assert.equal(nes.ppu.oam[0xfe],0); assert.equal(nes.ppu.oam[0xff],1); assert.equal(nes.ppu.oam[0],2);
 const rgbaRef=nes.frameRgba(); assert.equal(nes.frameRgba(),rgbaRef);
+const rgbaBefore=nes.frameRgba()[0]; nes.ppu.writeRegister(1,0); nes.runFrame(); const rgbaAfter=nes.frameRgba(); assert.equal(rgbaAfter,rgbaRef); assert.equal(rgbaAfter[3],255);
