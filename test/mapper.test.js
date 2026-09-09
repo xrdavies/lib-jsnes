@@ -213,6 +213,16 @@ test('mapper 140 switches 32KB PRG and 8KB CHR banks from $6000', () => {
   assert.deepEqual(chrPair(nes), [0x42, 0x43]);
 });
 
+test('mapper 177 switches 32KB PRG and mirroring from any cartridge write', () => {
+  const nes = new Nes(image(177, 8, 1));
+  nes.write(0x8000, 0x25);
+  assert.deepEqual(prgPair(nes), [2, 3]);
+  assert.equal(nes.cartridge.mirroring, 'horizontal');
+  const state = nes.saveState(); nes.write(0x9000, 0); nes.loadState(state);
+  assert.deepEqual(prgPair(nes), [2, 3]);
+  assert.equal(nes.cartridge.mirroring, 'horizontal');
+});
+
 test('cartridge rejects corrupt mapper snapshot flags atomically', () => {
   const nes = new Nes(image(140, 8, 16)); nes.write(0x6000, 0x21); const state = nes.cartridge.saveState();
   for (const offset of [10, 21, 23, 24]) {
