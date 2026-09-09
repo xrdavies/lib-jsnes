@@ -3,6 +3,38 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { Cpu6502, Nes, WasmCore } from '../dist/index.js';
 
+test('zero-page indexed modes read the base before indexing, including zero index and wrap', () => {
+  const groups = [
+    ['15 35 55 75 b5 b4 d5 f5 14 34 54 74 d4 f4', 'x', 'read'],
+    ['b6 b7', 'y', 'read'], ['94 95', 'x', 'write'], ['96 97', 'y', 'write'],
+    ['16 36 56 76 d6 f6 17 37 57 77 d7 f7', 'x', 'rmw'],
+    ['01 21 41 61 a1 c1 e1 a3', 'ind', 'read'], ['81 83', 'ind', 'write'],
+    ['03 23 43 63 c3 e3', 'ind', 'rmw'],
+  ];
+  for (const [opcodes, mode, action] of groups) for (const hex of opcodes.split(' ')) {
+    for (const [base, index] of [[0x10, 0], [0x10, 3], [0xff, 1], [0xfe, 1], [1, 255]]) {
+      const memory = new Uint8Array(65536), accesses = [];
+      memory.set([parseInt(hex, 16), base], 0x8000);
+      const indexed = (base + index) & 255;
+      const target = mode === 'ind' ? 0x4321 : indexed;
+      memory[target] = 0x41;
+      if (mode === 'ind') { memory[indexed] = 0x21; memory[(indexed + 1) & 255] = 0x43; }
+      const cpu = new Cpu6502({ read(a) { accesses.push(['r', a]); return memory[a]; },
+        write(a, v) { accesses.push(['w', a]); memory[a] = v; } }, true);
+      cpu.pc = 0x8000; cpu.a = 0x57;
+      cpu.x = mode === 'y' ? 0x72 : index; cpu.y = mode === 'y' ? index : 0x91;
+      const prefix = [0x8000, 0x8001, base, ...(mode === 'ind' ? [indexed, (indexed + 1) & 255] : [])];
+      const expected = [...prefix.map(a => ['r', a]),
+        ...(action === 'write' ? [] : [['r', target]]),
+        ...(action === 'rmw' ? [['w', target]] : []),
+        ...(action === 'read' ? [] : [['w', target]])];
+      assert.equal(cpu.step(), expected.length, `${hex} cycles`);
+      assert.deepEqual(accesses, expected, `${hex}, base ${base}, index ${index}`);
+      assert.equal(cpu.pc, 0x8002);
+    }
+  }
+});
+
 test('indexed stores and RMW instructions read the provisional address before accessing the target', () => {
   const stores = [[0x9d, 'x'], [0x99, 'y'], [0x91, 'ind']];
   const rmw = [[0x1e, 'x'], [0x3e, 'x'], [0x5e, 'x'], [0x7e, 'x'], [0xde, 'x'], [0xfe, 'x'],

@@ -359,6 +359,13 @@ page-cross penalty. Tests check access order for all implemented instructions
 using these write modes, including 16-bit wrap, and verify PPUSTATUS/APU status
 side effects through CPU-driven programs in both builds.
 
+Zero-page X/Y indexing and indexed-indirect `(zp,X)` now read the original
+zero-page address before adding the index. The discarded value is not used as
+data or as a pointer byte. A shared helper covers reads, writes, read-modify-write
+instructions and indexed NOPs without changing their cycle counts. Bus-trace tests
+cover every implemented opcode using these modes, zero indices, zero-page wrap
+and pointer-high-byte wrap at `$FF`.
+
 The shared CPU also implements ALR (`$4B`), ARR (`$6B`) and AXS (`$CB`) immediate
 instructions, in addition to ANC (`$0B/$2B`) and the SBC alias (`$EB`). They consume
 the operand and take two cycles. ARR sets carry from result bit 6 and overflow

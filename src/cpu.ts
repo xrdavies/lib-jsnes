@@ -318,9 +318,14 @@ export class Cpu6502 {
     }
     private absx(penalty = false) { return this.indexed(this.abs(), this.x, penalty); }
     private absy(penalty = false) { return this.indexed(this.abs(), this.y, penalty); }
-    private zpx() { return (this.fetch() + this.x) & 255; }
-    private zpy() { return (this.fetch() + this.y) & 255; }
-    private indX() { const a = (this.fetch() + this.x) & 255; return this.bus.read(a) | (this.bus.read((a + 1) & 255) << 8); }
+    private indexedZeroPage(index: number): number {
+        const base = this.fetch();
+        this.bus.read(base); // Discard the unindexed read before adding X or Y.
+        return (base + index) & 255;
+    }
+    private zpx() { return this.indexedZeroPage(this.x); }
+    private zpy() { return this.indexedZeroPage(this.y); }
+    private indX() { const a = this.zpx(); return this.bus.read(a) | (this.bus.read((a + 1) & 255) << 8); }
     private indY(penalty = false) { const a = this.fetch(), base = this.bus.read(a) | (this.bus.read((a + 1) & 255) << 8); return this.indexed(base, this.y, penalty); }
     private read16(a: number) { return this.bus.read(a) | (this.bus.read((a + 1) & 0xffff) << 8); }
     private interrupt(vector: number) { this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p & ~B | U); this.p |= I; this.pc = this.read16(vector); }
