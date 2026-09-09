@@ -207,13 +207,17 @@ export class Cartridge {
     const exponentSize = (value: i32): i32 => {
       const exponent = value >>> 2, multiplier = (value & 3) * 2 + 1;
       if (exponent > 30) throw new Error('NES 2.0 ROM size is too large');
-      return (1 << exponent) * multiplier;
+      const size = (<i64>1 << exponent) * multiplier;
+      if (size > MAX_ROM_SIZE) throw new Error('NES 2.0 ROM size exceeds WASM capacity');
+      return <i32>size;
     };
     const mapper = (this.rom[6] >>> 4) | (this.rom[7] & 0xf0) | (nes2 ? ((mapperExtension & 15) << 8) : 0);
     if (mapper != 0 && mapper != 1 && mapper != 2 && mapper != 3 && mapper != 4 && mapper != 7 && mapper != 15 && mapper != 66 && mapper != 79 && mapper != 87 && mapper != 113 && mapper != 140 && mapper != 177 && mapper != 225 && mapper != 241) throw new Error('Unsupported WASM mapper');
     const prgSize: i32 = nes2 && (sizeExtension & 15) == 15 ? exponentSize(this.rom[4]) : (this.rom[4] | (nes2 ? ((sizeExtension & 15) << 8) : 0)) * 0x4000;
     const chrSize: i32 = nes2 && (sizeExtension >>> 4) == 15 ? exponentSize(this.rom[5]) : (this.rom[5] | (nes2 ? ((sizeExtension >>> 4) << 8) : 0)) * 0x2000;
     if (prgSize == 0 || (mapper == 0 && prgSize > 0x8000) || prgSize % 0x4000 != 0) throw new Error('Invalid PRG size');
+    const chrUnit = mapper == 4 ? 0x400 : mapper == 1 ? 0x1000 : 0x2000;
+    if (chrSize % chrUnit != 0) throw new Error('Unsupported CHR bank size');
     const start = 16 + ((this.rom[6] & 4) != 0 ? 512 : 0);
     if (mapper == 1 && (prgSize > 0x40000 || chrSize > 0x20000)) throw new Error('Extended MMC1 boards are not supported yet');
     if (start + prgSize + chrSize > length) throw new Error('Truncated ROM');

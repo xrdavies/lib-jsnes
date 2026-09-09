@@ -58,6 +58,9 @@ export class WasmCore {
     if (![0, 1, 2, 3, 4, 7, 15, 66, 79, 87, 113, 140, 177, 225, 241].includes(image.mapper)) throw new Error(`Unsupported WASM mapper: ${image.mapper}`);
     if (image.mapper === 1 && (image.prgRom.length > 0x40000 || image.chrRom.length > 0x20000)) throw new Error('Extended MMC1 boards are not supported yet');
     if (image.mapper === 0 && image.prgRom.length > 0x8000) throw new Error('Invalid NROM PRG size');
+    if (image.prgRom.length % 0x4000 !== 0) throw new Error('Invalid PRG size');
+    const chrUnit = image.mapper === 4 ? 0x400 : image.mapper === 1 ? 0x1000 : 0x2000;
+    if (image.chrRom.length % chrUnit !== 0) throw new Error('Unsupported CHR bank size');
     // Allocation may grow memory or reclaim its former ROM buffer.
     if (rom.buffer === this.exports.memory.buffer) rom = rom.slice();
     const pointer = this.exports.romAllocate(rom.length);

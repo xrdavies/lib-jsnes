@@ -203,6 +203,15 @@ The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning a
 Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, mapper 15, GxROM, and mappers 79, 87, 113, 140, 177, 225 and 241 (mappers 0, 1, 2, 3, 4, 7, 15, 66, 79, 87, 113, 140, 177, 225 and 241), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
 NES 2.0 linear and exponent-size headers are accepted for supported mappers; unsupported boards and malformed layouts are rejected by this experimental WASM core.
+Exponent sizes are computed with a widened integer and checked against capacity
+before conversion to WASM's 32-bit indices. The current WASM bank implementation
+requires PRG sizes divisible by 16 KiB and nonzero CHR ROM sizes divisible by
+1 KiB for MMC3, 4 KiB for MMC1, or 8 KiB for other supported mappers. Smaller or
+partial banks remain unsupported even when `parseRom()` can parse their layout.
+The wrapper checks these constraints before replacing a running cartridge; the
+native loader enforces the same constraints for raw ABI users. Tests cover all
+four exponent multipliers, truncated headers that previously overflowed, and
+rejection of unsupported layouts without modifying the wrapper's active ROM.
 `WasmCore.loadRom()` now allocates ROM storage to fit the input and copies it in
 one bulk transfer. The former fixed 512 KiB capacity no longer rejects layouts
 such as 512 KiB PRG plus 256 KiB CHR. `MAX_ROM_SIZE` is the largest supported
