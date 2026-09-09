@@ -222,3 +222,14 @@ test('GxROM CHR selection changes rendered pixels and matches the TypeScript fra
     assert.equal(core.cycleCount, js.cycleCount);
   }
 });
+
+test('WASM AxROM switches 32KB PRG and single-screen nametable selection', async () => {
+  const { bytes, start } = rom(7, 4, 0);
+  const core = await WasmCore.from(binary); core.loadRom(bytes); core.reset();
+  for (const value of [0, 1, 2, 3, 0x10, 0x11]) {
+    const program = [0xa9, value, 0x8d, 0, 0x80, 0x4c, 0, 0x80];
+    bytes.set(program, start); core.loadRom(bytes); core.reset(); core.step(8);
+    assert.equal(core.exports.ramRead(0), 0);
+    assert.equal(core.programCounter, 0x8000);
+  }
+});
