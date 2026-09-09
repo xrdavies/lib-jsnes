@@ -255,6 +255,18 @@ export class Cpu6502 {
             case 0x03: { const a = this.indX(); const v = this.shift(this.readForModify(a), false); this.bus.write(a, v); this.a |= v; this.nz(this.a); used = 8; break; }
             case 0x0b:
             case 0x2b: this.a &= this.fetch(); this.nz(this.a); this.p = (this.p & ~C) | (this.a >>> 7); used = 2; break;
+            case 0x4b: this.a = this.shift(this.a & this.imm(), true); used = 2; break;
+            case 0x6b:
+                this.a = this.rotate(this.a & this.imm(), true);
+                this.p = (this.p & ~(C | V)) | ((this.a >>> 6) & 1)
+                    | ((((this.a >>> 6) ^ (this.a >>> 5)) & 1) << 6);
+                used = 2; break;
+            case 0xcb: {
+                const difference = (this.a & this.x) - this.imm();
+                this.x = difference & 255; this.nz(this.x);
+                this.p = (this.p & ~C) | (difference >= 0 ? C : 0);
+                used = 2; break;
+            }
             case 0xdc: this.bus.read(this.absx(true)); used = 4; break;
             case 0xfb: this.isc(this.absy()); used = 7; break;
             case 0xf3: this.isc(this.indY()); used = 8; break;

@@ -327,6 +327,16 @@ These checks establish CPU parity, not complete hardware compatibility; CPU bus
 access timing remains approximate and undocumented opcode coverage is partial.
 `core.exports.unknownOpcodeCount()` reports encounters with unimplemented opcodes.
 
+The shared CPU also implements ALR (`$4B`), ARR (`$6B`) and AXS (`$CB`) immediate
+instructions, in addition to ANC (`$0B/$2B`) and the SBC alias (`$EB`). They consume
+the operand and take two cycles. ARR sets carry from result bit 6 and overflow
+from bits 6 XOR 5; AXS subtracts the operand from A AND X without an incoming
+borrow, stores X, and retains A and overflow. As on the NES CPU, setting the
+decimal flag does not enable decimal arithmetic. Tests exhaust operand pairs and
+carry/decimal inputs in TypeScript and WASM, check AXS with varying A/X, and
+include the SBC alias in the exhaustive arithmetic checks. Unstable undocumented
+instructions and CPU jam behavior remain outside this coverage.
+
 Synthetic ROMs compare complete frames between the two builds and assert known
 background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.
 WASM uses the same frame-batched renderer as TypeScript: raster effects, exact
