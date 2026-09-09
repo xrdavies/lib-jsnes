@@ -110,6 +110,23 @@ test('MMC3 rendering gate suppresses automatic IRQ clocks while both PPU layers 
   }
 });
 
+test('JS and WASM clock MMC3 A12 for CPU-driven PPUDATA accesses', async () => {
+  for (const access of ['read', 'write']) {
+    const p = program();
+    p.write(0x4017, 0x40); p.write(0xc000, 0); p.write(0xc001, 0); p.write(0xe001, 0);
+    if (access === 'read') {
+      p.ppuRead(0x1000, 0);
+    } else {
+      p.addr(0); p.write(0x2007, 0x5a);
+      p.addr(0x1000); p.write(0x2007, 0xa5);
+    }
+    p.code.push(0x58); // Unmask after the pattern-table A12 transition.
+    const run = await pair(image(p, 0)); run.step(2000);
+    assert.equal(run.js.read(0x10), 1, `${access} must trigger one IRQ`);
+    assert.equal(run.wasm.exports.ramRead(0x10), 1, `${access} must trigger one WASM IRQ`);
+  }
+});
+
 test('MMC3 does not count VBlank lines and resumes on the pre-render line in both builds', async () => {
   const p = program(); p.write(0x4017, 0x40); p.write(0x2000, 0x10); p.write(0x2001, 0x18);
   // Wait for VBlank, then enable a zero-latch IRQ. No clocks should occur until line 261.

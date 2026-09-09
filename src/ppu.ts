@@ -43,7 +43,9 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
         this.readDelay = 6;
         const a = this.addr & 0x3fff;
         this.driveIoLatch(a >= 0x3f00 ? this.readPalette(a) : this.data, a >= 0x3f00 ? 0x3f : 0xff);
-        this.data = this.readMemory(a >= 0x3f00 ? a - 0x1000 : a);
+        const source = a >= 0x3f00 ? a - 0x1000 : a;
+        this.data = this.readMemory(source);
+        if (source < 0x2000) this.cartridge.clockA12(source);
         this.incrementDataAddress();
         break;
       }
@@ -62,7 +64,7 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
       this.latch=!this.latch;break;case 6:
       if (!this.latch) this.tempAddr=(this.tempAddr&255)|((value&0x3f)<<8);
       else { this.tempAddr=(this.tempAddr&0x7f00)|value; this.addr=this.tempAddr&0x7fff; }
-      this.latch=!this.latch;break;case 7:{const a=this.addr&0x3fff; if(a>=0x3f00)this.palette[this.paletteIndex(a)]=value; else this.writeMemory(a,value); this.incrementDataAddress(); break;}}}
+      this.latch=!this.latch;break;case 7:{const a=this.addr&0x3fff; if(a>=0x3f00)this.palette[this.paletteIndex(a)]=value; else { this.writeMemory(a,value); if(a<0x2000)this.cartridge.clockA12(a); } this.incrementDataAddress(); break;}}}
   private incrementX(): void {
     if ((this.addr & 31) === 31) this.addr = (this.addr & ~31) ^ 0x400;
     else this.addr++;
@@ -304,7 +306,10 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
       if (rendering !== this.renderingEnabled) next = Math.min(next, this.dot + 1);
       const skip = Math.min(Math.floor(dots), next - this.dot - 1);
       this.readDelay -= Math.min(this.readDelay, (skip > 0 ? skip : 0) + 1);
-      if (skip > 0) { this.dot += skip; dots -= skip; }
+      if (skip > 0) {
+        for (let i = 0; i < Math.min(skip, 3); i++) this.cartridge.clockA12(0);
+        this.dot += skip; dots -= skip;
+      }
       // Decide the odd-frame skip on entering 339, before any later mask write.
       this.dot++;
       if (this.dot === 341) {

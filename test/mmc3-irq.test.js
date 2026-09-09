@@ -16,6 +16,9 @@ function pending(nes) {
   nes.write(0xc000, 1); nes.write(0xc001, 0); nes.write(0xe001, 0);
   nes.cartridge.clockScanline(); nes.cartridge.clockScanline();
 }
+function ppuAddress(ppu, address) {
+  ppu.readRegister(2); ppu.writeRegister(6, address >>> 8); ppu.writeRegister(6, address & 255);
+}
 
 test('MMC3 counter runs with interrupts disabled and enable preserves its phase', () => {
   const nes = machine(); nes.write(0xc000, 2); nes.write(0xc001, 0);
@@ -101,6 +104,18 @@ test('PPU clocks MMC3 on filtered A12 rises, for either enabled layer', () => {
     nes.ppu.step(1);
     assert.equal(nes.cartridge.irqPending, !!mask && (line < 240 || line === 261), `${mask}:${line}`);
   }
+});
+
+test('PPUDATA pattern reads and writes clock the MMC3 A12 filter', () => {
+  const nes = machine();
+  nes.write(0xc000, 0); nes.write(0xc001, 0); nes.write(0xe001, 0);
+  nes.ppu.step(4); // Establish the required low period while rendering is off.
+  ppuAddress(nes.ppu, 0x1000); nes.ppu.readRegister(7);
+  assert.equal(nes.cartridge.irqPending, true, 'pattern reads must expose A12');
+  nes.write(0xe000, 0); nes.write(0xe001, 0); nes.ppu.step(3);
+  ppuAddress(nes.ppu, 0x0000); nes.ppu.writeRegister(7, 0x5a);
+  nes.ppu.step(3); ppuAddress(nes.ppu, 0x1000); nes.ppu.writeRegister(7, 0xa5);
+  assert.equal(nes.cartridge.irqPending, true, 'pattern writes must expose A12');
 });
 
 test('batched PPU steps and snapshot replay preserve the qualified MMC3 count', () => {
