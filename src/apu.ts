@@ -26,14 +26,19 @@ class Envelope {
 }
 
 class Pulse {
+  sweepDivider = 0;
+  sweepReload = false;
+
   regs = new Uint8Array(4);
   readonly envelope = new Envelope();
   timer = 0; phase = 0; length = 0; enabled = false;
   write(i: number, value: number): void {
     this.regs[i] = value & 255;
+    if (i === 1) this.sweepReload = true;
     if (i === 3) {
       if (this.enabled) this.length = LENGTH[value >>> 3];
       this.envelope.start = true;
+      this.sweepReload = true;
       this.phase = 0;
       this.timer = (this.timer & 255) | ((value & 7) << 8);
     }
@@ -45,6 +50,9 @@ class Pulse {
     }
   }
   clockLength(): void { if (this.length > 0 && !(this.regs[0] & 0x20)) this.length--; }
+
+
+  clockSweep(channel: number): void { const control=this.regs[1], period=((control>>>4)&7)+1, shift=control&7; if(this.sweepReload){this.sweepDivider=period;this.sweepReload=false;return;} if(this.sweepDivider>0){this.sweepDivider--;return;} this.sweepDivider=period; if(!(control&0x80)||!shift)return; const timer=this.regs[2]|((this.regs[3]&7)<<8), delta=timer>>>shift; let next=timer+(control&8 ? -delta-(channel===1?1:0) : delta); if(next<0)next=0;if(next>0x7ff)next=0x7ff; this.regs[2]=next&255;this.regs[3]=(this.regs[3]&0xf8)|(next>>>8); }
   sample(): number {
     if (!this.enabled || !this.length || (!this.regs[2] && !(this.regs[3] & 7))) return 0;
     return this.phase < [1, 2, 4, 6][this.regs[0] >>> 6] ? this.envelope.volume(this.regs[0]) : 0;
@@ -94,7 +102,7 @@ class Noise {
 }
 /** Pulse, triangle, and noise synthesis; five-step frame sequencing, sweep, triangle linear counting, and DMC remain incomplete. */
 export class Apu {
-  static readonly STATE_SIZE = 53;
+  static readonly STATE_SIZE = 57;
   readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(),new Pulse()]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private samples:number[]=[];
   write(address:number,value:number):void {
     value&=255;
@@ -126,12 +134,12 @@ export class Apu {
     view.setUint16(28, this.triangle.timer, true);
     view.setUint16(30, this.noise.timer, true);
     out.set(this.triangle.regs, 32);
-    out[36] = +this.triangle.enabled;
-    view.setUint32(37, this.frac, true);
-    view.setUint16(41, this.frame, true);
-    out[43] = 2; // APU snapshot format version.
+    out[36] = +this.triangle.enabled; out[37]=this.pulse[0].sweepDivider; out[38]=this.pulse[1].sweepDivider; out[39]=+this.pulse[0].sweepReload; out[40]=+this.pulse[1].sweepReload;
+    view.setUint32(41, this.frac, true);
+    view.setUint16(45, this.frame, true);
+    out[56] = 3; // APU snapshot format version.
     for (const [i, channel] of [...this.pulse, this.noise].entries()) {
-      out.set([+channel.envelope.start, channel.envelope.divider, channel.envelope.decay], 44 + i * 3);
+      out.set([+channel.envelope.start, channel.envelope.divider, channel.envelope.decay], 47 + i * 3);
     }
     return out;
   }
@@ -139,9 +147,9 @@ export class Apu {
   loadState(state: Uint8Array): void {
     if (state.length !== Apu.STATE_SIZE) throw new RangeError('Invalid APU state size');
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
-    const frac = view.getUint32(37, true), frame = view.getUint16(41, true);
-    if (state[43] !== 2 || frac >= CPU_HZ || frame >= 29830
-      || [44, 47, 50].some(offset => state[offset] > 1 || state[offset + 1] > 15 || state[offset + 2] > 15)
+    const frac = view.getUint32(41, true), frame = view.getUint16(45, true);
+    if (state[56] !== 3 || frac >= CPU_HZ || frame >= 29830
+      || [47, 50, 53].some(offset => state[offset] > 1 || state[offset + 1] > 15 || state[offset + 2] > 15)
       || state[12] > 7 || state[13] > 7 || state[19] > 31
       || view.getUint16(14, true) > 0x7fff
       || [16, 17, 18, 36].some(offset => state[offset] > 1)
@@ -166,11 +174,11 @@ export class Apu {
     this.triangle.timer = view.getUint16(28, true);
     this.noise.timer = view.getUint16(30, true);
     this.triangle.regs.set(state.subarray(32, 36));
-    this.triangle.enabled = !!state[36];
+    this.triangle.enabled = !!state[36]; this.pulse[0].sweepDivider=state[37]; this.pulse[1].sweepDivider=state[38]; this.pulse[0].sweepReload=!!state[39]; this.pulse[1].sweepReload=!!state[40];
     this.frac = frac;
     this.frame = frame;
     for (const [i, channel] of [...this.pulse, this.noise].entries()) {
-      const offset = 44 + i * 3;
+      const offset = 47 + i * 3;
       channel.envelope.start = !!state[offset];
       channel.envelope.divider = state[offset + 1];
       channel.envelope.decay = state[offset + 2];
@@ -184,6 +192,7 @@ export class Apu {
     this.frame++;
     if (this.frame === 7457 || this.frame === 14913 || this.frame === 22371 || this.frame === 29829) {
       for (const pulse of this.pulse) pulse.envelope.clock(pulse.regs[0]);
+      this.pulse[0].clockSweep(1); this.pulse[1].clockSweep(2);
       this.noise.envelope.clock(this.noise.regs[0]);
     }
     if (this.frame === 14913 || this.frame === 29829) {
