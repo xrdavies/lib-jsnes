@@ -15,7 +15,7 @@ export class Nes implements CpuBus {
   readonly cartridge: Cartridge;
   readonly ppu: Ppu;
   readonly cpu: Cpu6502;
-  readonly apu = new Apu();
+  readonly apu = new Apu(this);
   private readonly ram = new Uint8Array(0x800);
   private cycles = 0;
   private dmaStall = 0; private readonly rgba = new Uint8ClampedArray(FRAME_WIDTH*FRAME_HEIGHT*4);
@@ -85,6 +85,12 @@ export class Nes implements CpuBus {
       }
     }
     this.cycles = this.cpu.cycles;
+  }
+
+  readDmc(address: number): number {
+    // ponytail: four-cycle fetch stall; bus-phase alignment and OAM overlap need cycle-level DMA.
+    this.dmaStall += 4;
+    return this.read(address);
   }
 
   private clockDevices(cycles: number): void {

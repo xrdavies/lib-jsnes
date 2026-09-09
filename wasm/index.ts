@@ -1,16 +1,17 @@
 import { Cpu6502, CpuBus } from '../dist-wasm/cpu.generated';
 import { Ppu } from '../dist-wasm/ppu.generated';
-import { Apu } from '../dist-wasm/apu.generated';
+import { Apu, DmcBus } from '../dist-wasm/apu.generated';
 import { Controller } from '../dist-wasm/controller.generated';
 import { Cartridge } from './cartridge';
 const RAM = new Uint8Array(0x800);
 const cartridge = new Cartridge();
 const ppu = new Ppu(cartridge);
-const apu = new Apu();
+const apu = new Apu(new Bus());
 let audio = new Int16Array(0);
 const controller1 = new Controller(), controller2 = new Controller();
 let dmaStall: i32 = 0;
-class Bus implements CpuBus {
+class Bus implements CpuBus, DmcBus {
+  readDmc(address: i32): i32 { dmaStall += 4; return read(address); }
   read(address: i32): i32 { return read(address); }
   write(address: i32, value: i32): void { write(address, value); }
 }

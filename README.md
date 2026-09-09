@@ -10,7 +10,7 @@ npm test
 npm run build:wasm
 ```
 
-`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise APU as mono PCM, including frame IRQs. The broader TypeScript mapper set is still missing from WASM.
+`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise/DMC APU as mono PCM, including frame and DMC IRQs. The broader TypeScript mapper set is still missing from WASM.
 
 ## Performance
 
@@ -67,8 +67,7 @@ outside the current timing model.
 Pulse channels implement all four duty patterns, CPU/2 timer clocks, and half-frame
 sweeps with channel-specific negate and target-overflow muting. Tests check output
 frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains
-incomplete: DMC, exact frame edge timing, and the nonlinear mixer are not
-implemented.
+incomplete: exact frame edge timing and the nonlinear mixer are not implemented.
 
 The triangle timer runs every CPU cycle and advances its 32-step sequencer once
 per programmed period plus one, gated by the length and linear counters. Tests
@@ -79,6 +78,27 @@ Noise timer table entries are CPU-cycle intervals. The LFSR keeps running while
 the channel is disabled, and period/mode writes preserve the current countdown
 and shift register. Tests check all 16 NTSC periods with both feedback taps,
 snapshot continuation, and matching PCM from the TypeScript and WASM builds.
+
+DMC implements the 16 NTSC sample rates, one-byte prefetch, LSB-first delta
+output, seven-bit DAC limits, address wrap, looping, and completion IRQs. Both
+system cores read samples through their current CPU cartridge mapping and charge
+four stall cycles per fetch. This is an instruction-level DMA approximation:
+read-cycle alignment, OAM/DMC arbitration, and controller-read glitches are not
+modeled. The output uses a provisional linear gain; analog mixing/filtering is
+still incomplete.
+
+`new Apu()` remains valid for standalone synthesis, including direct `$4011` DAC
+writes. For DMC sample playback, supply `new Apu({ readDmc(address) { ... } })`;
+the host supplies memory and accounts for fetch stalls. `Nes` and `WasmCore`
+connect this bus automatically. Reading `$4015` clears only the frame IRQ;
+writing `$4015` or disabling IRQ in `$4010` acknowledges DMC IRQ. Stopping the
+reader leaves buffered output and the current DAC level intact.
+
+The APU snapshot is now 78 bytes and includes the DMC reader, prefetch byte,
+shift register, timer, DAC, and IRQ. Previous 62-byte APU snapshots are rejected.
+DMC tests cover all rates, maximum length, mapper wrap, output limits, CPU IRQs,
+continued output after stopping, and snapshot replay in TypeScript, with PCM and
+CPU parity checks in WASM.
 
 The CPU advances the APU after each instruction, DMA stall, and interrupt entry.
 Audio register changes and status reads therefore take effect within a host
@@ -217,7 +237,7 @@ view before the next drain, reset, or memory growth. `sampleRate()` returns Hz.
 
 Audio tests compare both frame modes, each implemented channel, full-width timer
 periods, mixed PCM, and DMA/NMI/IRQ timing between builds. The shared APU still
-lacks DMC and a nonlinear mixer, and its frame-edge timing remains approximate.
+lacks a nonlinear mixer, and its frame-edge timing remains approximate.
 
 
 ## Publishing

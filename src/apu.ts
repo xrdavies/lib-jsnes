@@ -128,17 +128,76 @@ class Noise {
   clockLength(): void { if (this.length > 0 && !(this.regs[0] & 0x20)) this.length--; }
   sample(): number { return this.enabled && this.length > 0 && !(this.shift & 1) ? this.envelope.volume(this.regs[0]) : 0; }
 }
-/** Pulse, triangle, and noise synthesis; DMC and exact frame edge timing remain incomplete. */
+/** The host reads CPU-mapped sample memory and charges the fetch stall. */
+export interface DmcBus { readDmc(address: number): number; }
+const DMC_PERIOD = [428,380,340,320,286,254,226,214,190,160,142,128,106,84,72,54];
+class Dmc {
+  regs = new Uint8Array(4);
+  output = 0;
+  address = 0xc000;
+  remaining = 0;
+  timer = 0;
+  shift = 0;
+  bits = 8;
+  buffer = 256; // Empty; every 8-bit sample value is valid.
+  silence = true;
+  irq = false;
+  write(index: number, value: number): void {
+    this.regs[index] = value;
+    if (index === 0 && !(value & 0x80)) this.irq = false;
+    if (index === 1) this.output = value & 127;
+  }
+  restart(): void {
+    const start: number = this.regs[2], length: number = this.regs[3];
+    this.address = 0xc000 + start * 64;
+    this.remaining = length * 16 + 1;
+  }
+  enable(enabled: boolean): void {
+    this.irq = false;
+    if (!enabled) this.remaining = 0;
+    else if (this.remaining === 0) this.restart();
+  }
+  step(bus: DmcBus | null): void {
+    if (this.buffer === 256 && this.remaining > 0 && bus !== null) {
+      this.buffer = bus.readDmc(this.address) & 255;
+      this.address = this.address === 0xffff ? 0x8000 : this.address + 1;
+      if (--this.remaining === 0) {
+        if (this.regs[0] & 0x40) this.restart();
+        else if (this.regs[0] & 0x80) this.irq = true;
+      }
+    }
+    if (this.timer-- > 0) return;
+    this.timer = DMC_PERIOD[this.regs[0] & 15] - 1;
+    if (!this.silence) {
+      if (this.shift & 1) { if (this.output <= 125) this.output += 2; }
+      else if (this.output >= 2) this.output -= 2;
+    }
+    this.shift >>>= 1;
+    if (--this.bits === 0) {
+      this.bits = 8;
+      this.silence = this.buffer === 256;
+      if (!this.silence) { this.shift = this.buffer; this.buffer = 256; }
+    }
+  }
+  reset(): void {
+    this.regs.fill(0); this.output = this.remaining = this.timer = this.shift = 0;
+    this.address = 0xc000; this.bits = 8; this.buffer = 256; this.silence = true; this.irq = false;
+  }
+}
+/** Five-channel NTSC synthesis; exact DMA bus arbitration remains incomplete. */
 export class Apu {
-  static readonly STATE_SIZE = 62;
+  static readonly STATE_SIZE = 78;
+  private readonly dmc = new Dmc();
+  constructor(private readonly bus: DmcBus | null = null) {}
   readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(1),new Pulse(0)]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private mode5=false; private frameIrq=false; private irqInhibit=false; private samples:number[]=[];
-  get irqPending(): boolean { return this.frameIrq; }
+  get irqPending(): boolean { return this.frameIrq || this.dmc.irq; }
   write(address:number,value:number):void {
     value&=255;
     if(address>=0x4000&&address<0x4008)this.pulse[address<0x4004?0:1].write(address&3,value);
     else if(address>=0x4008&&address<0x400c)this.triangle.write(address&3,value);
     else if(address>=0x400c&&address<0x4010)this.noise.write(address&3,value);
-    else if(address===0x4015){this.pulse[0].enabled=!!(value&1);this.pulse[1].enabled=!!(value&2);this.triangle.enabled=!!(value&4);this.noise.enabled=!!(value&8);if(!this.pulse[0].enabled)this.pulse[0].length=0;if(!this.pulse[1].enabled)this.pulse[1].length=0;if(!this.triangle.enabled)this.triangle.length=0;if(!this.noise.enabled)this.noise.length=0;}
+    else if(address>=0x4010&&address<=0x4013)this.dmc.write(address&3,value);
+    else if(address===0x4015){this.dmc.enable(!!(value&16));this.pulse[0].enabled=!!(value&1);this.pulse[1].enabled=!!(value&2);this.triangle.enabled=!!(value&4);this.noise.enabled=!!(value&8);if(!this.pulse[0].enabled)this.pulse[0].length=0;if(!this.pulse[1].enabled)this.pulse[1].length=0;if(!this.triangle.enabled)this.triangle.length=0;if(!this.noise.enabled)this.noise.length=0;}
     else if(address===0x4017){this.mode5=!!(value&0x80);this.irqInhibit=!!(value&0x40);if(this.irqInhibit)this.frameIrq=false;this.frame=0;if(this.mode5){for(let i=0;i<this.pulse.length;i++){const pulse=this.pulse[i];pulse.envelope.clock(pulse.regs[0]);pulse.clockLength();pulse.clockSweep();}this.noise.envelope.clock(this.noise.regs[0]);this.noise.clockLength();this.triangle.clockLinear();this.triangle.clockLength();}}
   }
   /** Fixed-width, little-endian oscillator state; queued host audio is not included. */
@@ -167,10 +226,15 @@ export class Apu {
     out[36] = +this.triangle.enabled; out[37]=this.pulse[0].sweepDivider; out[38]=this.pulse[1].sweepDivider; out[39]=+this.pulse[0].sweepReload; out[40]=+this.pulse[1].sweepReload;
     view.setUint32(41, this.frac, true);
     view.setUint16(57, this.frame, true);
-    out[45]=+this.mode5; out[46]=this.triangle.linear; out[47]=+this.triangle.linearReload; out[59] = 6; out[60] = 7; out[61]=+this.frameIrq | (+this.irqInhibit << 1); // APU snapshot format version.
+    out[45]=+this.mode5; out[46]=this.triangle.linear; out[47]=+this.triangle.linearReload; out[59] = 6; out[60] = 8; out[61]=+this.frameIrq | (+this.irqInhibit << 1); // APU snapshot format version.
     for (const [i, channel] of [...this.pulse, this.noise].entries()) {
       out.set([+channel.envelope.start, channel.envelope.divider, channel.envelope.decay], 48 + i * 3);
     }
+    out.set(this.dmc.regs, 62);
+    out[66] = this.dmc.output; out[67] = +this.dmc.silence | (+this.dmc.irq << 1);
+    out[68] = this.dmc.bits; out[69] = this.dmc.shift;
+    view.setUint16(70, this.dmc.buffer, true); view.setUint16(72, this.dmc.address, true);
+    view.setUint16(74, this.dmc.remaining, true); view.setUint16(76, this.dmc.timer, true);
     return out;
   }
 
@@ -178,7 +242,7 @@ export class Apu {
     if (state.length !== Apu.STATE_SIZE) throw new RangeError('Invalid APU state size');
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
     const frac = view.getUint32(41, true), frame = view.getUint16(57, true);
-    if (state[59] !== 6 || state[60] !== 7 || state[61] > 3 || frac >= CPU_HZ || frame >= (state[45] ? 37282 : 29830)
+    if (state[59] !== 6 || state[60] !== 8 || state[61] > 3 || frac >= CPU_HZ || frame >= (state[45] ? 37282 : 29830)
       || [48, 51, 54].some(offset => state[offset] > 1 || state[offset + 1] > 15 || state[offset + 2] > 15)
       || state[12] > 7 || state[13] > 7 || state[19] > 31
       || view.getUint16(14, true) > 0x7fff
@@ -187,6 +251,14 @@ export class Apu {
       || [24, 26].some(offset => view.getUint16(offset, true) > 0x7ff)
       || view.getUint16(28, true) > 0x800
       || view.getUint16(30, true) > 4068) throw new RangeError('Invalid APU state values');
+    if (state[66] > 127 || state[67] > 3 || state[68] < 1 || state[68] > 8
+      || view.getUint16(70, true) > 256 || view.getUint16(72, true) < 0x8000
+      || view.getUint16(74, true) > 4081 || view.getUint16(76, true) > 427) throw new RangeError('Invalid DMC state');
+    this.dmc.regs.set(state.subarray(62, 66)); this.dmc.output = state[66];
+    this.dmc.silence = !!(state[67] & 1); this.dmc.irq = !!(state[67] & 2);
+    this.dmc.bits = state[68]; this.dmc.shift = state[69];
+    this.dmc.buffer = view.getUint16(70, true); this.dmc.address = view.getUint16(72, true);
+    this.dmc.remaining = view.getUint16(74, true); this.dmc.timer = view.getUint16(76, true);
     this.pulse[0].regs.set(state.subarray(0, 4));
     this.pulse[1].regs.set(state.subarray(4, 8));
     this.noise.regs.set(state.subarray(8, 12));
@@ -217,8 +289,8 @@ export class Apu {
     }
     this.samples = [];
   }
-  readStatus():number { const value=(this.pulse[0].length?1:0)|(this.pulse[1].length?2:0)|(this.triangle.length?4:0)|(this.noise.length?8:0)|(this.frameIrq?0x40:0); this.frameIrq=false; return value; }
-  step(cycles:number):void {for(let i=0;i<cycles;i++){if(this.frame&1)for(let channel=0;channel<this.pulse.length;channel++)this.pulse[channel].step();this.triangle.step();this.noise.step();this.clockFrame();this.frac+=SAMPLE_HZ;if(this.frac>=CPU_HZ){this.frac-=CPU_HZ;if(this.samples.length>=SAMPLE_HZ*2)this.samples.splice(0,1024); this.samples.push((this.pulse[0].sample()+this.pulse[1].sample()+this.triangle.sample()+this.noise.sample())*320-4096);}}}
+  readStatus():number { const value=(this.pulse[0].length?1:0)|(this.pulse[1].length?2:0)|(this.triangle.length?4:0)|(this.noise.length?8:0)|(this.frameIrq?0x40:0)|(this.dmc.remaining?16:0)|(this.dmc.irq?128:0); this.frameIrq=false; return value; }
+  step(cycles:number):void {for(let i=0;i<cycles;i++){if(this.frame&1)for(let channel=0;channel<this.pulse.length;channel++)this.pulse[channel].step();this.triangle.step();this.noise.step();this.dmc.step(this.bus);this.clockFrame();this.frac+=SAMPLE_HZ;if(this.frac>=CPU_HZ){this.frac-=CPU_HZ;if(this.samples.length>=SAMPLE_HZ*2)this.samples.splice(0,1024); this.samples.push((this.pulse[0].sample()+this.pulse[1].sample()+this.triangle.sample()+this.noise.sample())*320-4096+this.dmc.output*80);}}}
   private clockFrame(): void {
     // NTSC sequencer in CPU cycles. Both sequence lengths are even.
     this.frame++;
@@ -242,5 +314,5 @@ export class Apu {
     this.samples = [];
     return out;
   }
-  reset():void {this.frac=0;this.frame=0;this.mode5=false;this.frameIrq=false;this.irqInhibit=false;this.samples=[];for(let i=0;i<this.pulse.length;i++){const p=this.pulse[i];p.envelope.reset();p.regs.fill(0);p.timer=0;p.phase=0;p.length=0;p.sweepDivider=0;p.sweepReload=false;p.enabled=false;}this.triangle.regs.fill(0);this.triangle.timer=0;this.triangle.phase=0;this.triangle.length=0;this.triangle.linear=0;this.triangle.linearReload=false;this.triangle.enabled=false;this.noise.envelope.reset();this.noise.regs.fill(0);this.noise.timer=0;this.noise.shift=1;this.noise.length=0;this.noise.enabled=false;}
+  reset():void {this.dmc.reset();this.frac=0;this.frame=0;this.mode5=false;this.frameIrq=false;this.irqInhibit=false;this.samples=[];for(let i=0;i<this.pulse.length;i++){const p=this.pulse[i];p.envelope.reset();p.regs.fill(0);p.timer=0;p.phase=0;p.length=0;p.sweepDivider=0;p.sweepReload=false;p.enabled=false;}this.triangle.regs.fill(0);this.triangle.timer=0;this.triangle.phase=0;this.triangle.length=0;this.triangle.linear=0;this.triangle.linearReload=false;this.triangle.enabled=false;this.noise.envelope.reset();this.noise.regs.fill(0);this.noise.timer=0;this.noise.shift=1;this.noise.length=0;this.noise.enabled=false;}
 }
