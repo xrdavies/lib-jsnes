@@ -506,6 +506,18 @@ background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.
 WASM uses the same scanline renderer as TypeScript: within-line raster effects,
 exact sprite evaluation, and per-bus-cycle PPU timing remain incomplete. Frame views
 use packed `0xAARRGGBB` pixels; they are not RGBA byte views for `ImageData`.
+PPUADDR (`$2006`) uses a temporary address: its first write replaces the high
+six bits without changing the active PPUDATA address, and its second write
+commits the completed address. PPUCTRL updates temporary nametable bits;
+PPUSCROLL updates temporary coarse/fine scroll fields. Both ports share the
+write toggle cleared by reading PPUSTATUS. PPUDATA increments the active address
+without overwriting the temporary one. Tests cover half-written addresses,
+interleaved register writes, mirrors and snapshot replay in both builds.
+PPU snapshots add two temporary-address bytes before the I/O latch and parity
+bytes; older PPU/system snapshots are rejected. The renderer still uses its
+scanline scroll model; timed v/t copies and the full per-dot scroll pipeline
+remain unimplemented.
+
 Each visible line is drawn at dot 256 using the current scroll, nametables,
 pattern banks, palette, mask and OAM. Later register writes affect subsequent
 lines and leave completed lines intact, allowing vertical splits and mapper IRQ

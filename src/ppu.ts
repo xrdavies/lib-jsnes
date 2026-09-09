@@ -1,13 +1,14 @@
 import type { Cartridge } from './cartridge.js';
-export const PPU_STATE_SIZE = 0x4000 + 32 + 256 + 13 + 245760 + 61440 + 7;
+export const PPU_STATE_SIZE = 0x4000 + 32 + 256 + 13 + 245760 + 61440 + 9;
 
 export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,0x5c007e,0x6e0040,0x6c0700,0x561d00,0x333500,0x0b4800,0x005100,0x004b00,0x00402b,0x000000,0x000000,0x000000,0xaaaaaa,0x155fd9,0x4240ff,0x7527fe,0xa01acc,0xb71e7b,0xb53120,0x994e00,0x6b6d00,0x388700,0x0c9300,0x008b00,0x008268,0x000000,0x000000,0x000000,0xffffff,0x64b0ff,0x9290ff,0xb36aff,0xdf54ff,0xf053a4,0xf0705f,0xf1a33b,0xbdc52f,0x8bd53f,0x5eea6f,0x4de6ae,0x4dd2e6,0x4d4d4d,0x000000,0x000000,0xffffff,0xc0dfff,0xd3d2ff,0xe8c8ff,0xfbc2ff,0xfec4d7,0xfcc7b0,0xf9d89c,0xe6e89e,0xd5f0a3,0xc5f7c8,0xc5f7e1,0xc5e9f2,0xbcbcbc,0x000000,0x000000]);export class Ppu {
   constructor(private readonly cartridge: Cartridge) {}
   private ioLatch = 0;
+  private tempAddr = 0;
   private oddFrame = false;
   private readonly spriteOccupied = new Uint8Array(256);
   private readonly framePalette = new Uint32Array(32);
-  reset(): void { this.oddFrame=false; this.ioLatch=0; this.ctrl=0; this.mask=0; this.status=0; this.backgroundOpaque.fill(0); this.nmiPending=false; this.sprite0Hit=false; this.spriteOverflow=false; this.scrollX=0; this.scrollY=0; this.oamAddr=0; this.addr=0; this.latch=false; this.data=0; this.scanline=0; this.dot=0; this.scanlineTicks=0; this.frame.fill(0xff000000); }
+  reset(): void { this.oddFrame=false; this.ioLatch=0; this.ctrl=0; this.mask=0; this.status=0; this.backgroundOpaque.fill(0); this.nmiPending=false; this.sprite0Hit=false; this.spriteOverflow=false; this.scrollX=0; this.scrollY=0; this.oamAddr=0; this.addr=0; this.tempAddr=0; this.latch=false; this.data=0; this.scanline=0; this.dot=0; this.scanlineTicks=0; this.frame.fill(0xff000000); }
   readonly vram = new Uint8Array(0x4000); readonly backgroundOpaque = new Uint8Array(256*240); readonly palette = new Uint8Array(32); readonly oam = new Uint8Array(256); readonly frame = new Uint32Array(256*240);
   private ctrl=0; private mask=0; private scanlineTicks=0; private nmiPending=false; private sprite0Hit=false; private spriteOverflow=false; private scrollX=0; private scrollY=0; private status=0; private oamAddr=0; private addr=0; private latch=false; private data=0; scanline=0; dot=0;
   readRegister(reg: number): number {
@@ -29,7 +30,13 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     // ponytail: retain the PPU I/O latch indefinitely; model analog decay if needed.
     return this.ioLatch;
   }
-  writeRegister(reg:number,value:number):void {value&=255; this.ioLatch=value; switch(reg&7){case 0:{const was=this.ctrl;this.ctrl=value;if(!(was&0x80)&&(value&0x80)&&(this.status&0x80))this.nmiPending=true;break;}case 1:this.mask=value;break;case 3:this.oamAddr=value;break;case 4:this.oam[this.oamAddr]=value;this.oamAddr=(this.oamAddr+1)&255;break;case 5:if(!this.latch)this.scrollX=value;else this.scrollY=value;this.latch=!this.latch;break;case 6:if(!this.latch)this.addr=(value&0x3f)<<8;else this.addr=(this.addr&0x3f00)|value;this.latch=!this.latch;break;case 7:{const a=this.addr&0x3fff; if(a>=0x3f00)this.palette[this.paletteIndex(a)]=value; else this.writeMemory(a,value); this.addr=(a+(this.ctrl&4?32:1))&0x3fff; break;}}}
+  writeRegister(reg:number,value:number):void {value&=255; this.ioLatch=value; switch(reg&7){case 0:{const was=this.ctrl;this.ctrl=value;this.tempAddr=(this.tempAddr&~0x0c00)|((value&3)<<10);if(!(was&0x80)&&(value&0x80)&&(this.status&0x80))this.nmiPending=true;break;}case 1:this.mask=value;break;case 3:this.oamAddr=value;break;case 4:this.oam[this.oamAddr]=value;this.oamAddr=(this.oamAddr+1)&255;break;case 5:
+      if (!this.latch) { this.scrollX=value; this.tempAddr=(this.tempAddr&~31)|(value>>>3); }
+      else { this.scrollY=value; this.tempAddr=(this.tempAddr&~0x73e0)|((value&7)<<12)|((value&0xf8)<<2); }
+      this.latch=!this.latch;break;case 6:
+      if (!this.latch) this.tempAddr=(this.tempAddr&255)|((value&0x3f)<<8);
+      else { this.tempAddr=(this.tempAddr&0x7f00)|value; this.addr=this.tempAddr&0x3fff; }
+      this.latch=!this.latch;break;case 7:{const a=this.addr&0x3fff; if(a>=0x3f00)this.palette[this.paletteIndex(a)]=value; else this.writeMemory(a,value); this.addr=(a+(this.ctrl&4?32:1))&0x3fff; break;}}}
   private renderBackground(y: number): void {
     // Rebuild for this line so register writes and restored state affect future lines.
     for (let i = 0; i < 32; i++) this.framePalette[i] = 0xff000000 | this.color(i);
@@ -123,18 +130,18 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     }
     return 0x2000 + table * 0x400 + (relative & 0x3ff);
   }
-  saveState(): Uint8Array { const out=new Uint8Array(PPU_STATE_SIZE); out.set(this.vram); out.set(this.palette,0x4000); out.set(this.oam,0x4020); out.set([this.ctrl,this.mask,this.status,this.oamAddr,this.addr&255,this.addr>>>8,this.latch?1:0,this.data,this.scanline&255,this.scanline>>>8,this.dot&255,this.dot>>>8,this.nmiPending?1:0],0x4120); out.set([this.scrollX,this.scrollY,this.sprite0Hit?1:0,this.spriteOverflow?1:0,this.scanlineTicks&255],0x412d); out.set(new Uint8Array(this.frame.buffer),0x4132); out.set(this.backgroundOpaque,0x4132+245760); out[PPU_STATE_SIZE-2]=this.ioLatch; out[PPU_STATE_SIZE-1]=+this.oddFrame; return out; }
+  saveState(): Uint8Array { const out=new Uint8Array(PPU_STATE_SIZE); out.set(this.vram); out.set(this.palette,0x4000); out.set(this.oam,0x4020); out.set([this.ctrl,this.mask,this.status,this.oamAddr,this.addr&255,this.addr>>>8,this.latch?1:0,this.data,this.scanline&255,this.scanline>>>8,this.dot&255,this.dot>>>8,this.nmiPending?1:0],0x4120); out.set([this.scrollX,this.scrollY,this.sprite0Hit?1:0,this.spriteOverflow?1:0,this.scanlineTicks&255],0x412d); out.set(new Uint8Array(this.frame.buffer),0x4132); out.set(this.backgroundOpaque,0x4132+245760); out[PPU_STATE_SIZE-4]=this.tempAddr&255; out[PPU_STATE_SIZE-3]=this.tempAddr>>>8; out[PPU_STATE_SIZE-2]=this.ioLatch; out[PPU_STATE_SIZE-1]=+this.oddFrame; return out; }
   consumeScanlines(): number { const n=this.scanlineTicks; this.scanlineTicks=0; return n; }
   consumeNmi(): boolean { const pending=this.nmiPending; this.nmiPending=false; return pending; }
   static validateState(state: Uint8Array): void {
-    if (state.length !== PPU_STATE_SIZE || state[PPU_STATE_SIZE-1] > 1) throw new RangeError('Invalid PPU state');
+    if (state.length !== PPU_STATE_SIZE || state[PPU_STATE_SIZE-1] > 1 || state[PPU_STATE_SIZE-3] > 0x7f) throw new RangeError('Invalid PPU state');
     const v = state.subarray(0x4120);
     if (v[5] > 0x3f || v[6] > 1 || (v[8] | (v[9] << 8)) > 261
       || (v[10] | (v[11] << 8)) > 340 || v[12] > 1 || v[15] > 1 || v[16] > 1) {
       throw new RangeError('Invalid PPU state values');
     }
   }
-  loadState(state: Uint8Array): void { Ppu.validateState(state); this.vram.set(state.subarray(0,0x4000)); this.palette.set(state.subarray(0x4000,0x4020)); this.oam.set(state.subarray(0x4020,0x4120)); const v=state.subarray(0x4120); [this.ctrl,this.mask,this.status,this.oamAddr]=v; this.addr=v[4]|(v[5]<<8); this.latch=!!v[6]; this.data=v[7]; this.scanline=v[8]|(v[9]<<8); this.dot=v[10]|(v[11]<<8); this.nmiPending=!!v[12]; const extra=state.subarray(0x412d,0x4132); this.scrollX=extra[0]; this.scrollY=extra[1]; this.sprite0Hit=!!extra[2]; this.spriteOverflow=!!extra[3]; this.scanlineTicks=extra[4]; this.frame.set(new Uint32Array(new Uint8Array(state.subarray(0x4132,0x4132+245760)).buffer)); this.backgroundOpaque.set(state.subarray(0x4132+245760,PPU_STATE_SIZE-2)); this.ioLatch=state[PPU_STATE_SIZE-2]; this.oddFrame=!!state[PPU_STATE_SIZE-1]; }
+  loadState(state: Uint8Array): void { Ppu.validateState(state); this.vram.set(state.subarray(0,0x4000)); this.palette.set(state.subarray(0x4000,0x4020)); this.oam.set(state.subarray(0x4020,0x4120)); const v=state.subarray(0x4120); [this.ctrl,this.mask,this.status,this.oamAddr]=v; this.addr=v[4]|(v[5]<<8); this.latch=!!v[6]; this.data=v[7]; this.scanline=v[8]|(v[9]<<8); this.dot=v[10]|(v[11]<<8); this.nmiPending=!!v[12]; const extra=state.subarray(0x412d,0x4132); this.scrollX=extra[0]; this.scrollY=extra[1]; this.sprite0Hit=!!extra[2]; this.spriteOverflow=!!extra[3]; this.scanlineTicks=extra[4]; this.frame.set(new Uint32Array(new Uint8Array(state.subarray(0x4132,0x4132+245760)).buffer)); this.backgroundOpaque.set(state.subarray(0x4132+245760,PPU_STATE_SIZE-4)); this.tempAddr=state[PPU_STATE_SIZE-4]|(state[PPU_STATE_SIZE-3]<<8); this.ioLatch=state[PPU_STATE_SIZE-2]; this.oddFrame=!!state[PPU_STATE_SIZE-1]; }
   dma(bytes: Uint8Array): void { for(let i=0;i<256;i++)this.oam[(this.oamAddr+i)&255]=bytes[i]; this.oamAddr=(this.oamAddr+256)&255; }
   step(dots = 1): boolean {
     let frame = false;
