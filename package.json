@@ -33,5 +33,16 @@
   ],
   "license": "MIT",
   "browser": "./dist/index.js",
-  "sideEffects": false
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/xrdavies/lib-jsnes.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xrdavies/lib-jsnes/issues"
+  },
+  "homepage": "https://github.com/xrdavies/lib-jsnes#readme",
+  "engines": {
+    "node": ">=18"
+  }
 }
