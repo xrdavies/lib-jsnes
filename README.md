@@ -121,8 +121,8 @@ is separate. Host `Nes.read()` and `write()` are bus operations with these side
 effects; WASM diagnostic `ramRead()` inspects RAM without a bus access. Tests cover
 operand/dummy reads, both controller ports, disabled RAM and OAM DMA transfers.
 This models the standard NES ports; Famicom expansion devices and external CPU bus
-decay are not modeled. Full `Nes` snapshots store the bus byte and CPU NMI latch
-before the OAM DMA section; previous full-system layouts are rejected.
+decay are not modeled. Full `Nes` snapshots store the bus byte before the OAM DMA
+section; the NMI latch is part of the CPU flags byte.
 
 Both cores preserve A/X/Y on `reset()`, following the shared CPU reset behavior.
 They reset PC from the cartridge vector, SP to `$FD`, status to `$24`, cycle count
@@ -152,13 +152,16 @@ entire backing allocation. WASM loading also copies Buffer views backed by its
 own linear memory before allocating replacement ROM storage. No Node-specific
 dependency is required by the browser build.
 The CPU snapshot is now `Cpu6502.STATE_SIZE` (16 bytes): seven bytes for registers
-and PC, an eight-byte little-endian Float64 cycle count, and a JAM flag. This preserves
+and PC, an eight-byte little-endian Float64 cycle count, and a flags byte holding
+JAM in bit 0 and latched NMI in bit 1. This preserves
 nonnegative safe-integer counts beyond 2³², where the former four-byte encoding
 wrapped after roughly 40 minutes of emulated NTSC time. Non-finite, fractional,
 negative and unsafe cycle counts are rejected before restoring state. Previous
 11-byte and 15-byte CPU snapshots and full `Nes` snapshots containing those layouts
-are rejected. The JAM flag adds one byte to the previous full snapshot; other
-component layouts are unchanged. Boundary tests seed long-running counts and verify continuation through
+are rejected. Older 16-byte CPU snapshots with only a JAM bit restore with no
+pending NMI. The
+full-system format removes the separate NMI byte previously stored after CPU RAM,
+so previous full-system snapshots are rejected by size. Boundary tests seed long-running counts and verify continuation through
 pending DMA after restore.
 CHR RAM cartridges append their 8 KiB of pattern memory to the cartridge section;
 CHR ROM cartridges do not append pattern memory. `cartridge.stateSize` gives
@@ -172,7 +175,7 @@ after one or two alignment cycles (513/514 cycles total). Source bytes are read
 when their transfer cycle occurs; OAM fills progressively instead of changing
 immediately on `$4014`. The source page, byte index, read latch, alignment count
 and read/write phase are stored in a six-byte snapshot section after CPU RAM,
-the CPU bus byte and NMI latch, followed by the eight-byte DMC stall counter. Earlier full-system
+the CPU bus byte, followed by the eight-byte DMC stall counter. Earlier full-system
 snapshots lacking the new section are rejected. Tests restore every transfer
 phase, change source memory mid-transfer and check CPU-visible OAM in both builds.
 Repeated host writes before stepping replace the pending page rather than queue
@@ -197,8 +200,8 @@ hosts may ignore extra arguments; forwarding hosts must preserve them to use
 `Nes` device clocks. Direct `Nes.read()`/`write()` calls remain untimed by default.
 `Cpu6502.busCycles` counts accesses in the latest instruction or interrupt;
 JAM and unsupported-opcode fallback clocks are supplied separately by the host.
-Full-system snapshots add a latched CPU NMI byte after CPU open bus, and the PPU
-section adds one timing-flags byte before its decay counters. Earlier layouts
+The CPU snapshot retains the NMI latch, and the PPU section stores one
+timing-flags byte before its decay counters. Earlier full-system layouts
 are rejected; validation happens before any live state or queued PCM changes.
 Pulse channels implement all four duty patterns, CPU/2 timer clocks, and half-frame
 sweeps with channel-specific negate and target-overflow muting. Tests check output
@@ -495,8 +498,15 @@ overlapping stack memory sees the written value. RTS reads the saved return
 address before incrementing it; BRK fetches its padding byte; accepted IRQ/NMI
 entries perform two discarded PC reads without advancing PC. Tests check access
 order, stack/address wrap and status flags, including JSR stack overlap in WASM.
-Devices advance during these accesses as they do for ordinary instructions;
-NMI hijacking of an interrupt already in progress remains unimplemented.
+Devices advance during these accesses as they do for ordinary instructions.
+BRK and IRQ select their vector after pushing PC, before pushing status. A latched
+NMI at that point takes over the vector while preserving the original stack
+semantics, including BRK's B bit. Later NMI edges remain pending until the first
+handler instruction has executed. The CPU owns `nmiPending`; custom clocking
+hosts can set it when sampling an edge. `interruptEntry` marks a completed entry;
+custom hosts must skip ordinary post-instruction dispatch for that step to avoid
+entering NMI immediately after BRK. Tests cover every entry cycle, vector reads,
+stack bytes and snapshot continuation with a late NMI.
 
 System IRQ polling now uses the I flag from before CLI, SEI or PLP, so CLI/PLP
 unmasking takes effect after the following instruction and SEI/PLP cannot suppress
@@ -686,7 +696,7 @@ in both cores:
 | `apu_test/rom_singles/` | All 8 tests pass |
 | `ppu_vbl_nmi/rom_singles/` | All 10 tests pass |
 | `ppu_open_bus/ppu_open_bus.nes` | Passes, including decay and partial-refresh checks |
-| `cpu_interrupts_v2/rom_singles/` | 1 (CLI latency) and 5 (branch delay) pass; 2–4 fail |
+| `cpu_interrupts_v2/rom_singles/` | 1–3 and 5 pass; 4 (IRQ/OAM DMA boundary) fails |
 
 The full instruction suite exposed missing immediate LAX and SHY/SHX support;
 those instructions are now implemented. The PPU suite exposed instruction-at-once
@@ -694,9 +704,9 @@ clocking, NMI sampling, VBlank suppression and rendering-gate timing errors;
 those checks now pass. The scanline renderer, DMA arbitration and MMC3 A12
 approximation still limit compatibility. These results do not establish full
 PPU or game compatibility.
-The additional CPU interrupt suite still exposes missing NMI takeover of BRK/IRQ
-vectoring and an IRQ boundary error at the end of OAM DMA. These are recorded
-failures, not covered by the passing PPU timing suite.
+The additional CPU interrupt suite now passes NMI takeover of BRK/IRQ vectoring.
+It still exposes an IRQ boundary error at the end of OAM DMA; the passing PPU
+timing suite does not cover this remaining failure.
 
 For a typed wrapper, load the generated bytes with `WasmCore.from()`:
 

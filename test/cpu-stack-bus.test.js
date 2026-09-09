@@ -6,7 +6,7 @@ function machine(code, start = 0x8000) {
   const memory = new Uint8Array(65536), accesses = [];
   code.forEach((v, i) => { memory[(start + i) & 65535] = v; });
   const cpu = new Cpu6502({ read(a) { accesses.push(['r', a]); return memory[a]; },
-    write(a, v) { accesses.push(['w', a, v & 255]); memory[a] = v; } }, true);
+    write(a, v) { accesses.push(['w', a, v]); memory[a] = v; } }, true);
   cpu.pc = start;
   return { cpu, memory, accesses };
 }

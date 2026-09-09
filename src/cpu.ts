@@ -16,6 +16,8 @@ export class Cpu6502 {
     cycles = 0;
     busCycles = 0;
     interruptPollEarly = false;
+    interruptEntry = false;
+    nmiPending = false;
     unknownOpcodes = 0;
     lastUnknownOpcode = -1;
     readonly unknownOpcodeCounts = new Uint32Array(256);
@@ -24,17 +26,17 @@ export class Cpu6502 {
     private consecutiveWrite = false;
     private instructionIrqMasked = true;
     constructor(private readonly bus: CpuBus, private readonly strict = false) { }
-    reset(): void { this.interruptPollEarly = false; this.halted = false; this.instructionIrqMasked = true; this.sp = 0xfd; this.p = U | I; this.pc = this.bus.read(0xfffc, false) | (this.bus.read(0xfffd, false) << 8); this.cycles = this.busCycles = 0; this.unknownOpcodes = 0; this.lastUnknownOpcode = -1; this.unknownOpcodeCounts.fill(0); }
+    reset(): void { this.nmiPending = this.interruptEntry = this.interruptPollEarly = false; this.halted = false; this.instructionIrqMasked = true; this.sp = 0xfd; this.p = U | I; this.pc = this.bus.read(0xfffc, false) | (this.bus.read(0xfffd, false) << 8); this.cycles = this.busCycles = 0; this.unknownOpcodes = 0; this.lastUnknownOpcode = -1; this.unknownOpcodeCounts.fill(0); }
     save(): number[] {
         if (!Number.isSafeInteger(this.cycles) || this.cycles < 0) throw new RangeError('Invalid CPU cycle count');
         const bytes = new Uint8Array(Cpu6502.STATE_SIZE);
         bytes.set([this.a, this.x, this.y, this.sp, this.p, this.pc & 255, this.pc >>> 8]);
         new DataView(bytes.buffer).setFloat64(7, this.cycles, true);
-        bytes[15] = +this.halted;
+        bytes[15] = +this.halted | (+this.nmiPending << 1);
         return Array.from(bytes);
     }
     static validateState(v: number[]): void {
-        if (v.length !== Cpu6502.STATE_SIZE || v[15] > 1) throw new RangeError('Invalid CPU state');
+        if (v.length !== Cpu6502.STATE_SIZE || v[15] > 3) throw new RangeError('Invalid CPU state');
         for (const value of v) {
             if (!Number.isInteger(value) || value < 0 || value > 255) throw new RangeError('Invalid CPU state');
         }
@@ -45,8 +47,10 @@ export class Cpu6502 {
         Cpu6502.validateState(v);
         this.busCycles = 0;
         this.interruptPollEarly = false;
+        this.interruptEntry = false;
         [this.a, this.x, this.y, this.sp, this.p] = v;
-        this.halted = !!v[15];
+        this.halted = !!(v[15] & 1);
+        this.nmiPending = !!(v[15] & 2);
         this.instructionIrqMasked = !!(this.p & I);
         this.pc = v[5] | (v[6] << 8);
         this.cycles = new DataView(Uint8Array.from(v).buffer).getFloat64(7, true);
@@ -62,6 +66,7 @@ export class Cpu6502 {
     step(): number {
         this.busCycles = 0;
         this.interruptPollEarly = false;
+        this.interruptEntry = false;
         // ponytail: retain the locked CPU state; the repeating JAM bus sequence
         // needs per-cycle bus modeling. Device clocks continue in the host.
         if (this.halted) { this.cycles++; return 1; }
@@ -125,7 +130,7 @@ export class Cpu6502 {
                 this.preparePull(); this.pc = this.pop() | (this.pop() << 8);
                 this.read(this.pc); this.pc = (this.pc + 1) & 0xffff;
                 used = 6; break;
-            case 0x00: this.fetch(); this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p | B | U); this.p |= I; this.pc = this.read16(0xfffe); used = 7; break;
+            case 0x00: this.fetch(); this.push(this.pc >>> 8); this.push(this.pc); this.finishInterrupt(0xfffe, this.p | B | U); used = 7; break;
             case 0x40: this.preparePull(); this.p = (this.pop() | U) & ~B; this.pc = this.pop() | (this.pop() << 8); used = 6; break;
             case 0x68: this.preparePull(); this.a = this.pop(); this.nz(this.a); used = 4; break;
             case 0x08: this.read(this.pc); this.push(this.p | B | U); used = 3; break;
@@ -378,8 +383,16 @@ export class Cpu6502 {
     private indX() { const a = this.zpx(); return this.read(a) | (this.read((a + 1) & 255) << 8); }
     private indY(penalty = false) { const a = this.fetch(), base = this.read(a) | (this.read((a + 1) & 255) << 8); return this.indexed(base, this.y, penalty); }
     private read16(a: number) { return this.read(a) | (this.read((a + 1) & 0xffff) << 8); }
-    private interrupt(vector: number) { this.interruptPollEarly = false; this.busCycles = 0; this.busOdd = (this.cycles & 1) !== 0; this.instructionIrqMasked = true; this.read(this.pc); this.read(this.pc); this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p & ~B | U); this.p |= I; this.pc = this.read16(vector); }
-    private push(v: number) { this.write(0x100 | this.sp, v); this.sp = (this.sp - 1) & 255; }
+    private finishInterrupt(vector: number, flags: number): void {
+        // Select after pushing PC, before the status write: later edges wait
+        // until the first handler instruction has executed.
+        const selected = this.nmiPending ? 0xfffa : vector;
+        this.nmiPending = false;
+        this.push(flags); this.p |= I; this.pc = this.read16(selected);
+        this.interruptEntry = true;
+    }
+    private interrupt(vector: number) { this.interruptPollEarly = false; this.busCycles = 0; this.busOdd = (this.cycles & 1) !== 0; this.instructionIrqMasked = true; this.read(this.pc); this.read(this.pc); this.push(this.pc >>> 8); this.push(this.pc); this.finishInterrupt(vector, this.p & ~B | U); }
+    private push(v: number) { this.write(0x100 | this.sp, v & 255); this.sp = (this.sp - 1) & 255; }
     private preparePull(): void { this.read(this.pc); this.read(0x100 | this.sp); }
     private pop() { this.sp = (this.sp + 1) & 255; return this.read(0x100 | this.sp); }
     private nz(v: number) { this.p = (this.p & ~(N | Z)) | (v ? 0 : Z) | (v & 128); }

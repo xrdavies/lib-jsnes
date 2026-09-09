@@ -55,7 +55,7 @@ test('NMI enabled on the final write cycle waits for the next instruction and su
     assert.equal(nes.read(0x10), 1);
     assert.equal(nes.cpu.pc, 0x9000); assert.equal(nes.cycleCount, 18);
   }
-  const before = nes.saveState(), invalid = saved.slice(); invalid[invalid.length - 15] = 2;
-  assert.throws(() => nes.loadState(invalid), /Invalid NMI state/);
+  const before = nes.saveState(), invalid = saved.slice(); invalid[15] = 4;
+  assert.throws(() => nes.loadState(invalid), /Invalid CPU state/);
   assert.deepEqual(nes.saveState(), before);
 });

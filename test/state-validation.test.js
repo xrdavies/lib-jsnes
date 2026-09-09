@@ -23,7 +23,7 @@ test('invalid snapshot sections leave all live state and pending PCM intact', ()
       ppuDot: ppu + 0x412b, ppuLatch: ppu + 0x4126, ppuNmi: ppu + 0x412c,
       ppuHit: ppu + 0x412f, ppuOverflow: ppu + 0x4130, apu: apu + 59,
       ppuDecay0: ppu + ppuSize - 9, ppuDecay1: ppu + ppuSize - 7, ppuDecay2: ppu + ppuSize - 5,
-      ppuTiming: ppu + ppuSize - 11, nmi: invalid.length - 15,
+      ppuTiming: ppu + ppuSize - 11, nmi: 15,
       controller1: controllers + 2, controller2: controllers + 7 };
     if (field === 'cpu') new DataView(invalid.buffer).setFloat64(7, NaN, true);
     else if (field === 'dma') new DataView(invalid.buffer).setFloat64(invalid.length - 8, NaN, true);

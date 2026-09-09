@@ -59,7 +59,7 @@ test('full snapshots retain JAM and reject legacy or invalid CPU state before mu
   assert.equal(target.cpu.jammed, true);
   source.step(30000); target.step(30000);
   assert.deepEqual(target.saveState(), source.saveState());
-  const before = target.saveState(), invalid = saved.slice(); invalid[15] = 2;
+  const before = target.saveState(), invalid = saved.slice(); invalid[15] = 4;
   assert.throws(() => target.loadState(invalid), /Invalid CPU state/);
   assert.deepEqual(target.saveState(), before);
   assert.throws(() => target.cpu.load(target.cpu.save().slice(0, 15)), /Invalid CPU state/);

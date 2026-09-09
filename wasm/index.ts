@@ -15,7 +15,7 @@ let dmaStall: i32 = 0;
 let collectionCycles: i32 = 0;
 let frameCompleted: boolean = false;
 let openBus: i32 = 0;
-let nmiPending: boolean = false, nmiPolled: boolean = false, irqPolled: boolean = false;
+let nmiPolled: boolean = false, irqPolled: boolean = false;
 let nmiEarlier: boolean = false, irqEarlier: boolean = false;
 class Bus implements CpuBus, DmcBus, OamDmaBus {
   readDma(address: i32): i32 { return read(address); }
@@ -79,7 +79,7 @@ export function loadRom(length: i32): void {
   ppu.vram.fill(0); ppu.palette.fill(0); ppu.oam.fill(0);
 }
 export function reset(): void {
-  nmiPending = nmiPolled = irqPolled = nmiEarlier = irqEarlier = false;
+  nmiPolled = irqPolled = nmiEarlier = irqEarlier = false;
   RAM.fill(0); cartridge.reset(); ppu.reset(); apu.reset(); oamDma.reset(); audio = new Int16Array(0); dmaStall = 0;
   cpu.reset();
   collectionCycles = 0;
@@ -104,8 +104,8 @@ export function step(count: i32): void {
     const used = cpu.step(); remaining -= used;
     if (used > cpu.busCycles) clockDevices(used - cpu.busCycles);
     ppu.consumeScanlines();
+    if (cpu.interruptEntry) continue;
     if (cpu.interruptPollEarly ? nmiEarlier : nmiPolled) {
-      nmiPending = false;
       if (cpu.nmi()) { cpu.cycles += 7; remaining -= 7; }
     } else if (irqPolled && (!cpu.interruptPollEarly || irqEarlier) && cpu.irqAfterInstruction()) { cpu.cycles += 7; remaining -= 7; }
   }
@@ -125,10 +125,10 @@ function clockDevices(cycles: i32): void {
 function clockPpu(dots: i32): void { frameCompleted = ppu.step(dots) || frameCompleted; }
 function beginCpuCycle(): void {
   nmiEarlier = nmiPolled; irqEarlier = irqPolled;
-  nmiPolled = nmiPending; irqPolled = apu.irqPending || cartridge.irqPending;
+  nmiPolled = cpu.nmiPending; irqPolled = apu.irqPending || cartridge.irqPending;
   clockPpu(2); apu.step(1); collectionCycles++;
 }
-function endCpuCycle(): void { clockPpu(1); nmiPending = ppu.consumeNmi() || nmiPending; }
+function endCpuCycle(): void { clockPpu(1); cpu.nmiPending = ppu.consumeNmi() || cpu.nmiPending; }
 function collectIfNeeded(): void {
   if (collectionCycles >= 29780) {
     collectionCycles = 0;
