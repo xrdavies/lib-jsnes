@@ -81,7 +81,7 @@ test('DEC absolute-X decrements memory and preserves A/C/V', () => {
   assert.equal(cpu.step(), 7);
   assert.equal(cpu.a, 0x77);
   assert.equal(cpu.p, 0xe5);
-  assert.deepEqual(writes, [[0x2100, 255]]);
+  assert.deepEqual(writes, [[0x2100, 0], [0x2100, 255]]);
   assert.equal(cpu.pc, 0x8003);
 });
 
