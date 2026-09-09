@@ -15,12 +15,22 @@ let dmaStall: i32 = 0;
 let collectionCycles: i32 = 0;
 let frameCompleted: boolean = false;
 let openBus: i32 = 0;
+let nmiPending: boolean = false, nmiPolled: boolean = false, irqPolled: boolean = false;
 class Bus implements CpuBus, DmcBus, OamDmaBus {
   readDma(address: i32): i32 { return read(address); }
   writeDma(value: i32): void { openBus = value; ppu.writeRegister(4, value); }
   readDmc(address: i32): i32 { dmaStall += 4; return read(address); }
-  read(address: i32): i32 { return read(address); }
-  write(address: i32, value: i32, consecutive: boolean, oddCycle: boolean): void { write(address, value, consecutive, oddCycle); }
+  read(address: i32, cpuCycle: boolean): i32 {
+    if (cpuCycle) beginCpuCycle();
+    const value = read(address);
+    if (cpuCycle) endCpuCycle();
+    return value;
+  }
+  write(address: i32, value: i32, consecutive: boolean, oddCycle: boolean, cpuCycle: boolean): void {
+    if (cpuCycle) beginCpuCycle();
+    write(address, value, consecutive, oddCycle);
+    if (cpuCycle) endCpuCycle();
+  }
 }
 const cpu = new Cpu6502(new Bus());
 function read(address: i32): i32 {
@@ -68,6 +78,7 @@ export function loadRom(length: i32): void {
   ppu.vram.fill(0); ppu.palette.fill(0); ppu.oam.fill(0);
 }
 export function reset(): void {
+  nmiPending = nmiPolled = irqPolled = false;
   RAM.fill(0); cartridge.reset(); ppu.reset(); apu.reset(); oamDma.reset(); audio = new Int16Array(0); dmaStall = 0;
   cpu.reset();
   collectionCycles = 0;
@@ -81,6 +92,7 @@ export function step(count: i32): void {
   }
   let remaining = count;
   while (remaining > 0) {
+    collectIfNeeded();
     if (dmaStall > 0) {
       const used = min(dmaStall, remaining);
       dmaStall -= used; remaining -= used; cpu.cycles += used;
@@ -88,11 +100,15 @@ export function step(count: i32): void {
       continue;
     }
     if (oamDma.active) { oamDma.step(); cpu.cycles++; remaining--; clockDevices(1); continue; }
-    const used = cpu.step(); remaining -= used; clockDevices(used);
+    const used = cpu.step(); remaining -= used;
+    if (used > cpu.busCycles) clockDevices(used - cpu.busCycles);
     ppu.consumeScanlines();
-    if (ppu.consumeNmi() && cpu.nmi()) { cpu.cycles += 7; remaining -= 7; clockDevices(7); }
-    else if ((apu.irqPending || cartridge.irqPending) && cpu.irqAfterInstruction()) { cpu.cycles += 7; remaining -= 7; clockDevices(7); }
+    if (nmiPolled) {
+      nmiPending = false;
+      if (cpu.nmi()) { cpu.cycles += 7; remaining -= 7; }
+    } else if (irqPolled && cpu.irqAfterInstruction()) { cpu.cycles += 7; remaining -= 7; }
   }
+  collectIfNeeded();
 }
 export function runFrame(): void {
   frameCompleted = false;
@@ -102,8 +118,16 @@ export function runFrame(): void {
   } while (!frameCompleted);
 }
 function clockDevices(cycles: i32): void {
-  frameCompleted = ppu.step(cycles * 3) || frameCompleted; apu.step(cycles);
+  clockPpu(cycles * 3); apu.step(cycles);
   collectionCycles += cycles;
+}
+function clockPpu(dots: i32): void { frameCompleted = ppu.step(dots) || frameCompleted; }
+function beginCpuCycle(): void {
+  nmiPolled = nmiPending; irqPolled = apu.irqPending || cartridge.irqPending;
+  clockPpu(2); apu.step(1); collectionCycles++;
+}
+function endCpuCycle(): void { clockPpu(1); nmiPending = ppu.consumeNmi() || nmiPending; }
+function collectIfNeeded(): void {
   if (collectionCycles >= 29780) {
     collectionCycles = 0;
     // Minimal runtime collection is safe here: execution temporaries have returned,

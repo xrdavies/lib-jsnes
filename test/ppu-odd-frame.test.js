@@ -26,12 +26,15 @@ test('NTSC frames alternate 89342/89341 dots only while either rendering layer i
   }
 });
 
-test('odd-frame skip uses the mask at pre-render dot 339 and preserves parity while blanked', () => {
+test('odd-frame skip samples the mask on entering dot 339 and preserves parity while blanked', () => {
   for (const enable of [false, true]) {
     const unit = ppu(); unit.step(89342); // Odd frame, despite rendering being disabled.
     unit.writeRegister(1, enable ? 0 : 24);
-    unit.step(261 * 341 + 339);
+    unit.step(261 * 341 + 337);
     unit.writeRegister(1, enable ? 24 : 0);
+    assert.equal(unit.step(2), false); // The rendering gate settles after one PPU dot.
+    assert.equal(unit.dot, enable ? 340 : 339);
+    unit.writeRegister(1, enable ? 0 : 24); // Changes after sampling cannot undo the decision.
     assert.equal(unit.step(1), enable);
     if (!enable) {
       assert.equal(unit.dot, 340);

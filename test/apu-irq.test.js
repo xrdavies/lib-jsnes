@@ -108,13 +108,13 @@ test('terminal IRQ clocks survive snapshots and are suppressed by immediate inhi
 
 test('JS and WASM observe a reasserted frame IRQ after a CPU status read in the terminal window', async () => {
   const bytes = new Uint8Array(16 + 16384); bytes.set([78, 69, 83, 26, 1, 0]);
-  bytes.fill(0xea, 16, 16 + 14914); // NOPs: exactly 29828 CPU cycles.
+  bytes.fill(0xea, 16, 16 + 14912); // First LDA reads $4015 on its fourth cycle, at 29828.
   const code = [0xad, 0x15, 0x40, 0x85, 0, 0xad, 0x15, 0x40, 0x85, 1,
     0xad, 0x15, 0x40, 0x85, 2];
-  bytes.set(code, 16 + 14914); bytes.set([0, 0x80], 16 + 16384 - 4);
+  bytes.set(code, 16 + 14912); bytes.set([0, 0x80], 16 + 16384 - 4);
   const js = new Nes(bytes), wasm = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
   js.reset(); wasm.loadRom(bytes); wasm.reset();
-  js.step(29828); wasm.step(29828);
+  js.step(29824); wasm.step(29824);
   js.step(21); wasm.step(21);
   assert.deepEqual([0, 1, 2].map(a => js.read(a)), [64, 64, 0]);
   assert.deepEqual([0, 1, 2].map(a => wasm.exports.ramRead(a)), [64, 64, 0]);

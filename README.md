@@ -61,9 +61,9 @@ The benchmark has changed as the renderer and runtime have evolved. Run
 it reports exact binary size and per-round medians instead of embedding
 hardware-specific measurements in this document.
 
-The PPU now skips idle dots between the events implemented by its current timing
-model. On the same Node/macOS arm64 setup, a before/after synthetic run measured
-about 0.97 to 0.86 ms/frame in TypeScript and 2.48 to 2.31 ms/frame in WASM.
+The PPU skips idle dots between the events implemented by its current timing
+model. CPU accesses now divide each cycle into two PPU dots before the access
+and one after it, so older instruction-at-once benchmark numbers are not comparable.
 Boundary tests compare batch advances against individual dots, including VBlank,
 NMI, scanline counts and multiple frame wraps. This optimization preserves the
 event ordering; the renderer now completes individual scanlines as described below.
@@ -71,15 +71,14 @@ event ordering; the renderer now completes individual scanlines as described bel
 Profiling also identified repeated per-pixel color conversion and per-cycle APU
 frame-sequencer dispatch. The renderer now builds its 32 packed colors once per
 scanline, and the APU dispatches only at its next sequencer event while continuing
-to clock oscillators every CPU cycle. Recent synthetic Node runs on this machine measured roughly 0.67 ms/frame in
-TypeScript and 0.55 ms/frame in WASM. The current optimized binary is about 40 kB;
-exact values vary with Node and host hardware. Both derived caches are rebuilt after their inputs change or snapshots
-are restored; snapshot sizes are unchanged. Tests cover palette/mask changes,
-reset and restoration around each sequencer boundary. These measurements also used the incremental runtime.
+to clock oscillators every CPU cycle. Both derived caches are rebuilt after their
+inputs change or snapshots are restored. Tests cover palette/mask changes, reset
+and restoration around each sequencer boundary.
 
 The current build uses AssemblyScript's `minimal` runtime, with explicit garbage
 collection after roughly 29,780 emulated CPU cycles, after audio drains and after
-reset. Collection runs after device execution returns, when all live core objects
+reset. Collection runs at instruction/DMA boundaries, after device execution
+returns and when all live core objects
 are reachable from module globals. It also runs inside large `step()` calls;
 hosts do not need to call `__collect()`. Runtime assertions and bounds checks remain
 enabled. Hosts using the raw allocation exports must pin managed objects they
@@ -122,8 +121,8 @@ is separate. Host `Nes.read()` and `write()` are bus operations with these side
 effects; WASM diagnostic `ramRead()` inspects RAM without a bus access. Tests cover
 operand/dummy reads, both controller ports, disabled RAM and OAM DMA transfers.
 This models the standard NES ports; Famicom expansion devices and external CPU bus
-decay are not modeled. Full `Nes` snapshots add one bus byte immediately before
-the OAM DMA section; previous full-system layouts are rejected.
+decay are not modeled. Full `Nes` snapshots store the bus byte and CPU NMI latch
+before the OAM DMA section; previous full-system layouts are rejected.
 
 Both cores preserve A/X/Y on `reset()`, following the shared CPU reset behavior.
 They reset PC from the cartridge vector, SP to `$FD`, status to `$24`, cycle count
@@ -172,28 +171,40 @@ OAM DMA now alternates one CPU-bus read and one OAMDATA write per CPU cycle,
 after one or two alignment cycles (513/514 cycles total). Source bytes are read
 when their transfer cycle occurs; OAM fills progressively instead of changing
 immediately on `$4014`. The source page, byte index, read latch, alignment count
-and read/write phase are stored in a six-byte snapshot section after CPU RAM and
-the CPU bus byte, followed by the existing eight-byte DMC stall counter. Earlier full-system
+and read/write phase are stored in a six-byte snapshot section after CPU RAM,
+the CPU bus byte and NMI latch, followed by the eight-byte DMC stall counter. Earlier full-system
 snapshots lacking the new section are rejected. Tests restore every transfer
 phase, change source memory mid-transfer and check CPU-visible OAM in both builds.
 Repeated host writes before stepping replace the pending page rather than queue
 multiple transfers. The standalone `Ppu.dma(bytes)` utility remains an immediate
 copy; CPU `$4014` writes use the shared DMA state machine.
 DMC fetch stalls temporarily pause OAM DMA in this model. Exact get/put alignment,
-DMC/OAM arbitration, DMA halt-read side effects and the write's position within a
-CPU instruction still require more detailed bus timing.
+DMC/OAM arbitration and DMA halt-read side effects still require more detailed
+DMA timing.
 OAM alignment now uses the parity of the actual CPU write access, including
 the extra cycle in indexed stores and the second write of RMW instructions.
 The CPU bus passes this as a fourth `oddCycle` argument to `write`; custom hosts
 forwarding to `Nes.write()` should preserve it. Hosts that ignore extra arguments
 remain valid. Direct `Nes.write()` calls use the current CPU cycle parity by
 default. Tests cover write modes, both parities, large cycle counts and DMA
-snapshot continuation. Tracking access parity does not yet advance PPU/APU on
-each individual CPU bus access.
+snapshot continuation. Both devices now advance on each timed CPU bus access.
+The APU advances one CPU clock and the PPU advances two dots before the access,
+then one afterward. This applies to opcode, operand, dummy and stack accesses,
+including interrupt entry. Host stepping still finishes the current instruction.
+`CpuBus.read()` receives a second `cpuCycle` argument and `write()` a fifth;
+these are true for timed accesses and false for reset-vector reads. Existing
+hosts may ignore extra arguments; forwarding hosts must preserve them to use
+`Nes` device clocks. Direct `Nes.read()`/`write()` calls remain untimed by default.
+`Cpu6502.busCycles` counts accesses in the latest instruction or interrupt;
+JAM and unsupported-opcode fallback clocks are supplied separately by the host.
+Full-system snapshots add a latched CPU NMI byte after CPU open bus, and the PPU
+section adds one timing-flags byte before its decay counters. Earlier layouts
+are rejected; validation happens before any live state or queued PCM changes.
 Pulse channels implement all four duty patterns, CPU/2 timer clocks, and half-frame
 sweeps with channel-specific negate and target-overflow muting. Tests check output
 frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains
-approximate: exact frame edge timing, resampling and board-specific analog characteristics are not modeled.
+approximate: DMC arbitration, band-limited resampling and board-specific analog
+characteristics remain incomplete.
 
 The pulse CPU/2 divider runs independently of the frame sequencer. Writes to
 `$4017` restart frame sequencing without shifting the pulse timer clock phase.
@@ -204,9 +215,8 @@ clocks at even phase or four at odd phase. IRQ inhibition and acknowledgement
 are immediate. Five-step mode clocks quarter/half units on delayed completion,
 unless a normal frame clock just occurred. Repeated writes replace the pending
 reset, and snapshots preserve the pending delay. Tests cover both phases, modes,
-clock collisions and restoration during the delay. The system still delivers
-register writes at instruction granularity, so the write's position within a CPU
-instruction remains approximate.
+clock collisions and restoration during the delay. CPU writes now reach the
+APU during their actual bus cycle.
 
 The triangle timer runs every CPU cycle and advances its 32-step sequencer once
 per programmed period plus one, gated by the length and linear counters. Tests
@@ -259,16 +269,15 @@ DMC tests cover all rates, maximum length, mapper wrap, output limits, CPU IRQs,
 continued output after stopping, and snapshot replay in TypeScript, with PCM and
 CPU parity checks in WASM.
 
-The CPU advances the APU after each instruction, DMA stall, and interrupt entry.
+The CPU advances the APU on each bus cycle, including interrupt entry, and during
+DMA stalls.
 In four-step NTSC mode, the frame IRQ latch is asserted on sequence cycles
 29,828, 29,829 and 29,830. Reading `$4015` clears the current latch, but the next
 terminal clock can assert it again. IRQ inhibition suppresses all three clocks;
 five-step mode generates no frame IRQ. Tests cover each terminal clock, snapshot
 restoration around the window, and CPU-driven status reads in both builds.
-Snapshot layout is unchanged. Reads still take effect at instruction granularity;
-this does not establish sub-instruction IRQ read/clear timing.
-Audio register changes and status reads therefore take effect within a host
-`step()` call. Timing within individual CPU instructions is still approximate.
+The APU snapshot layout is unchanged. Status reads occur on their bus cycle,
+so reading during the terminal window can observe a subsequent IRQ reassertion.
 
 `WasmCore.step(cycles)` and `runFrame(cycles)` accept integer budgets from 1 to
 2,147,483,647 per call. Larger values are rejected before entering WASM, preventing
@@ -428,7 +437,7 @@ may ignore it. Custom hosts forwarding writes to `Cartridge.writeCpu()` should
 forward this marker too (direct calls default to false). Other mappers and devices
 still receive both writes. Tests exercise all absolute RMW instructions, following
 serial transfers and snapshot continuation. Arbitrary external bus schedules and
-board variants remain outside this instruction-level model.
+board variants remain outside this model.
 
 AxROM and GxROM tests cover every bank-register value, both PRG halves, the full CHR window,
 smaller ROM mirroring, CHR RAM, reset, and rendered pixels. CNROM and GxROM reset
@@ -443,8 +452,8 @@ source is temporary and is not shipped. There is no separately maintained WASM
 opcode switch or renderer. Tests compare all 151 official opcodes and the 52 stable LAX, SAX,
 SLO, RLA, SRE, RRA, DCP, and ISC encodings against the TypeScript CPU
 (registers, RAM, and cycles) and independently check every ADC/SBC operand pair.
-These checks establish CPU parity, not complete hardware compatibility; CPU bus
-access timing remains approximate and undocumented opcode coverage is partial.
+These checks establish CPU parity, not complete hardware compatibility;
+DMA arbitration and undocumented opcode coverage remain incomplete.
 `core.exports.unknownOpcodeCount()` reports encounters with unimplemented opcodes.
 
 Taken branches now perform their discarded opcode fetch, and page-crossing
@@ -452,8 +461,8 @@ branches also read the provisional address using the old page and target low
 byte. These accesses reach the CPU bus so mapped-device read side effects occur;
 untaken branches only fetch their operand. Tests verify the read order for all
 eight branch opcodes, forward/backward crossings and 16-bit wrap, with a real
-PPUSTATUS side-effect check and WASM cycle/PC regression coverage. Devices still
-advance after each instruction, so this does not establish cycle-exact bus timing.
+PPUSTATUS side-effect check and WASM cycle/PC regression coverage. Each discarded
+read advances device clocks and can observe a different register state.
 
 Absolute-X, absolute-Y and indirect-Y stores and read-modify-write instructions
 also perform the mandatory provisional-address read, even without a page crossing.
@@ -476,8 +485,8 @@ overlapping stack memory sees the written value. RTS reads the saved return
 address before incrementing it; BRK fetches its padding byte; accepted IRQ/NMI
 entries perform two discarded PC reads without advancing PC. Tests check access
 order, stack/address wrap and status flags, including JSR stack overlap in WASM.
-The system still advances devices at instruction boundaries, so interrupt polling
-and bus-cycle alignment remain approximate.
+Devices advance during these accesses as they do for ordinary instructions;
+NMI hijacking of an interrupt already in progress remains unimplemented.
 
 System IRQ polling now uses the I flag from before CLI, SEI or PLP, so CLI/PLP
 unmasking takes effect after the following instruction and SEI/PLP cannot suppress
@@ -488,7 +497,12 @@ after `step()`; `irq()` retains its direct, current-I-bit behavior. The system
 finishes this poll before returning to its host, and the next instruction replaces
 the temporary sampled mask, so snapshot layout is unchanged. Tests cover both
 I-bit values, CLI snapshot continuation and an APU IRQ arising during SEI/PLP in
-TypeScript and WASM. IRQ source timing within each instruction remains approximate.
+TypeScript and WASM, including IRQ assertion before versus after the final poll.
+NMI edges are latched separately from the PPU output and polled on the following
+cycle. Enabling NMI on a final write cycle therefore waits for the next instruction.
+A status read or disabling NMI can cancel an unsampled PPU edge, while a CPU-latched
+edge survives. Reading PPUSTATUS at scanline 241 dot 0 suppresses that frame's
+VBlank flag and NMI; pre-render clearing also removes unsampled output.
 
 Two-cycle implied and accumulator instructions also perform the discarded read
 at the next PC before changing registers or flags, without advancing PC again.
@@ -566,7 +580,9 @@ alongside the current PPU position. Palette and sprite scratch buffers are rebui
 for each line, so they do not need separate serialization.
 
 The NTSC PPU skips the final pre-render dot on odd frames when either background
-or sprite rendering is enabled at the skip boundary (dot 339). Frame lengths
+or sprite rendering is enabled on entering dot 339. The rendering gate changes
+one PPU dot after a PPUMASK write; writes after the sampling point cannot change
+that frame's skip decision. Frame lengths
 therefore alternate between 89,342 and 89,341 PPU clocks during rendering; with
 both layers disabled they remain 89,342 clocks. Parity advances even while
 rendering is disabled, and reset starts on an even frame. Tests cover mask changes
@@ -658,13 +674,15 @@ in both cores:
 | `instr_test-v5/official_only.nes` | All 16 subtests pass |
 | `instr_test-v5/all_instrs.nes` | All 16 subtests pass, including its unofficial instructions |
 | `apu_test/rom_singles/` | All 8 tests pass |
-| `ppu_vbl_nmi/rom_singles/` | 01, 03 and 09 pass; 02, 04–08 and 10 fail |
+| `ppu_vbl_nmi/rom_singles/` | All 10 tests pass |
 | `ppu_open_bus/ppu_open_bus.nes` | Passes, including decay and partial-refresh checks |
 
 The full instruction suite exposed missing immediate LAX and SHY/SHX support;
-those instructions are now implemented. PPU failures still show incorrect NMI
-delivery, VBlank suppression and boundary timing.
-Passing the CPU/APU suites does not establish full PPU or game compatibility.
+those instructions are now implemented. The PPU suite exposed instruction-at-once
+clocking, NMI sampling, VBlank suppression and rendering-gate timing errors;
+those checks now pass. The scanline renderer, DMA arbitration and MMC3 A12
+approximation still limit compatibility. These results do not establish full
+PPU or game compatibility.
 
 For a typed wrapper, load the generated bytes with `WasmCore.from()`:
 
@@ -725,7 +743,9 @@ Raw ABI consumers call `audioDrain()` to obtain the sample count, then use
 view before the next drain, reset, or memory growth. `sampleRate()` returns Hz.
 
 Audio tests compare both frame modes, each implemented channel, full-width timer
-periods, mixed PCM, and DMA/NMI/IRQ timing between builds. The shared APU uses nonlinear mixing and the three-stage output filter; exact frame-edge timing and band-limited resampling remain incomplete.
+periods, mixed PCM, and DMA/NMI/IRQ timing between builds. The shared APU uses
+nonlinear mixing and the three-stage output filter; DMA arbitration and
+band-limited resampling remain incomplete.
 
 
 ## Publishing

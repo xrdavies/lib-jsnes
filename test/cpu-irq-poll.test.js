@@ -55,21 +55,29 @@ test('pending APU IRQ waits for the instruction after CLI, including across host
   assert.equal(wasm.cycleCount, js.cycleCount);
 });
 
-test('SEI and PLP cannot mask an APU IRQ polled before their I-bit update in either core', async () => {
-  for (const opcode of [0x78, 0x28]) {
-    // First frame IRQ assertion is at cycle 29828, during SEI or PLP.
+test('SEI and PLP poll IRQ before their last cycle and I-bit update in either core', async () => {
+  for (const opcode of [0x78, 0x28]) for (const early of [false, true]) {
+    // IRQ asserts at 29828: the late case reaches it on the last cycle;
+    // adding a cycle puts it before the instruction's interrupt poll.
     const prefix = opcode === 0x78 ? [0x58] : [0xa9, 0x24, 0x48, 0x58, 0x24, 0];
-    const prefixCycles = opcode === 0x78 ? 2 : 10;
-    const beforeCycles = opcode === 0x78 ? 29826 : 29824;
+    if (early) prefix.push(0x24, 0);
+    const prefixCycles = (opcode === 0x78 ? 2 : 10) + (early ? 3 : 0);
+    const beforeCycles = (opcode === 0x78 ? 29826 : 29824) + Number(early);
     const code = [...prefix, ...Array((beforeCycles - prefixCycles) / 2).fill(0xea), opcode, 0xe6, 0x10];
     const bytes = rom(code), js = new Nes(bytes), wasm = await WasmCore.from(binary);
     js.reset(); wasm.loadRom(bytes); wasm.reset(); js.step(beforeCycles); wasm.step(beforeCycles);
     assert.equal(js.cpu.p & 4, 0);
     js.step(1); wasm.step(1);
-    assert.equal(js.cpu.pc, 0xf000); assert.equal(wasm.programCounter, 0xf000);
-    assert.equal(js.cycleCount, 29835); assert.equal(wasm.cycleCount, 29835);
+    const pc = early ? 0xf000 : 0x8000 + code.length - 2;
+    assert.equal(js.cpu.pc, pc); assert.equal(wasm.programCounter, pc);
+    assert.equal(js.cycleCount, early ? 29836 : 29828); assert.equal(wasm.cycleCount, js.cycleCount);
     assert.equal(js.read(0x10), 0); assert.equal(wasm.exports.ramRead(0x10), 0);
-    assert.equal(js.read(0x1fb) & 4, 4); assert.equal(wasm.exports.ramRead(0x1fb) & 4, 4);
+    if (early) {
+      assert.equal(js.read(0x1fb) & 4, 4); assert.equal(wasm.exports.ramRead(0x1fb) & 4, 4);
+    } else {
+      js.step(1); wasm.step(1);
+      assert.equal(js.read(0x10), 1); assert.equal(wasm.exports.ramRead(0x10), 1);
+    }
     assert.deepEqual(wasm.audioSamples(), js.audioSamples());
   }
 });

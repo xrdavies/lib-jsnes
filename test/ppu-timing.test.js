@@ -16,12 +16,13 @@ function consoleWithNmiHandler() {
 test('NMI fires at scanline 241 dot 1 once, not on every scanline', () => {
   const { ppu } = consoleWithNmiHandler();
   ppu.writeRegister(0, 0x80);
-  for (let line = 0; line < 241; line++) {
+  for (let line = 0; line < 240; line++) {
     ppu.step(341);
     assert.equal(ppu.consumeNmi(), false, `unexpected NMI on line ${line}`);
   }
+  ppu.step(340); // Read two dots before VBlank; reading dot 0 suppresses the flag.
   assert.equal(ppu.readRegister(2) & 0x80, 0);
-  ppu.step(1);
+  ppu.step(2);
   assert.equal(ppu.consumeNmi(), true);
   assert.equal(ppu.consumeNmi(), false);
   assert.equal(ppu.readRegister(2) & 0x80, 0x80);
@@ -69,6 +70,19 @@ test('reading PPUSTATUS during VBlank cancels an undelivered NMI', () => {
   ppu.step(241 * 341 + 1);
   assert.equal(ppu.readRegister(2) & 0x80, 0x80);
   assert.equal(ppu.consumeNmi(), false);
+});
+
+test('PPUSTATUS at dot 0 suppresses VBlank and its pending suppression survives snapshots', () => {
+  const { ppu } = consoleWithNmiHandler(); ppu.writeRegister(0, 0x80);
+  ppu.step(241 * 341); assert.equal(ppu.readRegister(2) & 0x80, 0);
+  const saved = ppu.saveState();
+  for (let replay = 0; replay < 2; replay++) {
+    if (replay) ppu.loadState(saved);
+    ppu.step(1);
+    assert.equal(ppu.readRegister(2) & 0x80, 0); assert.equal(ppu.consumeNmi(), false);
+    ppu.step(262 * 341);
+    assert.equal(ppu.readRegister(2) & 0x80, 0x80);
+  }
 });
 
 test('batched PPU clocks match single-dot execution across timing events and frame wraps', () => {
