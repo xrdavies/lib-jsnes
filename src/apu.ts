@@ -73,6 +73,7 @@ class Triangle {
     }
   }
   step(): void {
+    if (this.linear === 0) return;
     if (this.timer-- <= 0) {
       this.timer = (this.regs[2] | ((this.regs[3] & 7) << 8)) + 1;
       this.phase = (this.phase + 1) & 31;
@@ -80,7 +81,7 @@ class Triangle {
   }
   clockLength(): void { if (this.length > 0 && !(this.regs[0] & 0x80)) this.length--; }
   clockLinear(): void { if(this.linearReload)this.linear=this.regs[0]&127; else if(this.linear>0)this.linear--; if(!(this.regs[0]&0x80))this.linearReload=false; }
-  sample(): number { return !this.enabled || !this.length ? 0 : this.phase < 16 ? this.phase : 31 - this.phase; }
+  sample(): number { return !this.enabled || !this.length || !this.linear ? 0 : this.phase < 16 ? this.phase : 31 - this.phase; }
 }
 
 class Noise {

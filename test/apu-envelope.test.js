@@ -81,3 +81,10 @@ test('length counters clock on half frames, honor halt, and only load when enabl
     assert.equal(apu.readStatus() & mask, 0);
   }
 });
+
+test('triangle linear counter gates waveform and reload flag controls its lifetime', () => {
+  const apu = new Apu(); apu.write(0x4015, 4); apu.write(0x4008, 0x02); apu.write(0x400a, 1); apu.write(0x400b, 0x08);
+  apu.step(1000); const before = apu.saveState(); assert.equal(before[19], 0); apu.step(7000); const after = apu.saveState(); assert.notEqual(after[19], 0);
+  apu.step(30000); const expired = apu.saveState(); assert.equal(expired[46], 0);
+  apu.write(0x4008, 0x82); apu.write(0x400b, 0x08); apu.step(7457); assert.ok(apu.saveState()[46] > 0);
+});
