@@ -372,6 +372,12 @@ const pcm = core.audioSamples(); // Owned Int16Array; drains the queued mono sam
 const sampleRate = core.sampleRate; // 44100 Hz.
 ```
 
+`WasmCore.from()` validates the required exports and memory object immediately.
+Passing a valid but unrelated WebAssembly module fails with a clear ABI error
+before any ROM or emulator state is created. Use a binary produced by the matching
+`build:wasm` script; older binaries without `romAllocate` are intentionally
+rejected.
+
 `setController(player, mask)` accepts player 1 or 2 and the same `Button` masks
 as `Nes`. The CPU reads the shared serial controller implementation at `$4016`
 and `$4017`; writing `$4016` latches both controllers. Host button changes affect

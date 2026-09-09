@@ -11,6 +11,11 @@ test('WasmCore accepts a fetch Response and exposes the shared frame view', asyn
   assert.equal(core.frame()[0], 0xff000000);
 });
 
+test('WasmCore rejects valid WASM modules that do not implement its ABI', async () => {
+  const emptyModule = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]);
+  await assert.rejects(WasmCore.from(emptyModule), /does not implement the lib-jsnes ABI/);
+});
+
 test('WasmCore rejects failed responses and oversized ROMs', async () => {
   await assert.rejects(WasmCore.from(new Response('', { status: 404 })), /request failed/);
   const core = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));

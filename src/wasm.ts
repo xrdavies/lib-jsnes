@@ -42,7 +42,12 @@ export class WasmCore {
     const bytes = input instanceof Uint8Array ? input : new Uint8Array(input as ArrayBuffer);
     const result = await WebAssembly.instantiate(bytes, { env: { abort() { throw new Error('WASM abort'); } } });
     const instance = ('instance' in result ? result.instance : result) as WebAssembly.Instance;
-    return new WasmCore(instance.exports as unknown as WasmExports);
+    const exports = instance.exports as unknown as Record<string, unknown>;
+    const required = ['romAllocate', 'loadRom', 'reset', 'step', 'framePointer', 'frameLength'];
+    if (!(exports.memory instanceof WebAssembly.Memory) || required.some(name => typeof exports[name] !== 'function')) {
+      throw new TypeError('WASM module does not implement the lib-jsnes ABI');
+    }
+    return new WasmCore(exports as unknown as WasmExports);
   }
 
   loadRom(rom: Uint8Array): void {
