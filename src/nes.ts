@@ -100,9 +100,9 @@ export class Nes implements CpuBus {
   }
   saveState(): Uint8Array {
     const cart = this.cartridge.saveState(), ppu = this.ppu.saveState(), apu = this.apu.saveState();
-    const out = new Uint8Array(11 + cart.length + ppu.length + apu.length + 8 + this.ram.length + 8);
+    const out = new Uint8Array(Cpu6502.STATE_SIZE + cart.length + ppu.length + apu.length + 8 + this.ram.length + 8);
     let offset = 0;
-    out.set(this.cpu.save(), offset); offset += 11;
+    out.set(this.cpu.save(), offset); offset += Cpu6502.STATE_SIZE;
     out.set(cart, offset); offset += cart.length;
     out.set(ppu, offset); offset += ppu.length;
     out.set(apu, offset); offset += apu.length;
@@ -115,25 +115,27 @@ export class Nes implements CpuBus {
   }
   loadState(state: Uint8Array): void {
     const cartSize = this.cartridge.stateSize, ppuSize = PPU_STATE_SIZE, apuSize = Apu.STATE_SIZE;
-    const size = 11 + cartSize + ppuSize + apuSize + 8 + this.ram.length + 8;
+    const size = Cpu6502.STATE_SIZE + cartSize + ppuSize + apuSize + 8 + this.ram.length + 8;
     if (state.length !== size) throw new RangeError('Invalid state size');
     state = state.slice(); // Validate and apply the same bytes, including shared-memory inputs.
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
     const dmaStall = view.getFloat64(size - 8, true);
     if (!Number.isSafeInteger(dmaStall) || dmaStall < 0) throw new RangeError('Invalid DMA state');
-    let offset = 11;
+    let offset = Cpu6502.STATE_SIZE;
     const cart = state.subarray(offset, offset += cartSize);
     const ppu = state.subarray(offset, offset += ppuSize);
     const apu = state.subarray(offset, offset += apuSize);
     const controller1 = state.subarray(offset, offset += 4);
     const controller2 = state.subarray(offset, offset += 4);
     // Reject every invalid section before changing live state or clearing queued PCM.
+    const cpu = Array.from(state.subarray(0, Cpu6502.STATE_SIZE));
+    Cpu6502.validateState(cpu);
     this.cartridge.validateState(cart);
     Ppu.validateState(ppu);
     Apu.validateState(apu);
     Controller.validateState(controller1);
     Controller.validateState(controller2);
-    this.cpu.load(Array.from(state.subarray(0, 11)));
+    this.cpu.load(cpu);
     this.cycles = this.cpu.cycles;
     this.cartridge.loadState(cart);
     this.ppu.loadState(ppu);

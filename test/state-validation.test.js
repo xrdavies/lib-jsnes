@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Nes, Apu, Controller } from '../dist/index.js';
+import { Cpu6502, Nes, Apu, Controller } from '../dist/index.js';
 
 function machine() {
   const bytes = new Uint8Array(16 + 0x8000);
@@ -13,17 +13,18 @@ function machine() {
 }
 
 test('invalid snapshot sections leave all live state and pending PCM intact', () => {
-  for (const field of ['cart', 'ppuAddress', 'ppuLine', 'ppuDot', 'ppuLatch', 'ppuNmi', 'ppuHit', 'ppuOverflow', 'apu', 'controller1', 'controller2', 'dma']) {
+  for (const field of ['cpu', 'cart', 'ppuAddress', 'ppuLine', 'ppuDot', 'ppuLatch', 'ppuNmi', 'ppuHit', 'ppuOverflow', 'apu', 'controller1', 'controller2', 'dma']) {
     const nes = machine(), reference = machine();
     const invalid = nes.saveState();
-    const ppu = 11 + nes.cartridge.stateSize;
+    const ppu = Cpu6502.STATE_SIZE + nes.cartridge.stateSize;
     const ppuSize = nes.ppu.saveState().length;
     const apu = ppu + ppuSize, controllers = apu + Apu.STATE_SIZE;
-    const offsets = { cart: 11 + 25, ppuAddress: ppu + 0x4125, ppuLine: ppu + 0x4129,
+    const offsets = { cart: Cpu6502.STATE_SIZE + 25, ppuAddress: ppu + 0x4125, ppuLine: ppu + 0x4129,
       ppuDot: ppu + 0x412b, ppuLatch: ppu + 0x4126, ppuNmi: ppu + 0x412c,
       ppuHit: ppu + 0x412f, ppuOverflow: ppu + 0x4130, apu: apu + 59,
       controller1: controllers + 2, controller2: controllers + 7 };
-    if (field === 'dma') new DataView(invalid.buffer).setFloat64(invalid.length - 8, NaN, true);
+    if (field === 'cpu') new DataView(invalid.buffer).setFloat64(7, NaN, true);
+    else if (field === 'dma') new DataView(invalid.buffer).setFloat64(invalid.length - 8, NaN, true);
     else invalid[offsets[field]] = 255;
     for (const core of [nes, reference]) {
       core.step(12000);
@@ -69,4 +70,50 @@ test('validated snapshots restore from offset views and discard audio only on su
   assert.deepEqual(nes.saveState(), saved);
   assert.equal(nes.audioSamples().length, 0);
   nes.step(1); assert.ok(nes.cycleCount > 7456);
+});
+
+test('CPU snapshots preserve unsigned-32-bit boundaries and the full safe-integer cycle range', () => {
+  const bus = { read: () => 0xea, write() {} };
+  for (const cycles of [0, 2 ** 31 - 1, 2 ** 31, 2 ** 32 - 1, 2 ** 32, 2 ** 40 + 3, Number.MAX_SAFE_INTEGER]) {
+    const cpu = new Cpu6502(bus); cpu.a = 0x81; cpu.x = 17; cpu.y = 255; cpu.pc = 0xabcd; cpu.cycles = cycles;
+    const saved = cpu.save();
+    assert.equal(saved.length, Cpu6502.STATE_SIZE);
+    assert.equal(new DataView(Uint8Array.from(saved).buffer).getFloat64(7, true), cycles);
+    const restored = new Cpu6502(bus); restored.load(saved);
+    assert.equal(restored.cycles, cycles);
+    assert.deepEqual(restored.save(), saved);
+    if (cycles < Number.MAX_SAFE_INTEGER - 2) {
+      restored.step(); assert.equal(restored.cycles, cycles + 2);
+      assert.equal(restored.pc, 0xabce);
+    }
+  }
+});
+
+test('CPU restore rejects invalid cycle encodings, legacy layouts and sparse arrays atomically', () => {
+  const cpu = new Cpu6502({ read: () => 0xea, write() {} }); cpu.cycles = 2 ** 32 + 7;
+  const before = cpu.save();
+  for (const cycles of [-1, 1.5, NaN, Infinity, -Infinity, 2 ** 53]) {
+    const bytes = Uint8Array.from(before);
+    new DataView(bytes.buffer).setFloat64(7, cycles, true);
+    assert.throws(() => cpu.load(Array.from(bytes)), /Invalid CPU state/);
+    assert.deepEqual(cpu.save(), before);
+  }
+  assert.throws(() => cpu.load(new Array(Cpu6502.STATE_SIZE)), /Invalid CPU state/);
+  assert.throws(() => cpu.load(before.slice(0, 11)), /Invalid CPU state/);
+});
+
+test('Nes restores a long-running cycle count and continues pending DMA on the same timeline', () => {
+  const source = machine(); source.cpu.cycles = 2 ** 32 + 1;
+  source.write(0x4014, 2); source.step(100); source.audioSamples();
+  const state = source.saveState(), restored = machine(); restored.loadState(state);
+  assert.equal(restored.cycleCount, 2 ** 32 + 101);
+  for (const budget of [1, 400, 600]) {
+    source.step(budget); restored.step(budget);
+    assert.equal(restored.cycleCount, source.cycleCount);
+    assert.deepEqual(restored.saveState(), source.saveState());
+    assert.deepEqual(restored.audioSamples(), source.audioSamples());
+  }
+  const before = restored.saveState();
+  assert.throws(() => restored.loadState(state.subarray(0, state.length - 4)), /Invalid state size/);
+  assert.deepEqual(restored.saveState(), before);
 });

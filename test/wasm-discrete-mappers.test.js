@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { Nes, WasmCore, NES_PALETTE } from '../dist/index.js';
+import { Cpu6502, Nes, WasmCore, NES_PALETTE } from '../dist/index.js';
 
 const binary = await readFile(new URL('../dist-wasm/lib-jsnes.wasm', import.meta.url));
 function image(mapper, code, banks = 8, chr = 0, flags = 0) {
@@ -88,7 +88,7 @@ for (const mapper of [79, 113]) test(`mapper ${mapper} selects only its wired ba
     }
     // Older mapper-79 snapshots may contain mapper-113-only bank bits.
     const state = js.saveState();
-    state[11 + 7] = 7; state[11 + 8] = 15;
+    state[Cpu6502.STATE_SIZE + 7] = 7; state[Cpu6502.STATE_SIZE + 8] = 15;
     js.loadState(state);
     assert.equal(js.read(0x8000), (mapper === 79 ? 2 : 14) % banks);
     assert.equal(js.cartridge.readChr(0), mapper === 79 ? 0x87 : 0x8f);

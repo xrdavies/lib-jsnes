@@ -111,6 +111,15 @@ flags; controller restoration rejects invalid serial indices and strobe flags.
 The same validators are used by direct component restores. These checks do not
 change snapshot sizes or identify which ROM produced a snapshot; hosts must still
 associate saves with the correct cartridge.
+The CPU snapshot is now `Cpu6502.STATE_SIZE` (15 bytes): seven bytes for registers
+and PC followed by an eight-byte little-endian Float64 cycle count. This preserves
+nonnegative safe-integer counts beyond 2³², where the former four-byte encoding
+wrapped after roughly 40 minutes of emulated NTSC time. Non-finite, fractional,
+negative and unsafe cycle counts are rejected before restoring state. Previous
+11-byte CPU snapshots and full `Nes` snapshots containing that CPU layout are
+rejected. Full snapshots are four bytes larger; other component layouts are
+unchanged. Boundary tests seed long-running counts and verify continuation through
+pending DMA after restore.
 CHR RAM cartridges append their 8 KiB of pattern memory to the cartridge section;
 CHR ROM cartridges do not append pattern memory. `cartridge.stateSize` gives
 the actual section length, while `Cartridge.STATE_SIZE` is the fixed register/PRG

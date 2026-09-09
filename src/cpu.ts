@@ -4,6 +4,7 @@ export interface CpuBus {
 }
 const C = 1, Z = 2, I = 4, D = 8, B = 16, U = 32, V = 64, N = 128;
 export class Cpu6502 {
+    static readonly STATE_SIZE = 15;
     a = 0;
     x = 0;
     y = 0;
@@ -17,12 +18,26 @@ export class Cpu6502 {
     private pageCycles = 0;
     constructor(private readonly bus: CpuBus, private readonly strict = false) { }
     reset(): void { this.sp = 0xfd; this.p = U | I; this.pc = this.read16(0xfffc); this.cycles = 0; this.unknownOpcodes = 0; this.lastUnknownOpcode = -1; this.unknownOpcodeCounts.fill(0); }
-    save(): number[] { return [this.a, this.x, this.y, this.sp, this.p, this.pc & 255, this.pc >>> 8, this.cycles & 255, (this.cycles >>> 8) & 255, (this.cycles >>> 16) & 255, (this.cycles >>> 24) & 255]; }
+    save(): number[] {
+        if (!Number.isSafeInteger(this.cycles) || this.cycles < 0) throw new RangeError('Invalid CPU cycle count');
+        const bytes = new Uint8Array(Cpu6502.STATE_SIZE);
+        bytes.set([this.a, this.x, this.y, this.sp, this.p, this.pc & 255, this.pc >>> 8]);
+        new DataView(bytes.buffer).setFloat64(7, this.cycles, true);
+        return Array.from(bytes);
+    }
+    static validateState(v: number[]): void {
+        if (v.length !== Cpu6502.STATE_SIZE) throw new RangeError('Invalid CPU state');
+        for (const value of v) {
+            if (!Number.isInteger(value) || value < 0 || value > 255) throw new RangeError('Invalid CPU state');
+        }
+        const cycles = new DataView(Uint8Array.from(v).buffer).getFloat64(7, true);
+        if (!Number.isSafeInteger(cycles) || cycles < 0) throw new RangeError('Invalid CPU state cycle count');
+    }
     load(v: number[]): void {
-        if (v.length !== 11 || v.some(value => !Number.isInteger(value) || value < 0 || value > 255)) throw new RangeError('Invalid CPU state');
+        Cpu6502.validateState(v);
         [this.a, this.x, this.y, this.sp, this.p] = v;
         this.pc = v[5] | (v[6] << 8);
-        this.cycles = (v[7] | (v[8] << 8) | (v[9] << 16) | (v[10] << 24)) >>> 0;
+        this.cycles = new DataView(Uint8Array.from(v).buffer).getFloat64(7, true);
     }
     irq(): boolean { if (this.p & I) return false; this.interrupt(0xfffe); return true; }
     nmi(): boolean { this.interrupt(0xfffa); return true; }
