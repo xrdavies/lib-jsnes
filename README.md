@@ -418,6 +418,11 @@ carry/decimal inputs in TypeScript and WASM, check AXS with varying A/X, and
 include the SBC alias in the exhaustive arithmetic checks. Unstable undocumented
 instructions remain outside this coverage.
 
+LAS (`$BB`, absolute-Y) reads memory AND SP into A, X and SP, updates N/Z and
+preserves other status flags. It takes four cycles plus an indexed page-cross
+cycle, including the provisional-address read. Tests exhaust all SP/memory byte
+pairs in both cores and check bus order, address wrap and snapshot preservation.
+
 KIL (`$02/$12/$22/$32/$42/$52/$62/$72/$92/$B2/$D2/$F2`) now jams the CPU,
 instead of falling through to unknown-opcode handling and running later bytes.
 `nes.cpu.jammed` and `core.jammed` report the condition; raw WASM hosts can use

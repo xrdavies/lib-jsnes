@@ -280,6 +280,7 @@ export class Cpu6502 {
             case 0xdb: this.dcp(this.absy()); used = 7; break;
             case 0xe3: this.isc(this.indX()); used = 8; break;
             case 0xbf: this.a = this.x = this.bus.read(this.absy(true)); this.nz(this.a); used = 4; break;
+            case 0xbb: this.a = this.x = this.sp = this.bus.read(this.absy(true)) & this.sp; this.nz(this.a); used = 4; break;
             case 0x03: { const a = this.indX(); const v = this.shift(this.readForModify(a), false); this.bus.write(a, v); this.a |= v; this.nz(this.a); used = 8; break; }
             case 0x0b:
             case 0x2b: this.a &= this.fetch(); this.nz(this.a); this.p = (this.p & ~C) | (this.a >>> 7); used = 2; break;
