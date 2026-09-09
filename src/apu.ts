@@ -5,7 +5,8 @@ class Pulse { regs=new Uint8Array(4); timer=0; phase=0; length=0; enabled=false;
 class Triangle { regs=new Uint8Array(4); timer=0; phase=0; length=0; enabled=false; write(i:number,v:number){this.regs[i]=v&255;if(i===3){this.length=LENGTH[v>>3]??0;this.timer=(v&7)<<8;}} step(){if(this.timer--<=0){this.timer=(this.regs[2]|((this.regs[3]&7)<<8))+1;this.phase=(this.phase+1)&31;}} clockLength():void {if(this.length>0)this.length--;} sample(){if(!this.enabled||!this.length)return 0;return this.phase<16?this.phase:31-this.phase;}}
 class Noise { regs=new Uint8Array(4); timer=0; shift=1; length=0; enabled=false; step(){if(this.timer--<=0){this.timer=NOISE_PERIOD[this.regs[2]&15];const tap=(this.regs[2]&0x80)?6:1;this.shift=(this.shift>>1)|(((this.shift^(this.shift>>tap))&1)<<14);}} clockLength():void {if(this.length>0)this.length--;} sample(){return this.enabled&&this.length>0&&!(this.shift&1)?this.regs[0]&15:0;}}
 /** Deterministic pulse/noise mixer; triangle and DMC remain pending. */
-export class Apu { private readonly pulse=[new Pulse(),new Pulse()]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private samples:number[]=[];
+export class Apu {
+  readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(),new Pulse()]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private samples:number[]=[];
   write(address:number,value:number):void {
     value&=255;
     if(address>=0x4000&&address<0x4008)this.pulse[address<0x4004?0:1].write(address&3,value);
