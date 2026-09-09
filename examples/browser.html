@@ -19,7 +19,8 @@
   const input = document.querySelector('#rom'), wasmInput = document.querySelector('#wasm'), pause = document.querySelector('#pause'), audioButton = document.querySelector('#audio'), canvas = document.querySelector('#screen');
   const context = canvas.getContext('2d'), status = document.querySelector('#status');
   let generation = 0, animation = null, paused = false, last = 0, elapsed = 0, nes;
-  let audioContext, audioGain, audioAt = 0;
+  let audioContext, audioAt = 0, pageActive = true;
+  const audioSources = new Set();
   const image = context?.createImageData(256, 240);
   const keys = new Map([
     ['ArrowUp', Button.Up], ['ArrowDown', Button.Down], ['ArrowLeft', Button.Left], ['ArrowRight', Button.Right],
@@ -30,11 +31,14 @@
   function stop() {
     if (animation !== null) cancelAnimationFrame(animation);
     animation = null; elapsed = 0;
-    audioAt = 0;
-    if (audioGain) { audioGain.disconnect(); audioGain = audioContext.createGain(); audioGain.connect(audioContext.destination); }
+    clearAudio();
+  }
+  function clearAudio() {
+    for (const source of audioSources) { source.stop(); source.disconnect(); }
+    audioSources.clear(); audioAt = 0;
   }
   function start() {
-    if (!nes || paused || document.hidden || animation !== null) return;
+    if (!nes || paused || !pageActive || document.hidden || animation !== null) return;
     last = performance.now();
     animation = requestAnimationFrame(frame);
   }
@@ -58,13 +62,22 @@
     } catch (error) { if (load === generation) status.textContent = `Failed: ${error.message}`; }
   });
   audioButton.addEventListener('click', async () => {
+    audioButton.disabled = true;
     try {
       if (!('AudioContext' in globalThis)) throw new Error('Web Audio is unavailable');
       if (!audioContext) {
-        audioContext = new AudioContext(); audioGain = audioContext.createGain(); audioGain.connect(audioContext.destination);
+        audioContext = new AudioContext();
+        audioContext.onstatechange = () => {
+          if (audioContext.state !== 'running') clearAudio();
+          audioButton.textContent = audioContext.state === 'running' ? 'Mute audio' : 'Enable audio';
+        };
       }
-      await audioContext.resume(); audioButton.textContent = 'Audio enabled'; audioButton.disabled = true;
+      if (audioContext.state === 'running') { clearAudio(); await audioContext.suspend(); }
+      else await audioContext.resume();
+      if (!pageActive) await audioContext.suspend();
+      audioButton.textContent = audioContext.state === 'running' ? 'Mute audio' : 'Enable audio';
     } catch (error) { status.textContent = `Audio unavailable: ${error.message}`; }
+    finally { audioButton.disabled = false; }
   });
   addEventListener('blur', () => { buttons = 0; if (nes) nes.setController(1, 0); });
   addEventListener('keydown', event => {
@@ -81,10 +94,14 @@
     if (paused) { stop(); status.textContent = 'Paused.'; } else start();
   });
   document.addEventListener('visibilitychange', () => { stop(); start(); });
-  addEventListener('pagehide', () => { stop(); if (audioContext) audioContext.suspend(); });
+  addEventListener('pagehide', () => {
+    pageActive = false; stop();
+    if (audioContext) audioContext.suspend().catch(error => { status.textContent = `Audio unavailable: ${error.message}`; });
+  });
+  addEventListener('pageshow', () => { pageActive = true; start(); });
   function frame(now) {
     animation = null;
-    if (!nes || paused || document.hidden) return;
+    if (!nes || paused || !pageActive || document.hidden) return;
     try {
       // ponytail: cap catch-up at 100 ms; sustained slow hosts need adaptive presentation.
       elapsed = Math.min(elapsed + Math.max(0, now - last), 100); last = now;
@@ -93,21 +110,24 @@
         elapsed -= 1000 / NTSC_FRAME_RATE;
       }
       image.data.set(nes.frameRgba()); context.putImageData(image, 0, 0);
-      status.textContent = `${nes.cycleCount} CPU cycles · Audio muted`;
+      status.textContent = `${nes.cycleCount} CPU cycles · Audio ${audioContext?.state === 'running' ? 'enabled' : 'muted'}`;
       animation = requestAnimationFrame(frame);
     } catch (error) {
       stop(); nes = null; pause.disabled = true; status.textContent = `Failed: ${error.message}`;
     }
   }
   function scheduleAudio(samples) {
-    if (!audioContext || !samples.length) return;
+    if (audioContext?.state !== 'running' || !samples.length) return;
     const buffer = audioContext.createBuffer(1, samples.length, nes.sampleRate ?? nes.apu.sampleRate);
     const channel = buffer.getChannelData(0);
     for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
     const now = audioContext.currentTime;
-    // ponytail: drop excessive backlog instead of growing latency forever.
-    audioAt = audioAt < now || audioAt > now + 0.2 ? now + 0.02 : audioAt;
-    const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioGain); source.start(audioAt);
+    // ponytail: discard queued audio above 200 ms; continuous recovery needs resampling.
+    if (audioAt > now + 0.2) clearAudio();
+    if (audioAt <= now) audioAt = now + 0.02;
+    const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination);
+    source.onended = () => { audioSources.delete(source); source.disconnect(); };
+    audioSources.add(source); source.start(audioAt);
     audioAt += buffer.duration;
   }
 </script>
