@@ -12,5 +12,6 @@ export function reset():void{RAM.fill(0);FRAME.fill(0xff000000);cycles=0;a=0;x=0
 export function step(count:i32):void{if(count<=0)return;const target=cycles+count;while(cycles<target){const op=fetch();let used=2,address:i32;switch(op){case 0xea:break;case 0xa9:a=fetch();nz(a);break;case 0xa2:x=fetch();nz(x);break;case 0xa0:y=fetch();nz(y);break;case 0x8d:address=fetch()|(fetch()<<8);write(address,a);used=4;break;case 0x8e:address=fetch()|(fetch()<<8);write(address,x);used=4;break;case 0x8c:address=fetch()|(fetch()<<8);write(address,y);used=4;break;case 0xad:address=fetch()|(fetch()<<8);a=read(address);nz(a);used=4;break;case 0xae:address=fetch()|(fetch()<<8);x=read(address);nz(x);used=4;break;case 0xac:address=fetch()|(fetch()<<8);y=read(address);nz(y);used=4;break;case 0xe8:x=(x+1)&255;nz(x);break;case 0xca:x=(x+255)&255;nz(x);break;case 0x4c:pc=fetch()|(fetch()<<8);used=3;break;case 0x69:a=(a+fetch()+(p&1))&255;nz(a);break;case 0x29:a&=fetch();nz(a);break;case 0x09:a|=fetch();nz(a);break;case 0x49:a^=fetch();nz(a);break;default:break;}cycles+=used;}}
 export function cycleCount():i32{return cycles;}
 export function programCounter():i32{return pc;}
-export function framePointer():usize{return changetype<usize>(FRAME);}
+// AssemblyScript's static TypedArray stores its payload 32 bytes after the object.
+export function framePointer():usize{return changetype<usize>(FRAME)+32;}
 export function frameLength():i32{return FRAME.length;}
