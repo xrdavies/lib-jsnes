@@ -187,3 +187,7 @@ test('PPU status reads preserve sprite hit and overflow bits', () => {
 test('PPU palette reads refresh the buffered data port', () => {
   const nes=new Nes(image(0,1,1)); ppuWrite(nes,0x2f00,0x2a); address(nes,0x3f00); assert.equal(nes.read(0x2007),0); address(nes,0x2f00); assert.equal(nes.read(0x2007),0x2a);
 });
+
+test('save/load restores PPU frame and scroll state', () => {
+  const nes=new Nes(image(0,1,1)); nes.ppu.writeRegister(1,8); nes.runFrame(); const before=nes.frame[100]; const state=nes.saveState(); nes.ppu.writeRegister(5,17); nes.runFrame(); nes.loadState(state); assert.equal(nes.frame[100],before);
+});
