@@ -197,3 +197,7 @@ test('save/load restores APU oscillator state without stale samples', () => {
 });
 
 test('save/load restores selected mapper bank', () => { const nes=new Nes(image(2,8,1)); nes.write(0x8000,4); const state=nes.saveState(); nes.write(0x8000,1); nes.loadState(state); assert.equal(nes.read(0x8000),4); });
+
+test('APU sample queue remains bounded when the host does not drain it', () => {
+  const nes=new Nes(image(0,1,1)); nes.write(0x4000,0x4f); nes.write(0x4002,0x20); nes.write(0x4003,0x08); nes.write(0x4015,1); nes.step(1789773*3); assert.equal(nes.apu['samples'].length, 88200); assert.equal(nes.audioSamples().length, 88200);
+});
