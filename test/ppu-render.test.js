@@ -57,6 +57,17 @@ test('eight transparent in-range sprites exclude the ninth sprite from rendering
   assert.equal(nes.ppu.readRegister(2) & 0x20, 0);
 });
 
+test('sprite overflow becomes visible when evaluation ends at dot 256', () => {
+  const nes = scene();
+  nes.write(0x2001, 0x1e);
+  for (let i = 0; i < 9; i++) sprite(nes, i, 20, 20, 0);
+  nes.ppu.step(19 * 341 + 255);
+  assert.equal(nes.read(0x2002) & 0x20, 0);
+  nes.ppu.step(1);
+  assert.equal(nes.ppu.saveState()[0x4130], 1);
+  assert.equal(nes.read(0x2002) & 0x20, 0x20);
+});
+
 test('sprite zero hit excludes x=255 and respects each left-column mask', () => {
   const nes = scene();
   for (let y = 0; y < 8; y++) nes.cartridge.writeChr(y, 255);

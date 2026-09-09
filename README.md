@@ -670,7 +670,7 @@ Sprite patterns are fetched for the next line in eight slots during dots
 still fetch pattern bytes. Selected OAM entries retain their original sprite IDs,
 and OAMADDR is held at zero during the fetch window. Pattern bytes are composed
 into a line buffer for output, preserving priority, flipping and sprite-zero hits.
-Secondary OAM selection is still performed together at dot 257; cycle-by-cycle
+Secondary OAM selection is still performed together at the end of dot 256; cycle-by-cycle
 evaluation and the overflow diagonal-scan bug remain incomplete. Tests cover
 fetch addresses/order, X/Y wrapping, timed v/t copies,
 mid-line bank changes and snapshots between fetch phases. The 256-byte background

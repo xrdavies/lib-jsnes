@@ -301,7 +301,7 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
         this.renderPixel(this.dot - 1);
 
       }
-      if (this.dot === 257 && (this.scanline < 240 || this.scanline === 261)) {
+      if (this.dot === 256 && (this.scanline < 240 || this.scanline === 261)) {
         if (mapperLine) this.selectSprites();
         else { this.spriteLine.fill(0); this.spriteCount = 0; }
       }
