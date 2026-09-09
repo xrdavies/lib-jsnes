@@ -160,3 +160,12 @@ test('undocumented DCP and ISC perform read-modify-write bus cycles', () => {
 });
 
 test('strict CPU mode rejects unknown opcodes', () => { const {memory}=machine([0x02]); const cpu=new Cpu6502({read:a=>memory[a],write:(a,v)=>{memory[a]=v;}} ,true); cpu.pc=0x8000; assert.throws(()=>cpu.step(),/Unsupported opcode/); });
+
+test('CPU rejects malformed snapshots without altering registers', () => {
+  const bus = { read: () => 0xea, write() {} };
+  const cpu = new Cpu6502(bus); cpu.a = 42; const before = cpu.save();
+  for (const state of [before.slice(0, 10), [...before, 0], before.map((value, i) => i === 3 ? 256 : value)]) {
+    assert.throws(() => cpu.load(state), /CPU state/);
+    assert.deepEqual(cpu.save(), before);
+  }
+});
