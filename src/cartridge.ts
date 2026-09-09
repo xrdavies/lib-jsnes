@@ -4,7 +4,9 @@ export type NametableMirroring = Mirroring | 'single-lower' | 'single-upper';
 
 /** Cartridge memory shared by the CPU bus, PPU data port, and renderer. */
 export class Cartridge {
+  /** Fixed registers + PRG RAM; CHR RAM cartridges append their pattern memory. */
   static readonly STATE_SIZE = 26 + 0x2000;
+  get stateSize(): number { return Cartridge.STATE_SIZE + (this.rom.chrRam ? this.chr.length : 0); }
   readonly prgRam = new Uint8Array(0x2000);
   private readonly chr: Uint8Array;
   private shift = 0x10;
@@ -36,8 +38,8 @@ export class Cartridge {
   }
 
   /** Reset mapping without discarding cartridge RAM. */
-  saveState(): Uint8Array { const out=new Uint8Array(Cartridge.STATE_SIZE); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror,...this.mmc3Regs,this.mmc3Latch,this.mmc3Counter,this.mmc3Irq?1:0,this.m15Bank,this.m15Shift,this.m15Mirror]); out.set(this.prgRam,26); return out; }
-  loadState(state: Uint8Array): void { if(state.length!==Cartridge.STATE_SIZE || state[10]>1 || state[21]>1 || state[23]!==13 && state[23]!==14 || state[24]>1) throw new RangeError('Invalid cartridge state'); [this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror]=state; this.mmc3Regs.set(state.subarray(11,19)); this.mmc3Latch=state[19]; this.mmc3Counter=state[20]; this.mmc3Irq=!!state[21]; this.m15Bank=state[22]; this.m15Shift=state[23]; this.m15Mirror=state[24]; this.prgRam.set(state.subarray(26)); }
+  saveState(): Uint8Array { const out=new Uint8Array(this.stateSize); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror,...this.mmc3Regs,this.mmc3Latch,this.mmc3Counter,this.mmc3Irq?1:0,this.m15Bank,this.m15Shift,this.m15Mirror]); out.set(this.prgRam,26); if(this.rom.chrRam)out.set(this.chr,Cartridge.STATE_SIZE); return out; }
+  loadState(state: Uint8Array): void { if(state.length!==this.stateSize || state[10]>1 || state[21]>1 || state[23]!==13 && state[23]!==14 || state[24]>1) throw new RangeError('Invalid cartridge state'); [this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror]=state; this.mmc3Regs.set(state.subarray(11,19)); this.mmc3Latch=state[19]; this.mmc3Counter=state[20]; this.mmc3Irq=!!state[21]; this.m15Bank=state[22]; this.m15Shift=state[23]; this.m15Mirror=state[24]; this.prgRam.set(state.subarray(26,Cartridge.STATE_SIZE)); if(this.rom.chrRam)this.chr.set(state.subarray(Cartridge.STATE_SIZE)); }
 
   reset(): void {
     this.shift = 0x10;
