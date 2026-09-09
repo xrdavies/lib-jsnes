@@ -57,11 +57,11 @@ export function romWrite(index: i32, value: i32): void {
 }
 export function loadRom(length: i32): void {
   cartridge.load(length);
+  cpu.a = cpu.x = cpu.y = 0;
   ppu.vram.fill(0); ppu.palette.fill(0); ppu.oam.fill(0);
 }
 export function reset(): void {
   RAM.fill(0); cartridge.reset(); ppu.reset(); apu.reset(); audio = new Int16Array(0); dmaStall = 0;
-  cpu.a = cpu.x = cpu.y = 0;
   cpu.reset();
   collectionCycles = 0;
   __collect();

@@ -107,6 +107,14 @@ const sampleRate = nes.apu.sampleRate; // 44.1 kHz
 
 Controllers use `nes.setController(1, Button.A | Button.Start)` with the exported `Button` constants. `saveState()` and `loadState()` preserve CPU, mapper, PPU, audio, controller, and RAM state. Use `saveBatteryRam()` and `loadBatteryRam()` to persist cartridge battery RAM in browser storage or Node.
 
+Both cores preserve A/X/Y on `reset()`, following the shared CPU reset behavior.
+They reset PC from the cartridge vector, SP to `$FD`, status to `$24`, cycle count
+to zero and clear JAM. A new `Nes` instance and a successful WASM `loadRom()` start
+A/X/Y at zero. Previously WASM also cleared these registers on warm reset, which
+could make a game restart differently between cores. Tests cover repeated resets,
+JAM recovery and observing incoming registers at the reset vector. This is the
+library's reset contract, not a model of every hardware power-on/reset bus cycle.
+
 Snapshot bytes are an evolving development format. The current APU snapshot stores
 all implemented oscillator registers, timers, lengths, and sampling/frame phases;
 older snapshots with previous APU sections are rejected. Restoring discards queued
