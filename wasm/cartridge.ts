@@ -95,7 +95,7 @@ export class Cartridge {
     }
     let selected = this.mapper == 2
       ? (address < 0xc000 ? this.bank % this.prgBanks : this.prgBanks - 1)
-      : this.mapper == 34 || this.mapper == 66 || this.mapper == 7 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 177 || this.mapper == 241 ? ((this.mapper == 7 ? this.bank & 15 : this.mapper == 66 ? this.bank & 3 : this.mapper == 79 ? this.bank & 1 : this.bank) * 2 + ((address - 0x8000) >>> 14)) % this.prgBanks
+      : this.mapper == 11 || this.mapper == 34 || this.mapper == 66 || this.mapper == 7 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 177 || this.mapper == 241 ? ((this.mapper == 7 ? this.bank & 15 : this.mapper == 11 || this.mapper == 66 ? this.bank & 3 : this.mapper == 79 ? this.bank & 1 : this.bank) * 2 + ((address - 0x8000) >>> 14)) % this.prgBanks
       : ((address - 0x8000) >>> 14) % this.prgBanks;
     if (this.mapper == 1) {
       const slot = (address - 0x8000) >>> 14, bank = this.bank & 15;
@@ -171,6 +171,7 @@ export class Cartridge {
       this.m15Mode = address & 3; this.bank = value; this.mirror = (value >>> 6) & 1;
     }
     else if (address >= 0x8000 && this.mapper == 2 && this.prgBanks > 0) this.bank = value & 255;
+    else if (address >= 0x8000 && this.mapper == 11) this.bank = value & 255;
     else if (address >= 0x8000 && this.mapper == 34) this.bank = value & 255;
     else if (address >= 0x8000 && this.mapper == 7) { this.bank = value & 255; this.mirror = (value >>> 4) & 1; }
     else if (address >= 0x8000 && this.mapper == 3) this.chrBank = value & 255;
@@ -188,6 +189,9 @@ export class Cartridge {
       const offset = this.mmc1ChrAddress(address);
       return this.hasChrRom ? this.rom[this.chrStart + offset] : this.chrRam[offset];
     }
+    if (this.mapper == 11) return this.hasChrRom
+      ? this.rom[this.chrStart + ((this.bank >>> 4) % (this.chrBytes / 0x2000)) * 0x2000 + (address & 0x1fff)]
+      : this.chrRam[address & 0x1fff];
     return this.hasChrRom ? this.rom[this.chrStart + (this.chrBank % (this.chrBytes / 0x2000)) * 0x2000 + (address & 0x1fff)] : this.chrRam[address & 0x1fff];
   }
   writeChr(address: i32, value: i32): void {
@@ -216,7 +220,7 @@ export class Cartridge {
     if (this.mapper == 1 || this.mapper == 2) out[4] = this.bank;
     if (this.mapper == 3 || this.mapper == 87) out[5] = this.chrBank;
     if (this.mapper == 7) out[6] = this.bank;
-    if (this.mapper == 34 || this.mapper == 66 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 177 || this.mapper == 241) out[7] = this.bank;
+    if (this.mapper == 11 || this.mapper == 34 || this.mapper == 66 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 177 || this.mapper == 241) out[7] = this.bank;
     if (this.mapper == 225) out[7] = this.highBank;
     if (this.mapper == 66 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 225) out[8] = this.chrBank;
     out[9] = this.mmc3Select; out[10] = this.mapper == 4 ? this.mirror : 0;
@@ -273,7 +277,7 @@ export class Cartridge {
       return <i32>size;
     };
     const mapper = (this.rom[6] >>> 4) | (this.rom[7] & 0xf0) | (nes2 ? ((mapperExtension & 15) << 8) : 0);
-    if (mapper != 0 && mapper != 1 && mapper != 2 && mapper != 3 && mapper != 4 && mapper != 7 && mapper != 15 && mapper != 34 && mapper != 66 && mapper != 79 && mapper != 87 && mapper != 113 && mapper != 140 && mapper != 177 && mapper != 225 && mapper != 241) throw new Error('Unsupported WASM mapper');
+    if (mapper != 0 && mapper != 1 && mapper != 2 && mapper != 3 && mapper != 4 && mapper != 7 && mapper != 11 && mapper != 15 && mapper != 34 && mapper != 66 && mapper != 79 && mapper != 87 && mapper != 113 && mapper != 140 && mapper != 177 && mapper != 225 && mapper != 241) throw new Error('Unsupported WASM mapper');
     const prgSize: i32 = nes2 && (sizeExtension & 15) == 15 ? exponentSize(this.rom[4]) : (this.rom[4] | (nes2 ? ((sizeExtension & 15) << 8) : 0)) * 0x4000;
     const chrSize: i32 = nes2 && (sizeExtension >>> 4) == 15 ? exponentSize(this.rom[5]) : (this.rom[5] | (nes2 ? ((sizeExtension >>> 4) << 8) : 0)) * 0x2000;
     if (prgSize == 0 || (mapper == 0 && prgSize > 0x8000) || prgSize % 0x4000 != 0) throw new Error('Invalid PRG size');

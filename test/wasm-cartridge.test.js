@@ -63,6 +63,20 @@ test('WASM BNROM switches both 16KB windows as one 32KB bank', async () => {
   assert.equal(core.exports.unknownOpcodeCount(), 0);
 });
 
+test('WASM Color Dreams switches 32KB PRG and 8KB CHR from one register', async () => {
+  const { bytes, start } = rom(11, 8, 8);
+  for (let bank = 0; bank < 8; bank++) bytes.fill(0x40 + bank, start + 8 * 0x4000 + bank * 0x2000, start + 8 * 0x4000 + (bank + 1) * 0x2000);
+  const program = [0xa9, 0x21, 0x8d, 0, 0x80, 0xad, 0, 0x80, 0x85, 0, 0xad, 0, 0xc0, 0x85, 1, 0x4c, 0x0f, 0x81];
+  for (let bank = 0; bank < 8; bank++) bytes.set(program, start + bank * 0x4000 + 0x100);
+  bytes.set([0, 0x81], start + 0x8000 - 4);
+  const js = new Nes(bytes), core = await WasmCore.from(binary);
+  js.reset(); core.loadRom(bytes); core.reset(); js.step(100); core.step(100);
+  assert.deepEqual([core.exports.ramRead(0), core.exports.ramRead(1)], [0x32, 0x33]);
+  assert.equal(core.exports.chrRead(0), 0x42); assert.equal(core.exports.chrRead(0x1fff), 0x42);
+  assert.deepEqual([core.programCounter, core.cycleCount], [js.cpu.pc, js.cycleCount]);
+  assert.equal(core.exports.unknownOpcodeCount(), 0);
+});
+
 test('WASM CNROM switches CHR banks without changing PRG bytes', async () => {
   const { bytes, start } = rom(3, 2, 4);
   bytes.fill(0x11, start + 2 * 0x4000, start + 2 * 0x4000 + 0x2000);

@@ -25,7 +25,7 @@ export class Cartridge {
 
   constructor(readonly rom: RomImage) {
     if (rom.consoleType && rom.consoleType !== 'nes') throw new Error(`Unsupported console type: ${rom.consoleType}`);
-    if (![0, 1, 2, 3, 4, 7, 15, 34, 66, 79, 87, 113, 140, 177, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
+    if (![0, 1, 2, 3, 4, 7, 11, 15, 34, 66, 79, 87, 113, 140, 177, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
     if (rom.mapper === 1 && (rom.prgRom.length > 0x40000 || rom.chrRom.length > 0x20000)) {
       throw new Error('Extended MMC1 boards are not supported yet');
     }
@@ -69,6 +69,7 @@ export class Cartridge {
     let bank = slot;
     if (this.rom.mapper === 2) bank = slot === 0 ? this.prg : count - 1;
     if (this.rom.mapper === 7) bank = (this.axBank&15)*2 + slot;
+    if (this.rom.mapper === 11) bank = (this.gxBank & 3) * 2 + slot;
     if (this.rom.mapper === 34) bank = this.gxBank * 2 + slot;
     if (this.rom.mapper === 15) {
       // ponytail: bit 7 selects mode-2 halves only; distinguish board variants when submapper metadata is supported.
@@ -124,6 +125,7 @@ export class Cartridge {
       return;
     }
     if (this.rom.mapper === 2) this.prg = value;
+    if (this.rom.mapper === 11) { this.gxBank = value; return; }
     if (this.rom.mapper === 34) { this.gxBank = value; return; }
     if (this.rom.mapper === 3) { this.chrBank = value; return; }
     if (this.rom.mapper === 7) { this.axBank=value; return; }
@@ -177,6 +179,7 @@ export class Cartridge {
 
   private chrAddress(address: number): number {
     address &= 0x1fff;
+    if (this.rom.mapper === 11) return ((this.gxBank >>> 4) % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 66 || this.rom.mapper === 79 || this.rom.mapper === 113 || this.rom.mapper === 140 || this.rom.mapper === 225) return ((this.rom.mapper === 79 ? this.gxChr & 7 : this.gxChr) % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 87) return (this.chrBank % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 4) {

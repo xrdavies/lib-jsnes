@@ -17,7 +17,7 @@ async function core(rom) {
   const wasm = await WasmCore.from(binary); wasm.loadRom(rom); wasm.reset(); return wasm;
 }
 
-for (const mapper of [0, 1, 2, 3, 4, 7, 34, 66]) test(`mapper ${mapper} battery bytes transfer between JS and fresh WASM instances`, async () => {
+for (const mapper of [0, 1, 2, 3, 4, 7, 11, 34, 66]) test(`mapper ${mapper} battery bytes transfer between JS and fresh WASM instances`, async () => {
   const rom = image(mapper, readEdges), js = new Nes(rom), first = await core(rom), second = await core(rom);
   const bytes = Uint8Array.from({ length: 8192 }, (_, i) => (i * 17 + 5) & 255);
   js.loadBatteryRam(bytes); first.loadBatteryRam(js.saveBatteryRam());

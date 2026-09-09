@@ -171,6 +171,17 @@ test('BNROM switches the complete 32KB PRG window and wraps bank selectors', () 
   assert.deepEqual(prgPair(nes), [2, 3]);
 });
 
+test('Color Dreams switches 32KB PRG and 8KB CHR from one register', () => {
+  const nes = new Nes(image(11, 8, 8));
+  assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
+  nes.write(0x8000, 0x21);
+  assert.deepEqual(prgPair(nes), [2, 3]); assert.deepEqual(chrPair(nes), [0x44, 0x45]);
+  nes.write(0xffff, 0xf3);
+  assert.deepEqual(prgPair(nes), [6, 7]); assert.deepEqual(chrPair(nes), [0x4e, 0x4f]);
+  const state = nes.saveState(); nes.write(0x8000, 0); nes.loadState(state);
+  assert.deepEqual(prgPair(nes), [6, 7]); assert.deepEqual(chrPair(nes), [0x4e, 0x4f]);
+});
+
 
 test('mapper 79 switches 32KB PRG and 8KB CHR banks from $4100', () => {
   const nes = new Nes(image(79, 8, 8));
