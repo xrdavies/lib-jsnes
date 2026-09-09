@@ -7,6 +7,9 @@
   body { font: 1rem/1.5 system-ui, sans-serif; max-width: 54rem; margin: 2rem auto; padding: 0 1rem; }
   button { font: inherit; padding: .5rem 1rem; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f2f2f2; padding: 1rem; }
+  .frames { display: flex; flex-wrap: wrap; gap: 1rem; }
+  figure { margin: 0; }
+  canvas { width: 256px; height: 240px; image-rendering: pixelated; background: black; }
 </style>
 <h1>lib-jsnes browser benchmark</h1>
 <p>Run <code>npm test</code>, then serve the repository over HTTP. This page uses
@@ -16,11 +19,17 @@ No game file is required.</p>
 timing five alternating rounds (60 warmup frames and 180 measured frames per core).
 Timings include emulation and audio drains. Loading, display, RGBA conversion,
 audio playback and parity checks are excluded.</p>
+<p>After timing, this page checks both cores through Canvas ImageData and an
+offline Web Audio render. No sound is played. The final synthetic frames appear below.</p>
 <p>Keep this tab visible and avoid other intensive work. The page may briefly pause
 while measuring. A WASM speedup above 1 means WASM was faster on this run.</p>
 <button id="run" type="button">Run benchmark</button>
 <p id="status" role="status">Ready.</p>
 <pre id="result" aria-label="Benchmark results">No measurements yet.</pre>
+<div class="frames">
+  <figure><figcaption>TypeScript output</figcaption><canvas id="js-frame" width="256" height="240" aria-label="TypeScript rendered frame"></canvas></figure>
+  <figure><figcaption>WASM output</figcaption><canvas id="wasm-frame" width="256" height="240" aria-label="WASM rendered frame"></canvas></figure>
+</div>
 <script type="module">
   const button = document.querySelector('#run');
   const status = document.querySelector('#status');
@@ -36,18 +45,25 @@ while measuring. A WASM speedup above 1 means WASM was faster on this run.</p>
       const { benchmark, workload } = await import('./benchmark-core.mjs');
       const response = await fetch('../dist-wasm/lib-jsnes.wasm');
       if (!response.ok) throw new Error(`WASM request failed: ${response.status}. Run npm test first.`);
-      const measurements = await benchmark(workload(), await response.arrayBuffer(), async message => {
+      const binary = await response.arrayBuffer();
+      const measurements = await benchmark(workload(), binary, async message => {
         status.textContent = message;
         // Give the page time to paint and process visibility changes outside timing.
         await new Promise(resolve => setTimeout(resolve, 0));
         if (hidden || document.hidden) throw new Error('Tab was hidden. Keep it visible and rerun.');
       });
+      status.textContent = 'Checking Canvas and offline Web Audio output…';
+      const { verifyBrowserOutput } = await import('./browser-output.mjs');
+      const outputChecks = await verifyBrowserOutput(workload(), binary,
+        [document.querySelector('#js-frame'), document.querySelector('#wasm-frame')]);
+      if (hidden || document.hidden) throw new Error('Tab was hidden. Keep it visible and rerun.');
       result.textContent = JSON.stringify({
         userAgent: navigator.userAgent,
         workload: 'synthetic NROM',
         ...measurements,
+        outputChecks,
       }, null, 2);
-      status.textContent = 'Complete. CPU, pixel and PCM parity passed.';
+      status.textContent = 'Complete. CPU/pixel/PCM parity, Canvas and offline Web Audio checks passed.';
     } catch (error) {
       status.textContent = `Benchmark failed: ${error.message}`;
     } finally {

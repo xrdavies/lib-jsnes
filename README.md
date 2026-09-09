@@ -49,6 +49,12 @@ before timing. Results include individual rounds, medians and WASM speedup
 The browser page also records its user-agent string. Progress updates and browser
 event-loop yields occur outside the timed regions. No game file is uploaded.
 This measures core execution; it does not measure canvas or Web Audio performance.
+After timing, the page displays synthetic frames from both cores and verifies a
+Canvas `ImageData` round trip. It also converts signed PCM to a mono Web Audio
+buffer, renders it through `OfflineAudioContext` and checks the resulting samples.
+These browser output checks play no sound and are excluded from timing. Results
+include the number of checked bytes/samples and maximum audio error. They verify
+format integration, not real-time audio scheduling or device playback latency.
 
 The benchmark has changed as the renderer and runtime have evolved. Run
 `node scripts/benchmark.mjs` on the current checkout for reproducible numbers;
