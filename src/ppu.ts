@@ -15,7 +15,7 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
           | (this.spriteOverflow ? 0x20 : 0) | (this.ioLatch & 0x1f);
         this.status &= 0x7f; this.nmiPending = false; this.latch = false;
         break;
-      case 4: this.ioLatch = this.oam[this.oamAddr]; break;
+      case 4: this.ioLatch = (this.oam[this.oamAddr] & ((this.oamAddr & 3) === 2 ? 0xe3 : 0xff)); break;
       case 7: {
         const a = this.addr & 0x3fff;
         this.ioLatch = a >= 0x3f00 ? this.readPalette(a) | (this.ioLatch & 0xc0) : this.data;
