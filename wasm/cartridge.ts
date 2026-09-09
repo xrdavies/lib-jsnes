@@ -1,4 +1,4 @@
-// WASM cartridge storage for the currently supported iNES NROM/UxROM boards.
+// WASM cartridge storage for iNES NROM, UxROM, CNROM, and GxROM boards.
 export class Cartridge {
   readonly rom: Uint8Array = new Uint8Array(0x80000);
   readonly prgRam: Uint8Array = new Uint8Array(0x2000);
@@ -15,13 +15,13 @@ export class Cartridge {
   get mirroring(): string {
     return this.flags & 8 ? 'four-screen' : this.flags & 1 ? 'vertical' : 'horizontal';
   }
-  reset(): void { this.bank = 0; }
+  reset(): void { this.bank = 0; this.chrBank = 0; }
   readCpu(address: i32): i32 {
     if (address < 0x6000 || this.prgBanks == 0) return 0;
     if (address < 0x8000) return this.prgRam[address - 0x6000];
     const selected = this.mapper == 2
       ? (address < 0xc000 ? this.bank : this.prgBanks - 1)
-      : this.mapper == 66 ? this.bank * 2 + ((address - 0x8000) >>> 14)
+      : this.mapper == 66 ? (this.bank * 2 + ((address - 0x8000) >>> 14)) % this.prgBanks
       : ((address - 0x8000) >>> 14) % this.prgBanks;
     return this.rom[this.prgStart + selected * 0x4000 + (address & 0x3fff)];
   }
@@ -29,10 +29,13 @@ export class Cartridge {
     if (address >= 0x6000 && address < 0x8000) this.prgRam[address - 0x6000] = value & 255;
     else if (address >= 0x8000 && this.mapper == 2 && this.prgBanks > 0) this.bank = (value & 255) % this.prgBanks;
     else if (address >= 0x8000 && this.mapper == 3 && this.rom[5] > 0) this.chrBank = (value & 255) % this.rom[5];
-    else if (address >= 0x8000 && this.mapper == 66) { this.bank = ((value >>> 4) & 3) % (this.prgBanks / 2); this.chrBank = (value & 3) % this.rom[5]; }
+    else if (address >= 0x8000 && this.mapper == 66) {
+      this.bank = (value >>> 4) & 3;
+      this.chrBank = this.hasChrRom ? (value & 3) % this.rom[5] : 0;
+    }
   }
   readChr(address: i32): i32 {
-    return this.hasChrRom ? this.rom[this.chrStart + (this.mapper == 3 ? this.chrBank * 0x2000 : 0) + (address & 0x1fff)] : this.chrRam[address & 0x1fff];
+    return this.hasChrRom ? this.rom[this.chrStart + this.chrBank * 0x2000 + (address & 0x1fff)] : this.chrRam[address & 0x1fff];
   }
   writeChr(address: i32, value: i32): void {
     if (!this.hasChrRom) this.chrRam[address & 0x1fff] = value & 255;

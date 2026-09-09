@@ -48,10 +48,15 @@ The current mapper layer supports NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3
 
 The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning at
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
-Its cartridge path accepts iNES 1.0 NROM and UxROM (mapper 0 and 2), including
+Its cartridge path accepts iNES 1.0 NROM, UxROM, CNROM, and GxROM (mappers 0, 2, 3, and 66), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
 NES 2.0 and other mappers are rejected by this experimental WASM core.
 The TypeScript core supports the broader mapper list above.
+
+GxROM tests cover every bank-register value, both PRG halves, the full CHR window,
+smaller ROM mirroring, CHR RAM, reset, and rendered pixels. CNROM and GxROM reset
+both PRG and CHR selectors. Bus conflicts and board-specific variants remain
+outside the current WASM mapper model.
 
 WASM builds compile the execution methods from `src/cpu.ts`, `src/ppu.ts`, `src/apu.ts`, and `src/controller.ts`, using the installed
 TypeScript compiler to supply AssemblyScript integer annotations. The generated
