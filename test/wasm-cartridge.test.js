@@ -77,6 +77,19 @@ test('WASM Color Dreams switches 32KB PRG and 8KB CHR from one register', async 
   assert.equal(core.exports.unknownOpcodeCount(), 0);
 });
 
+test('WASM Camerica mapper 71 switches the lower PRG window and preserves the fixed upper bank', async () => {
+  const { bytes, start } = rom(71, 4, 1, false);
+  const program = [0xa9, 2, 0x8d, 0, 0x80, 0xad, 0, 0x80, 0x85, 0, 0xad, 0, 0xc0, 0x85, 1,
+    0xa9, 0x10, 0x8d, 0, 0x90, 0x4c, 0x14, 0xc1];
+  bytes.set(program, start + 3 * 0x4000 + 0x100);
+  vector(bytes, start, 4, 0xc100);
+  const js = new Nes(bytes), core = await WasmCore.from(binary);
+  js.reset(); core.loadRom(bytes); core.reset(); js.step(100); core.step(100);
+  assert.deepEqual([core.exports.ramRead(0), core.exports.ramRead(1)], [0x32, 0x33]);
+  assert.deepEqual([core.programCounter, core.cycleCount], [js.cpu.pc, js.cycleCount]);
+  assert.equal(core.exports.unknownOpcodeCount(), 0);
+});
+
 test('WASM CNROM switches CHR banks without changing PRG bytes', async () => {
   const { bytes, start } = rom(3, 2, 4);
   bytes.fill(0x11, start + 2 * 0x4000, start + 2 * 0x4000 + 0x2000);

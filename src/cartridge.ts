@@ -14,7 +14,7 @@ export class Cartridge {
   private control = 0x0c;
   private chr0 = 0;
   private chr1 = 0;
-  private prg = 0; private chrBank = 0; private axBank=0; private gxBank=0; private gxChr=0; private m15Bank=0; private m15Mode=0; private m15Mirror=0; private mmc3Select=0; private mmc3Regs=new Uint8Array(8); private mmc3Mirror=0; private mmc3Latch=0; private mmc3Counter=0; private mmc3Irq=false;
+  private prg = 0; private chrBank = 0; private axBank=0; private gxBank=0; private gxChr=0; private m15Bank=0; private m15Mode=0; private m15Mirror=0; private m71Mirror=0; private mmc3Select=0; private mmc3Regs=new Uint8Array(8); private mmc3Mirror=0; private mmc3Latch=0; private mmc3Counter=0; private mmc3Irq=false;
 
   private mmc3Pending = false;
   private mmc3RamDisabled = false;
@@ -25,7 +25,7 @@ export class Cartridge {
 
   constructor(readonly rom: RomImage) {
     if (rom.consoleType && rom.consoleType !== 'nes') throw new Error(`Unsupported console type: ${rom.consoleType}`);
-    if (![0, 1, 2, 3, 4, 7, 11, 15, 34, 66, 79, 87, 113, 140, 177, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
+    if (![0, 1, 2, 3, 4, 7, 11, 15, 34, 66, 71, 79, 87, 113, 140, 177, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
     if (rom.mapper === 1 && (rom.prgRom.length > 0x40000 || rom.chrRom.length > 0x20000)) {
       throw new Error('Extended MMC1 boards are not supported yet');
     }
@@ -38,6 +38,7 @@ export class Cartridge {
     if (this.rom.mapper === 7) return this.axBank&16 ? 'single-upper' : 'single-lower';
     if (this.rom.mapper === 4) return this.rom.mirroring === 'four-screen' ? 'four-screen' : this.mmc3Mirror ? 'horizontal' : 'vertical';
     if (this.rom.mapper === 15 || this.rom.mapper === 113 || this.rom.mapper === 177 || this.rom.mapper === 225) return this.m15Mirror ? 'horizontal' : 'vertical';
+    if (this.rom.mapper === 71) return this.m71Mirror === 2 ? 'single-upper' : this.m71Mirror === 1 ? 'single-lower' : this.rom.mirroring;
     if (this.rom.mapper !== 1) return this.rom.mirroring;
     switch (this.control & 3) {
       case 0: return 'single-lower';
@@ -48,14 +49,14 @@ export class Cartridge {
   }
 
   /** Reset mapping without discarding cartridge RAM. */
-  saveState(): Uint8Array { const out=new Uint8Array(this.stateSize); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror,...this.mmc3Regs,this.mmc3Latch,this.mmc3Counter,this.mmc3Irq?1:0,this.rom.mapper===4?this.mmc3A12Low:this.m15Bank,this.rom.mapper===15?this.m15Mode:14,this.rom.mapper===4?+this.mmc3A12High:this.m15Mirror]); out[25]=+this.mmc3Pending | (+this.mmc3RamDisabled << 1) | (+this.mmc3RamProtected << 2); out.set(this.prgRam,26); if(this.rom.chrRam)out.set(this.chr,Cartridge.STATE_SIZE); if(this.rom.mapper===225)out.set(this.extraRam,this.stateSize-4); return out; }
-  validateState(state: Uint8Array): void { if(state.length!==this.stateSize || state[10]>1 || state[21]>1 || (this.rom.mapper===15 ? state[23]>3 : state[23]!==13 && state[23]!==14) || (this.rom.mapper===4 && state[22]>3) || state[24]>1 || state[25]>7 || (this.rom.mapper===225 && state.subarray(this.stateSize-4).some(value=>value>15))) throw new RangeError('Invalid cartridge state'); }
-  loadState(state: Uint8Array): void { this.validateState(state); [this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror]=state; this.mmc3Regs.set(state.subarray(11,19)); this.mmc3Latch=state[19]; this.mmc3Counter=state[20]; this.mmc3Irq=!!state[21]; this.mmc3Pending=!!(state[25]&1); this.mmc3RamDisabled=!!(state[25]&2); this.mmc3RamProtected=!!(state[25]&4); this.m15Bank=state[22]; this.m15Mode=this.rom.mapper===15?state[23]:0; this.m15Mirror=state[24]; this.mmc3A12Low=this.rom.mapper===4?state[22]:0; this.mmc3A12High=this.rom.mapper===4?!!state[24]:false; this.prgRam.set(state.subarray(26,Cartridge.STATE_SIZE)); if(this.rom.chrRam)this.chr.set(state.subarray(Cartridge.STATE_SIZE,Cartridge.STATE_SIZE+this.chr.length)); if(this.rom.mapper===225)this.extraRam.set(state.subarray(this.stateSize-4)); }
+  saveState(): Uint8Array { const out=new Uint8Array(this.stateSize); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror,...this.mmc3Regs,this.mmc3Latch,this.mmc3Counter,this.mmc3Irq?1:0,this.rom.mapper===4?this.mmc3A12Low:this.m15Bank,this.rom.mapper===15?this.m15Mode:14,this.rom.mapper===4?+this.mmc3A12High:this.rom.mapper===71?this.m71Mirror:this.m15Mirror]); out[25]=+this.mmc3Pending | (+this.mmc3RamDisabled << 1) | (+this.mmc3RamProtected << 2); out.set(this.prgRam,26); if(this.rom.chrRam)out.set(this.chr,Cartridge.STATE_SIZE); if(this.rom.mapper===225)out.set(this.extraRam,this.stateSize-4); return out; }
+  validateState(state: Uint8Array): void { if(state.length!==this.stateSize || state[10]>1 || state[21]>1 || (this.rom.mapper===15 ? state[23]>3 : state[23]!==13 && state[23]!==14) || (this.rom.mapper===4 && state[22]>3) || (this.rom.mapper===71 ? state[24]>2 : state[24]>1) || state[25]>7 || (this.rom.mapper===225 && state.subarray(this.stateSize-4).some(value=>value>15))) throw new RangeError('Invalid cartridge state'); }
+  loadState(state: Uint8Array): void { this.validateState(state); [this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror]=state; this.mmc3Regs.set(state.subarray(11,19)); this.mmc3Latch=state[19]; this.mmc3Counter=state[20]; this.mmc3Irq=!!state[21]; this.mmc3Pending=!!(state[25]&1); this.mmc3RamDisabled=!!(state[25]&2); this.mmc3RamProtected=!!(state[25]&4); this.m15Bank=state[22]; this.m15Mode=this.rom.mapper===15?state[23]:0; this.m15Mirror=state[24]; this.m71Mirror=this.rom.mapper===71?state[24]:0; this.mmc3A12Low=this.rom.mapper===4?state[22]:0; this.mmc3A12High=this.rom.mapper===4?!!state[24]:false; this.prgRam.set(state.subarray(26,Cartridge.STATE_SIZE)); if(this.rom.chrRam)this.chr.set(state.subarray(Cartridge.STATE_SIZE,Cartridge.STATE_SIZE+this.chr.length)); if(this.rom.mapper===225)this.extraRam.set(state.subarray(this.stateSize-4)); }
 
   reset(): void {
     this.shift = 0x10;
     this.control = 0x0c;
-    this.chr0 = this.chr1 = this.prg = this.chrBank = this.axBank = this.gxBank = this.gxChr = this.m15Bank = 0; this.m15Mode=0; this.m15Mirror=0; this.mmc3Select=0; this.mmc3Regs.fill(0); this.mmc3Mirror=0; this.mmc3Latch=0; this.mmc3Counter=0; this.mmc3Irq=false; this.mmc3Pending=false; this.mmc3RamDisabled=false; this.mmc3RamProtected=false; this.mmc3A12High=false; this.mmc3A12Low=0;
+    this.chr0 = this.chr1 = this.prg = this.chrBank = this.axBank = this.gxBank = this.gxChr = this.m15Bank = 0; this.m15Mode=0; this.m15Mirror=0; this.m71Mirror=0; this.mmc3Select=0; this.mmc3Regs.fill(0); this.mmc3Mirror=0; this.mmc3Latch=0; this.mmc3Counter=0; this.mmc3Irq=false; this.mmc3Pending=false; this.mmc3RamDisabled=false; this.mmc3RamProtected=false; this.mmc3A12High=false; this.mmc3A12Low=0;
     if (this.rom.mapper === 225) this.gxBank = 1;
   }
 
@@ -68,6 +69,7 @@ export class Cartridge {
     const count = this.rom.prgRom.length / 0x4000;
     let bank = slot;
     if (this.rom.mapper === 2) bank = slot === 0 ? this.prg : count - 1;
+    if (this.rom.mapper === 71) bank = slot === 0 ? this.gxBank : count - 1;
     if (this.rom.mapper === 7) bank = (this.axBank&15)*2 + slot;
     if (this.rom.mapper === 11) bank = (this.gxBank & 3) * 2 + slot;
     if (this.rom.mapper === 34) bank = this.gxBank * 2 + slot;
@@ -125,6 +127,7 @@ export class Cartridge {
       return;
     }
     if (this.rom.mapper === 2) this.prg = value;
+    if (this.rom.mapper === 71) { if ((address & 0xf000) === 0x9000) this.m71Mirror = 1 + ((value >>> 4) & 1); else this.gxBank = value; return; }
     if (this.rom.mapper === 11) { this.gxBank = value; return; }
     if (this.rom.mapper === 34) { this.gxBank = value; return; }
     if (this.rom.mapper === 3) { this.chrBank = value; return; }
