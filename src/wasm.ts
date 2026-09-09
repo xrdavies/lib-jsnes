@@ -33,13 +33,13 @@ export class WasmCore {
   static readonly MAX_ROM_SIZE = 16 + 512 + 0xeff * 0x6000;
   private constructor(readonly exports: WasmExports) {}
 
-  static async from(source: ArrayBuffer | Uint8Array | Response): Promise<WasmCore> {
+  static async from(source: ArrayBuffer | Uint8Array | Response | WebAssembly.Module): Promise<WasmCore> {
     if (typeof Response !== 'undefined' && source instanceof Response) {
       if (!source.ok) throw new Error(`WASM request failed: ${source.status}`);
       source = await source.arrayBuffer();
     }
     const input = source;
-    const bytes = input instanceof Uint8Array ? input : new Uint8Array(input as ArrayBuffer);
+    const bytes = input instanceof Uint8Array ? input : input instanceof WebAssembly.Module ? input : new Uint8Array(input as ArrayBuffer);
     const result = await WebAssembly.instantiate(bytes, { env: { abort() { throw new Error('WASM abort'); } } });
     const instance = ('instance' in result ? result.instance : result) as WebAssembly.Instance;
     const exports = instance.exports as unknown as Record<string, unknown>;

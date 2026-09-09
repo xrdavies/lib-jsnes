@@ -372,6 +372,11 @@ const pcm = core.audioSamples(); // Owned Int16Array; drains the queued mono sam
 const sampleRate = core.sampleRate; // 44100 Hz.
 ```
 
+`WasmCore.from()` also accepts a precompiled `WebAssembly.Module`. Browsers can
+pass the result of `WebAssembly.compileStreaming()` and reuse it for multiple
+cores without recompiling the binary. The module must still export the complete
+lib-jsnes ABI; invalid modules fail before a core is created.
+
 `WasmCore.from()` validates the required exports and memory object immediately.
 Passing a valid but unrelated WebAssembly module fails with a clear ABI error
 before any ROM or emulator state is created. Use a binary produced by the matching

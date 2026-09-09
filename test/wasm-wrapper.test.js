@@ -11,6 +11,14 @@ test('WasmCore accepts a fetch Response and exposes the shared frame view', asyn
   assert.equal(core.frame()[0], 0xff000000);
 });
 
+test('WasmCore accepts a precompiled WebAssembly.Module for compile caching', async () => {
+  const bytes = await readFile('dist-wasm/lib-jsnes.wasm');
+  const module = await WebAssembly.compile(bytes);
+  const core = await WasmCore.from(module);
+  core.reset();
+  assert.equal(core.frame().length, 256 * 240);
+});
+
 test('WasmCore rejects valid WASM modules that do not implement its ABI', async () => {
   const emptyModule = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]);
   await assert.rejects(WasmCore.from(emptyModule), /does not implement the lib-jsnes ABI/);
