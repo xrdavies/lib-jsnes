@@ -134,3 +134,34 @@ test('horizontal and vertical nametable crossings toggle independent base bits',
     assert.equal(pixel(nes, 1, 1), rgb(colors[base ^ 3]));
   }
 });
+
+test('background tile-row reuse preserves fine scrolling, clipping, and nametable crossings', () => {
+  const image = new Uint8Array(16 + 0x4000); image.set([78, 69, 83, 26, 1, 0, 8]);
+  const nes = new Nes(image); nes.reset();
+  nes.ppu.palette.set([0x0f, 0x11, 0x22, 0x33]);
+  for (let tile = 0; tile < 4; tile++) {
+    nes.ppu.vram.fill(tile, 0x2000 + tile * 0x400, 0x23c0 + tile * 0x400);
+    for (let row = 0; row < 8; row++) {
+      let lo = 0, hi = 0;
+      for (let col = 0; col < 8; col++) {
+        const color = (tile + row + col) % 4;
+        lo |= (color & 1) << (7 - col); hi |= (color >>> 1) << (7 - col);
+      }
+      nes.cartridge.writeChr(tile * 16 + row, lo); nes.cartridge.writeChr(tile * 16 + row + 8, hi);
+    }
+  }
+  let reads = 0;
+  const readChr = nes.cartridge.readChr.bind(nes.cartridge);
+  nes.cartridge.readChr = a => { reads++; return readChr(a); };
+  for (const scroll of [0, 1, 2, 3, 4, 5, 6, 7, 252, 255]) for (const clip of [false, true]) {
+    nes.ppu.writeRegister(5, scroll); nes.ppu.writeRegister(5, 239);
+    reads = 0; render(nes, clip ? 8 : 10);
+    assert.ok(reads <= 2 * 33 * 240, 'pattern data should be fetched once per tile row');
+    for (let y = 0; y < 240; y++) for (let x = 0; x < 256; x++) {
+      const wx = x + scroll, wy = y + 239, nt = (wx >= 256 ? 1 : 0) + (wy >= 240 ? 2 : 0);
+      const color = clip && x < 8 ? 0 : (nt + ((wy % 240) % 8) + (wx % 8)) % 4;
+      assert.equal(pixel(nes, x, y), rgb([0x0f, 0x11, 0x22, 0x33][color]));
+      assert.equal(nes.ppu.backgroundOpaque[y * 256 + x], color ? 1 : 0);
+    }
+  }
+});

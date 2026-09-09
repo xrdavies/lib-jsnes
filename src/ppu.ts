@@ -12,24 +12,33 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     this.frame.fill((0xff000000 | this.color(0)) >>> 0);
     this.backgroundOpaque.fill(0);
     if (!(this.mask & 8)) return;
-    for (let y = 0; y < 240; y++) for (let x = 0; x < 256; x++) {
-      if (x < 8 && !(this.mask & 2)) continue;
-      const wx = x + this.scrollX, wy = y + this.scrollY;
-      const sx = wx % 256, sy = wy % 240;
-      const nt = (this.ctrl & 3) ^ ((wx >>> 8) & 1) ^ ((Math.floor(wy / 240) & 1) << 1);
-      const tx = sx >>> 3, ty = sy >>> 3, table = 0x2000 + nt * 0x400;
-      const tile = this.readMemory(table + ty * 32 + tx);
-      const attr = this.readMemory(table + 0x3c0 + (ty >>> 2) * 8 + (tx >>> 2));
-      const palette = (attr >>> (((ty & 2) << 1) | (tx & 2))) & 3;
-      const base = (this.ctrl & 16 ? 0x1000 : 0) + tile * 16 + (sy & 7);
-      const shift = 7 - (sx & 7);
-      const color = ((this.readMemory(base) >>> shift) & 1) | (((this.readMemory(base + 8) >>> shift) & 1) << 1);
-      if (!color) continue;
-      const pixel = y * 256 + x;
-      this.backgroundOpaque[pixel] = 1;
-      this.frame[pixel] = 0xff000000 | this.color(palette * 4 + color);
+    for (let y = 0; y < 240; y++) {
+      const wy = y + this.scrollY, sy = wy % 240;
+      let x = this.mask & 2 ? 0 : 8;
+      while (x < 256) {
+        const wx = x + this.scrollX, sx = wx % 256;
+        const nt = (this.ctrl & 3) ^ ((wx >>> 8) & 1) ^ ((Math.floor(wy / 240) & 1) << 1);
+        const tx = sx >>> 3, ty = sy >>> 3, table = 0x2000 + nt * 0x400;
+        const tile = this.readMemory(table + ty * 32 + tx);
+        const attr = this.readMemory(table + 0x3c0 + (ty >>> 2) * 8 + (tx >>> 2));
+        const palette = (attr >>> (((ty & 2) << 1) | (tx & 2))) & 3;
+        const base = (this.ctrl & 16 ? 0x1000 : 0) + tile * 16 + (sy & 7);
+        const lo = this.readMemory(base), hi = this.readMemory(base + 8);
+        // Reuse one tile row up to its boundary, including fine-scroll fragments.
+        const span = Math.min(8 - (sx & 7), 256 - x);
+        for (let dx = 0; dx < span; dx++) {
+          const shift = 7 - ((sx + dx) & 7);
+          const color = ((lo >>> shift) & 1) | (((hi >>> shift) & 1) << 1);
+          if (!color) continue;
+          const pixel = y * 256 + x + dx;
+          this.backgroundOpaque[pixel] = 1;
+          this.frame[pixel] = 0xff000000 | this.color(palette * 4 + color);
+        }
+        x += span;
+      }
     }
   }
+
   private renderSprites(): void {
     if (!(this.mask & 16)) return;
     const height = this.ctrl & 32 ? 16 : 8;

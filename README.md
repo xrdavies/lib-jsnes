@@ -12,6 +12,26 @@ npm run build:wasm
 
 `npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise APU as mono PCM, including frame IRQs. The broader TypeScript mapper set is still missing from WASM.
 
+## Performance
+
+The default WASM build uses AssemblyScript optimization level 3, retaining runtime
+assertions and array bounds checks. `npm run build:wasm -- --debug` generates an
+unoptimized debug binary; run the default build again before packaging.
+
+After `npm test`, run `node scripts/benchmark.mjs`. The synthetic workload includes
+backgrounds, sprites, audio, controller polling, and DMA. It checks 240 frames of
+CPU/pixel/PCM parity before timing five alternating rounds, each with 60 warmup
+frames and 180 measured frames. Timing includes frame execution and audio drains,
+but excludes module loading, RGBA conversion, display, and audio playback.
+Optional arguments select a local ROM and WASM binary; paths and ROM names are
+not printed. Timing is informational and is not a CI pass/fail threshold.
+
+On the development macOS arm64 machine (Node 24.15.0), tile-row fetch reuse reduced
+the synthetic median from about 1.99 to 0.87 ms/frame in TypeScript and from 4.55
+to 2.30 ms/frame in WASM. The optimized binary is about 50.6 kB versus 62.6 kB.
+WASM remains slower than TypeScript in this measurement. Browser performance
+must be measured separately; faster WASM execution is not yet established.
+
 ## API
 
 ```ts

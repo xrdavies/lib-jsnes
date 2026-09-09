@@ -2,6 +2,9 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import ts from 'typescript';
 
+const debug = process.argv.includes('--debug');
+if (process.argv.slice(2).some(arg => arg !== '--debug')) throw new Error('Usage: build-wasm.mjs [--debug]');
+
 // Compile the shared CPU/PPU/APU/controller code, adding AssemblyScript's required
 // integer annotations. JS snapshot marshaling stays in the TypeScript API.
 const sources = ['cpu', 'ppu', 'apu', 'controller'];
@@ -70,7 +73,8 @@ try {
     writeFileSync(path, compileSource(name));
     generated.push(path);
   }
-  const build = spawnSync('asc', ['wasm/index.ts', '--outFile', 'dist-wasm/lib-jsnes.wasm', '--exportRuntime', '--exportTable'], { stdio: 'inherit' });
+  const build = spawnSync('asc', ['wasm/index.ts', '--outFile', 'dist-wasm/lib-jsnes.wasm', '--exportRuntime', '--exportTable',
+    ...(debug ? ['--debug'] : ['--optimizeLevel', '3'])], { stdio: 'inherit' });
   if (build.error) throw build.error;
   process.exitCode = build.status ?? 1;
 } finally {

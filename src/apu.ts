@@ -1,6 +1,7 @@
 const CPU_HZ=1789773, SAMPLE_HZ=44100;
 const LENGTH=[10,254,20,2,40,4,80,6,160,8,60,10,14,12,26,14,12,16,24,18,48,20,96,22,192,24,72,26,16,28,32,30];
 const NOISE_PERIOD=[4,8,16,32,64,96,128,160,202,254,380,508,762,1016,2034,4068];
+const DUTY=[0x02,0x06,0x1e,0xf9];
 class Envelope {
   start = false;
   divider = 0;
@@ -73,7 +74,7 @@ class Pulse {
   }
   sample(): number {
     if (!this.enabled || !this.length || this.muted) return 0;
-    return ([0x02, 0x06, 0x1e, 0xf9][this.regs[0] >>> 6] >>> this.phase) & 1
+    return (DUTY[this.regs[0] >>> 6] >>> this.phase) & 1
       ? this.envelope.volume(this.regs[0]) : 0;
   }
 }
