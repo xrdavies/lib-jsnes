@@ -81,14 +81,12 @@ model. CPU accesses now divide each cycle into two PPU dots before the access
 and one after it, so older instruction-at-once benchmark numbers are not comparable.
 Boundary tests compare batch advances against individual dots, including VBlank,
 NMI, scanline counts and multiple frame wraps. This optimization preserves the
-event ordering; the renderer now completes individual scanlines as described below.
+event ordering; visible pixels are committed individually as described below.
 
-Profiling also identified repeated per-pixel color conversion and per-cycle APU
-frame-sequencer dispatch. The renderer now builds its 32 packed colors once per
-scanline, and the APU dispatches only at its next sequencer event while continuing
-to clock oscillators every CPU cycle. Both derived caches are rebuilt after their
-inputs change or snapshots are restored. Tests cover palette/mask changes, reset
-and restoration around each sequencer boundary.
+The renderer prepares background and sprite palette indices once per scanline,
+then resolves the palette and display mask at each visible dot. The APU dispatches
+frame-sequencer events only at their scheduled cycles while clocking oscillators
+every CPU cycle. Tests cover palette/mask changes, reset and snapshot continuation.
 
 The current build uses AssemblyScript's `minimal` runtime, with explicit garbage
 collection after roughly 29,780 emulated CPU cycles, after audio drains and after
@@ -101,8 +99,8 @@ retain, since collection traces globals and pinned objects, not host pointers or
 WASM stack locals. Frame, battery RAM and current audio buffers are rooted by the
 core; previously documented view lifetimes still apply.
 
-With explicit collection, a recent synthetic Node run measured about 1.41 ms/frame
-in WASM versus about 1.89 ms/frame in TypeScript (about 1.34× WASM speedup).
+With explicit collection, a synthetic Node run with per-pixel output measured about 1.61 ms/frame
+in WASM versus about 2.17 ms/frame in TypeScript (about 1.35× WASM speedup).
 These are Node 24 results on macOS arm64, not browser measurements or a universal
 speedup; device-clock and DMA fidelity take priority over this microbenchmark.
 In both debug and optimized builds, a stress test runs one large step spanning
@@ -626,8 +624,9 @@ interrupt rejection, reset, snapshot replay and JS/WASM device-clock parity.
 
 Synthetic ROMs compare complete frames between the two builds and assert known
 background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.
-WASM uses the same scanline renderer as TypeScript: within-line raster effects,
-exact sprite evaluation, and per-bus-cycle PPU timing remain incomplete. Frame views
+WASM uses the same pixel output path as TypeScript. Pattern fetches and sprite
+evaluation remain scanline approximations; the hardware fetch/scroll pipeline
+is not yet implemented. Frame views
 use packed `0xAARRGGBB` pixels; they are not RGBA byte views for `ImageData`.
 PPUADDR (`$2006`) uses a temporary address: its first write replaces the high
 six bits without changing the active PPUDATA address, and its second write
@@ -641,23 +640,23 @@ older PPU/system snapshots are rejected. The renderer still uses its
 scanline scroll model; timed v/t copies and the full per-dot scroll pipeline
 remain unimplemented.
 
-Each visible line is drawn at dot 256 using the current scroll, nametables,
-pattern banks, palette, mask and OAM. Later register writes affect subsequent
-lines and leave completed lines intact, allowing vertical splits and mapper IRQ
-bank changes within a frame. The visible image is complete before VBlank begins.
-Sprite-zero hit is set at dot x + 1 for the first opaque overlap, respecting
-rendering masks, flips, sprite size and the x=255 exclusion. Overlap uses current
-memory rather than hardware fetch buffers. Overflow is set during line rendering;
-both flags clear at pre-render dot 1. Drawing is still a line-level approximation:
-writes within a line apply to that whole line, and the PPU does not yet implement
-the hardware's per-dot fetch/scroll pipeline.
-Tests cover mid-frame palette, scroll, mask and CHR changes, partial-frame
-snapshot replay, status timing and CPU-driven split-frame and sprite-hit polling
-parity in WASM.
-The frame view updates progressively as the PPU advances; hosts should display it
-after their frame step. Snapshot size is unchanged; completed rows are saved
-alongside the current PPU position. Palette and sprite scratch buffers are rebuilt
-for each line, so they do not need separate serialization.
+Visible pixels are committed at dot x + 1. Palette, grayscale, emphasis, clipping
+and display-mask changes affect subsequent pixels, leaving the already emitted
+portion of the row intact. Forced-blank palette selection also happens per pixel.
+Sprite/background priority and sprite-zero hit use the same prepared color indices;
+hit excludes x=255 and clears at pre-render dot 1. Overflow still uses a ninth
+in-range sprite approximation and is reported at dot 256.
+
+Background and sprite pattern indices are currently prepared at dot 1 for the
+whole line. CHR, scroll and OAM changes within that line therefore affect the next
+line; individual fetches, shift registers and v/t scroll copies remain to be
+implemented. Per-pixel output is one stage of that work, not a claim of full
+raster accuracy. Tests cover CPU-driven within-line mask writes, palette and
+clipping changes, progressive output and JS/WASM snapshot continuation.
+Snapshots now store two 256-byte line buffers and an overflow flag before the
+previous timing tail. This adds 513 bytes; older PPU/system snapshots are rejected.
+The buffers preserve already prepared data when memory changes before a snapshot.
+Hosts should display the completed frame after their frame step.
 
 The NTSC PPU skips the final pre-render dot on odd frames when either background
 or sprite rendering is enabled on entering dot 339. The rendering gate changes
@@ -688,9 +687,8 @@ analog video output remain approximations.
 With both background and sprite rendering disabled, a VRAM address in
 `$3F00–$3FFF` selects the forced-blank output color from that palette entry,
 including palette mirrors and grayscale. Otherwise the backdrop remains palette
-entry zero. PPUDATA address increments can change the selected color. This uses
-the current scanline renderer, so changes affect subsequent line draws rather
-than individual pixels. Tests cover all palette addresses, rendering gates,
+entry zero. PPUDATA address increments can change the selected color for the
+next emitted pixel. Tests cover all palette addresses, rendering gates,
 snapshot continuation and known CPU-driven pixels in TypeScript and WASM.
 
 Both builds now retain a PPU I/O bus latch. Writes to every PPU register, including

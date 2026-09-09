@@ -174,7 +174,7 @@ test('horizontal and vertical nametable crossings toggle independent base bits',
 
 test('background tile-row reuse preserves fine scrolling, clipping, and nametable crossings', () => {
   const image = new Uint8Array(16 + 0x4000); image.set([78, 69, 83, 26, 1, 0, 8]);
-  const nes = new Nes(image); nes.reset();
+  const nes = new Nes(image); nes.reset(); nes.ppu.oam.fill(255);
   nes.ppu.palette.set([0x0f, 0x11, 0x22, 0x33]);
   for (let tile = 0; tile < 4; tile++) {
     nes.ppu.vram.fill(tile, 0x2000 + tile * 0x400, 0x23c0 + tile * 0x400);

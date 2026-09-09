@@ -56,6 +56,69 @@ test('visible line completion precedes VBlank and sprite status clears on pre-re
   nes.ppu.step(20 * 341); assert.equal(nes.read(0x2002) & 0xe0, 0);
 });
 
+test('pixels commit at x+1 and palette/mask writes affect only subsequent pixels', async () => {
+  const bytes = image(), nes = scene();
+  nes.ppu.step(20 * 341 + 100);
+  assert.equal(nes.frame[20 * 256 + 99], rgb(0x16));
+  assert.equal(nes.frame[20 * 256 + 100], 0xff000000);
+  const prefix = nes.frame.slice(20 * 256, 20 * 256 + 100);
+  // Change palette through PPUDATA, then save while partway across a line.
+  nes.write(0x2006, 0x3f); nes.write(0x2006, 1); nes.write(0x2007, 0x30);
+  const saved = nes.saveState(), wasm = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
+  wasm.loadRom(bytes); wasm.loadState(saved);
+  nes.ppu.step(20);
+  assert.deepEqual(nes.frame.subarray(20 * 256, 20 * 256 + 100), prefix);
+  assert.ok(nes.frame.subarray(20 * 256 + 100, 20 * 256 + 120).every(v => v === rgb(0x30)));
+  // PPUDATA left the address at $3F02, selected as the forced-blank color.
+  nes.write(0x2001, 0); nes.ppu.step(136);
+  assert.ok(nes.frame.subarray(20 * 256 + 120, 21 * 256).every(v => v === rgb(0x2a)));
+  nes.loadState(saved); nes.step(52); wasm.step(52);
+  assert.deepEqual(wasm.frame(), nes.frame);
+  assert.deepEqual(wasm.saveState(), nes.saveState());
+  assert.deepEqual(nes.frame.subarray(20 * 256, 20 * 256 + 100), prefix);
+});
+
+test('pixel composition applies sprite priority, left clipping and grayscale at output time', () => {
+  const nes = scene(); nes.ppu.oam.set([19, 0, 0, 0]);
+  nes.ppu.palette[17] = 0x2a; nes.write(0x2001, 0x1e);
+  nes.ppu.step(20 * 341 + 3);
+  assert.equal(nes.frame[20 * 256 + 2], rgb(0x2a));
+  nes.write(0x2001, 0x1a); // Clip sprites at the left edge.
+  nes.ppu.step(2); assert.equal(nes.frame[20 * 256 + 4], rgb(0x16));
+  nes.write(0x2001, 0x1f); // Enable sprites and grayscale.
+  nes.ppu.step(3); assert.equal(nes.frame[20 * 256 + 7], rgb(0x20));
+  assert.equal(nes.frame[20 * 256 + 2], rgb(0x2a));
+});
+
+test('CPU PPUMASK writes split a visible row at the actual bus access in both cores', async () => {
+  const nes = scene();
+  [0xa9, 0, 0x8d, 1, 0x20, 0x02].forEach((v, i) => nes.write(0x200 + i, v));
+  nes.cpu.pc = 0x200; nes.ppu.step(20 * 341 + 100);
+  const wasm = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
+  wasm.loadRom(image()); wasm.loadState(nes.saveState());
+  nes.step(52); wasm.step(52);
+  // LDA (2) + STA (4): the write follows 17 PPU dots; the last dot sees the new mask.
+  assert.ok(nes.frame.subarray(20 * 256, 20 * 256 + 117).every(v => v === rgb(0x16)));
+  assert.ok(nes.frame.subarray(20 * 256 + 117, 21 * 256).every(v => v === rgb(0x0f)));
+  assert.deepEqual(wasm.frame(), nes.frame); assert.deepEqual(wasm.saveState(), nes.saveState());
+});
+
+test('mid-line snapshots retain prepared pattern indices even when CHR memory has changed', async () => {
+  const bytes = new Uint8Array(16 + 16384); bytes.set([78, 69, 83, 26, 1, 0]);
+  bytes.set([0x4c, 0, 0x80], 16); bytes.set([0, 0x80], 16 + 0x3ffc);
+  const nes = new Nes(bytes); nes.reset(); nes.ppu.oam.fill(255);
+  for (let i = 0; i < 8; i++) nes.cartridge.writeChr(i, 255);
+  nes.ppu.palette.set([0x0f, 0x16]); nes.write(0x2001, 10);
+  nes.ppu.step(20 * 341 + 100);
+  for (let i = 0; i < 8; i++) nes.cartridge.writeChr(i, 0);
+  const state = nes.saveState(), wasm = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
+  wasm.loadRom(bytes); wasm.loadState(state); nes.loadState(state);
+  nes.step(180); wasm.step(180);
+  assert.ok(nes.frame.subarray(20 * 256, 21 * 256).every(v => v === rgb(0x16)));
+  assert.ok(nes.frame.subarray(21 * 256, 22 * 256).every(v => v === rgb(0x0f)));
+  assert.deepEqual(wasm.saveState(), nes.saveState());
+});
+
 test('CPU-driven CHR and palette changes produce matching split frames in WASM', async () => {
   const rom = image(), code = [];
   const write = (a, v) => code.push(0xa9, v, 0x8d, a & 255, a >>> 8);

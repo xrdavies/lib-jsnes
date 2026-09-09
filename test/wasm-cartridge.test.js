@@ -107,7 +107,8 @@ test('wrapper rejects unsupported cartridges before replacing the running ROM', 
   assert.equal(core.exports.ramRead(0), 0x55);
   const frame = core.frame();
   assert.equal(frame.length, 61440);
-  assert.ok(frame.every(pixel => pixel === 0xff000000));
+  assert.ok(frame.subarray(0, 15).every(pixel => pixel === 0xff666666));
+  assert.ok(frame.subarray(15).every(pixel => pixel === 0xff000000));
 });
 
 test('WASM accepts standard NES 2.0 linear sizes for supported mappers', async () => {
