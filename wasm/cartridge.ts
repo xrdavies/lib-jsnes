@@ -204,20 +204,24 @@ export class Cartridge {
     if (!nes2 && (this.rom[7] & 0x0c) != 0) throw new Error('Unsupported ROM format');
     // Widen bytes before shifting: u8 << 8 would discard the extension bits.
     const mapperExtension: i32 = this.rom[8], sizeExtension: i32 = this.rom[9];
-    if (nes2 && ((sizeExtension & 15) == 15 || (sizeExtension >>> 4) == 15)) throw new Error('Unsupported NES 2.0 size encoding');
+    const exponentSize = (value: i32): i32 => {
+      const exponent = value >>> 2, multiplier = (value & 3) * 2 + 1;
+      if (exponent > 30) throw new Error('NES 2.0 ROM size is too large');
+      return (1 << exponent) * multiplier;
+    };
     const mapper = (this.rom[6] >>> 4) | (this.rom[7] & 0xf0) | (nes2 ? ((mapperExtension & 15) << 8) : 0);
     if (mapper != 0 && mapper != 1 && mapper != 2 && mapper != 3 && mapper != 4 && mapper != 7 && mapper != 15 && mapper != 66 && mapper != 79 && mapper != 87 && mapper != 113 && mapper != 140 && mapper != 177 && mapper != 225 && mapper != 241) throw new Error('Unsupported WASM mapper');
-    const banks: i32 = this.rom[4] | (nes2 ? ((sizeExtension & 15) << 8) : 0);
-    if (banks == 0 || (mapper == 0 && banks > 2)) throw new Error('Invalid PRG size');
+    const prgSize: i32 = nes2 && (sizeExtension & 15) == 15 ? exponentSize(this.rom[4]) : (this.rom[4] | (nes2 ? ((sizeExtension & 15) << 8) : 0)) * 0x4000;
+    const chrSize: i32 = nes2 && (sizeExtension >>> 4) == 15 ? exponentSize(this.rom[5]) : (this.rom[5] | (nes2 ? ((sizeExtension >>> 4) << 8) : 0)) * 0x2000;
+    if (prgSize == 0 || (mapper == 0 && prgSize > 0x8000) || prgSize % 0x4000 != 0) throw new Error('Invalid PRG size');
     const start = 16 + ((this.rom[6] & 4) != 0 ? 512 : 0);
-    const chrBanks: i32 = this.rom[5] | (nes2 ? ((sizeExtension >>> 4) << 8) : 0);
-    if (mapper == 1 && (banks > 16 || chrBanks > 16)) throw new Error('Extended MMC1 boards are not supported yet');
-    if (start + banks * 0x4000 + chrBanks * 0x2000 > length) throw new Error('Truncated ROM');
+    if (mapper == 1 && (prgSize > 0x40000 || chrSize > 0x20000)) throw new Error('Extended MMC1 boards are not supported yet');
+    if (start + prgSize + chrSize > length) throw new Error('Truncated ROM');
     this.prgStart = start;
-    this.prgBanks = banks;
-    this.chrStart = start + banks * 0x4000;
-    this.hasChrRom = chrBanks != 0;
-    this.chrBytes = chrBanks == 0 ? 0x2000 : chrBanks * 0x2000;
+    this.prgBanks = prgSize / 0x4000;
+    this.chrStart = start + prgSize;
+    this.hasChrRom = chrSize != 0;
+    this.chrBytes = chrSize == 0 ? 0x2000 : chrSize;
     this.flags = this.rom[6];
     this.mapper = mapper;
     this.reset();

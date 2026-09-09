@@ -202,7 +202,7 @@ The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning a
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
 Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, mapper 15, GxROM, and mappers 79, 87, 113, 140, 177, 225 and 241 (mappers 0, 1, 2, 3, 4, 7, 15, 66, 79, 87, 113, 140, 177, 225 and 241), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
-NES 2.0 linear-size headers are accepted; exponent-size encodings and other unsupported mappers are rejected by this experimental WASM core.
+NES 2.0 linear and exponent-size headers are accepted for supported mappers; unsupported boards and malformed layouts are rejected by this experimental WASM core.
 `WasmCore.loadRom()` now allocates ROM storage to fit the input and copies it in
 one bulk transfer. The former fixed 512 KiB capacity no longer rejects layouts
 such as 512 KiB PRG plus 256 KiB CHR. `MAX_ROM_SIZE` is the largest supported

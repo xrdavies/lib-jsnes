@@ -118,7 +118,7 @@ test('WASM accepts standard NES 2.0 linear sizes for supported mappers', async (
   assert.equal(core.exports.chrRead(0), bytes[start + 0x4000]);
   const exponent = bytes.slice(); exponent[4] = 0x38; exponent[9] = 0x0f;
   assert.equal(parseRom(exponent).prgRom.length, 16384);
-  assert.throws(() => core.loadRom(exponent), /Unsupported NES 2.0 size encoding/);
+  core.loadRom(exponent); core.reset(); assert.equal(core.programCounter, 0x8000);
 });
 
 function gxrom(banks = 8, chr = 4, value = 0x21) {
@@ -322,7 +322,7 @@ test('native NES 2.0 parser retains mapper and ROM-size extension bits', async (
   assert.equal(e.ramRead(0), 0x55);
 });
 
-test('WASM rejects correctly encoded exponent layouts before changing the active cartridge', async () => {
+test('WASM accepts correctly encoded exponent layouts and preserves the active cartridge on malformed input', async () => {
   const core = await WasmCore.from(binary);
   const { bytes, start } = rom(0, 1, 1);
   bytes.set([0xa9, 0x55, 0x85, 0], start); vector(bytes, start, 1, 0x8000);
@@ -333,10 +333,10 @@ test('WASM rejects correctly encoded exponent layouts before changing the active
     else { exponent[4] = 0x38; exponent[9] = 0x0f; }
     assert.equal(parseRom(exponent).prgRom.length, 16384);
     assert.equal(parseRom(exponent).chrRom.length, 8192);
-    assert.throws(() => core.loadRom(exponent), /Unsupported NES 2.0 size encoding/);
+    core.loadRom(exponent); core.reset(); assert.equal(core.programCounter, 0x8000);
     const native = await WasmCore.from(binary);
     for (let i = 0; i < exponent.length; i++) native.exports.romWrite(i, exponent[i]);
-    assert.throws(() => native.exports.loadRom(exponent.length));
+    native.exports.loadRom(exponent.length); native.exports.reset(); assert.equal(native.exports.programCounter(), 0x8000);
   }
   for (const format of [4, 12]) {
     const invalid = bytes.slice(); invalid[7] = format; invalid[start + 1] = 0xaa;
