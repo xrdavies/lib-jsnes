@@ -5,6 +5,7 @@ import { Ppu } from './ppu.js';
 import { Cartridge } from './cartridge.js';
 import { Apu } from './apu.js';
 export interface Frame { readonly pixels: Uint32Array; readonly width: 256; readonly height: 240; }
+export const NTSC_FRAME_RATE = 60;
 export class Nes implements CpuBus {
   readonly controller1 = new Controller();
   readonly controller2 = new Controller();
