@@ -411,6 +411,17 @@ after their frame step. Snapshot size is unchanged; completed rows are saved
 alongside the current PPU position. Palette and sprite scratch buffers are rebuilt
 for each line, so they do not need separate serialization.
 
+The NTSC PPU skips the final pre-render dot on odd frames when either background
+or sprite rendering is enabled at the skip boundary (dot 339). Frame lengths
+therefore alternate between 89,342 and 89,341 PPU clocks during rendering; with
+both layers disabled they remain 89,342 clocks. Parity advances even while
+rendering is disabled, and reset starts on an even frame. Tests cover mask changes
+at the boundary, single-dot versus batched advancement, snapshots and the 200th
+VBlank deadline in both builds. PPU snapshots append a parity byte after the I/O
+latch; previous PPU and full-system snapshots lacking that byte are rejected.
+`runFrame(cycles)` still advances the requested CPU budget rather than waiting
+for a PPU frame boundary.
+
 PPUMASK grayscale masks palette codes with `$30` for rendering and palette-port
 reads, preserving the stored colors for later color output. Tests cover all 64
 palette codes, background/sprite output, and WASM parity. Color emphasis and
