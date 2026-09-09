@@ -58,11 +58,15 @@
     } catch (error) { if (load === generation) status.textContent = `Failed: ${error.message}`; }
   });
   audioButton.addEventListener('click', async () => {
-    if (!audioContext) {
-      audioContext = new AudioContext(); audioGain = audioContext.createGain(); audioGain.connect(audioContext.destination);
-    }
-    await audioContext.resume(); audioButton.textContent = 'Audio enabled'; audioButton.disabled = true;
+    try {
+      if (!('AudioContext' in globalThis)) throw new Error('Web Audio is unavailable');
+      if (!audioContext) {
+        audioContext = new AudioContext(); audioGain = audioContext.createGain(); audioGain.connect(audioContext.destination);
+      }
+      await audioContext.resume(); audioButton.textContent = 'Audio enabled'; audioButton.disabled = true;
+    } catch (error) { status.textContent = `Audio unavailable: ${error.message}`; }
   });
+  addEventListener('blur', () => { buttons = 0; if (nes) nes.setController(1, 0); });
   addEventListener('keydown', event => {
     const bit = keys.get(event.code); if (bit === undefined) return;
     event.preventDefault(); buttons |= bit; if (nes) nes.setController(1, buttons);
