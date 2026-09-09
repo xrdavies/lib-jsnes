@@ -196,10 +196,14 @@ first component of WASM snapshot support. Controller and both DMA serializers
 now also compile from the shared sources, preserving the existing four-byte
 controller, six-byte OAM DMA and three-byte DMC DMA layouts. The isolated test
 build restores controller shift positions and every DMA phase, then checks serial
-bits, bus addresses, transferred bytes and rejection without mutation. The
-production ABI still lacks full-system save/restore; PPU, APU and cartridge
-serialization must be connected before these component snapshots can restore
-a running NES.
+bits, bus addresses, transferred bytes and rejection without mutation.
+PPU serialization also compiles from the shared source. Its existing layout now
+uses explicit little-endian DataView reads/writes for registers, timers and frame
+pixels, including unaligned input views. Cross-build tests continue partial
+frames through VBlank and odd-frame boundaries, exercise register reads and
+reject invalid timing fields before changing state. The production ABI still
+lacks full-system save/restore; APU and cartridge serialization must be connected
+before these component snapshots can restore a running NES.
 OAM DMA now alternates one CPU-bus read and one OAMDATA write per CPU cycle,
 after one or two halt/alignment cycles. Relative to this core's cycle count, an
 odd-cycle `$4014` write takes 513 DMA cycles and an even-cycle write takes 514;

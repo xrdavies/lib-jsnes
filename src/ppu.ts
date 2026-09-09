@@ -160,22 +160,57 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     }
     return 0x2000 + table * 0x400 + (relative & 0x3ff);
   }
-  saveState(): Uint8Array { const out=new Uint8Array(PPU_STATE_SIZE); out.set(this.vram); out.set(this.palette,0x4000); out.set(this.oam,0x4020); out.set([this.ctrl,this.mask,this.status,this.oamAddr,this.addr&255,this.addr>>>8,this.latch?1:0,this.data,this.scanline&255,this.scanline>>>8,this.dot&255,this.dot>>>8,this.nmiPending?1:0],0x4120); out.set([this.scrollX,this.scrollY,this.sprite0Hit?1:0,this.spriteOverflow?1:0,this.scanlineTicks&255],0x412d); out.set(new Uint8Array(this.frame.buffer),0x4132); out.set(this.backgroundOpaque,0x4132+245760); out[PPU_STATE_SIZE-12]=this.readDelay; out[PPU_STATE_SIZE-11]=+this.suppressVblank|(+this.renderingEnabled<<1); for(let i=0;i<3;i++){out[PPU_STATE_SIZE-10+i*2]=this.ioDecay[i]&255;out[PPU_STATE_SIZE-9+i*2]=this.ioDecay[i]>>>8;} out[PPU_STATE_SIZE-4]=this.tempAddr&255; out[PPU_STATE_SIZE-3]=this.tempAddr>>>8; out[PPU_STATE_SIZE-2]=this.ioLatch; out[PPU_STATE_SIZE-1]=+this.oddFrame; return out; }
+  saveState(): Uint8Array {
+    const out = new Uint8Array(PPU_STATE_SIZE), view = new DataView(out.buffer);
+    out.set(this.vram); out.set(this.palette, 0x4000); out.set(this.oam, 0x4020);
+    out[0x4120] = this.ctrl; out[0x4121] = this.mask; out[0x4122] = this.status; out[0x4123] = this.oamAddr;
+    view.setUint16(0x4124, this.addr, true); out[0x4126] = this.latch ? 1 : 0; out[0x4127] = this.data;
+    view.setUint16(0x4128, this.scanline, true); view.setUint16(0x412a, this.dot, true);
+    out[0x412c] = this.nmiPending ? 1 : 0; out[0x412d] = this.scrollX; out[0x412e] = this.scrollY;
+    out[0x412f] = this.sprite0Hit ? 1 : 0; out[0x4130] = this.spriteOverflow ? 1 : 0;
+    out[0x4131] = this.scanlineTicks & 255;
+    for (let i = 0; i < this.frame.length; i++) view.setUint32(0x4132 + i * 4, this.frame[i], true);
+    out.set(this.backgroundOpaque, 0x4132 + 245760);
+    out[PPU_STATE_SIZE - 12] = this.readDelay;
+    out[PPU_STATE_SIZE - 11] = (this.suppressVblank ? 1 : 0) | (this.renderingEnabled ? 2 : 0);
+    for (let i = 0; i < 3; i++) view.setUint16(PPU_STATE_SIZE - 10 + i * 2, this.ioDecay[i], true);
+    view.setUint16(PPU_STATE_SIZE - 4, this.tempAddr, true);
+    out[PPU_STATE_SIZE - 2] = this.ioLatch; out[PPU_STATE_SIZE - 1] = this.oddFrame ? 1 : 0;
+    return out;
+  }
   consumeScanlines(): number { const n=this.scanlineTicks; this.scanlineTicks=0; return n; }
   consumeNmi(): boolean { const pending=this.nmiPending; this.nmiPending=false; return pending; }
   static validateState(state: Uint8Array): void {
     if (state.length !== PPU_STATE_SIZE || state[PPU_STATE_SIZE-1] > 1 || state[PPU_STATE_SIZE-3] > 0x7f || state[PPU_STATE_SIZE-11] > 3 || state[PPU_STATE_SIZE-12] > 6) throw new RangeError('Invalid PPU state');
+    const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
     for (let i = 0; i < 3; i++) {
-      const count = state[PPU_STATE_SIZE - 10 + i * 2] | (state[PPU_STATE_SIZE - 9 + i * 2] << 8);
+      const count: number = view.getUint16(PPU_STATE_SIZE - 10 + i * 2, true);
       if (count > IO_DECAY_SCANLINES) throw new RangeError('Invalid PPU I/O decay state');
     }
     const v = state.subarray(0x4120);
-    if (v[5] > 0x3f || v[6] > 1 || (v[8] | (v[9] << 8)) > 261
-      || (v[10] | (v[11] << 8)) > 340 || v[12] > 1 || v[15] > 1 || v[16] > 1) {
+    if (v[5] > 0x3f || v[6] > 1 || view.getUint16(0x4128, true) > 261
+      || view.getUint16(0x412a, true) > 340 || v[12] > 1 || v[15] > 1 || v[16] > 1) {
       throw new RangeError('Invalid PPU state values');
     }
   }
-  loadState(state: Uint8Array): void { Ppu.validateState(state); this.vram.set(state.subarray(0,0x4000)); this.palette.set(state.subarray(0x4000,0x4020)); this.oam.set(state.subarray(0x4020,0x4120)); const v=state.subarray(0x4120); [this.ctrl,this.mask,this.status,this.oamAddr]=v; this.addr=v[4]|(v[5]<<8); this.latch=!!v[6]; this.data=v[7]; this.scanline=v[8]|(v[9]<<8); this.dot=v[10]|(v[11]<<8); this.nmiPending=!!v[12]; const extra=state.subarray(0x412d,0x4132); this.scrollX=extra[0]; this.scrollY=extra[1]; this.sprite0Hit=!!extra[2]; this.spriteOverflow=!!extra[3]; this.scanlineTicks=extra[4]; this.frame.set(new Uint32Array(new Uint8Array(state.subarray(0x4132,0x4132+245760)).buffer)); this.backgroundOpaque.set(state.subarray(0x4132+245760,PPU_STATE_SIZE-12)); this.readDelay=state[PPU_STATE_SIZE-12]; this.suppressVblank=!!(state[PPU_STATE_SIZE-11]&1); this.renderingEnabled=!!(state[PPU_STATE_SIZE-11]&2); for(let i=0;i<3;i++)this.ioDecay[i]=state[PPU_STATE_SIZE-10+i*2]|(state[PPU_STATE_SIZE-9+i*2]<<8); this.tempAddr=state[PPU_STATE_SIZE-4]|(state[PPU_STATE_SIZE-3]<<8); this.ioLatch=state[PPU_STATE_SIZE-2]; this.oddFrame=!!state[PPU_STATE_SIZE-1]; }
+  loadState(state: Uint8Array): void {
+    Ppu.validateState(state);
+    const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
+    this.vram.set(state.subarray(0, 0x4000)); this.palette.set(state.subarray(0x4000, 0x4020));
+    this.oam.set(state.subarray(0x4020, 0x4120));
+    this.ctrl = state[0x4120]; this.mask = state[0x4121]; this.status = state[0x4122]; this.oamAddr = state[0x4123];
+    this.addr = view.getUint16(0x4124, true); this.latch = !!state[0x4126]; this.data = state[0x4127];
+    this.scanline = view.getUint16(0x4128, true); this.dot = view.getUint16(0x412a, true);
+    this.nmiPending = !!state[0x412c]; this.scrollX = state[0x412d]; this.scrollY = state[0x412e];
+    this.sprite0Hit = !!state[0x412f]; this.spriteOverflow = !!state[0x4130]; this.scanlineTicks = state[0x4131];
+    for (let i = 0; i < this.frame.length; i++) this.frame[i] = view.getUint32(0x4132 + i * 4, true);
+    this.backgroundOpaque.set(state.subarray(0x4132 + 245760, PPU_STATE_SIZE - 12));
+    this.readDelay = state[PPU_STATE_SIZE - 12]; this.suppressVblank = !!(state[PPU_STATE_SIZE - 11] & 1);
+    this.renderingEnabled = !!(state[PPU_STATE_SIZE - 11] & 2);
+    for (let i = 0; i < 3; i++) this.ioDecay[i] = view.getUint16(PPU_STATE_SIZE - 10 + i * 2, true);
+    this.tempAddr = view.getUint16(PPU_STATE_SIZE - 4, true);
+    this.ioLatch = state[PPU_STATE_SIZE - 2]; this.oddFrame = !!state[PPU_STATE_SIZE - 1];
+  }
   dma(bytes: Uint8Array): void { for(let i=0;i<256;i++)this.oam[(this.oamAddr+i)&255]=bytes[i]; this.oamAddr=(this.oamAddr+256)&255; }
   step(dots = 1): boolean {
     let frame = false;

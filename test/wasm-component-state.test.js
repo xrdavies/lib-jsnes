@@ -4,10 +4,10 @@ import { cp, mkdtemp, readFile, rm, symlink, appendFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { join, resolve, delimiter } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { Cpu6502, Controller } from '../dist/index.js';
+import { Cpu6502, Controller, Nes, PPU_STATE_SIZE } from '../dist/index.js';
 import { OamDma, DmcDma } from '../dist/dma.js';
 
-test('shared CPU/controller/DMA snapshots restore and continue identically in JS and WASM', async () => {
+test('shared CPU/PPU/controller/DMA snapshots restore and continue identically in JS and WASM', async () => {
   const fixture = await mkdtemp(join(tmpdir(), 'lib-jsnes-component-state-'));
   try {
     for (const name of ['src', 'wasm', 'scripts']) await cp(resolve(name), join(fixture, name), { recursive: true });
@@ -30,14 +30,20 @@ const stateController = new Controller();
 const stateOam = new OamDma(new StateBus());
 const stateDmc = new DmcDma(new StateBus());
 export function componentSave(kind: i32): usize {
-  testState = kind == 0 ? stateController.saveState() : kind == 1 ? stateOam.saveState() : stateDmc.saveState();
+  __collect();
+  testState = kind == 0 ? stateController.saveState() : kind == 1 ? stateOam.saveState() : kind == 2 ? stateDmc.saveState() : ppu.saveState();
   return changetype<usize>(testState.buffer);
 }
 export function componentLoad(kind: i32, length: i32): void {
   const bytes = testState.subarray(0, length);
   if (kind == 0) stateController.loadState(bytes);
   else if (kind == 1) stateOam.loadState(bytes);
-  else stateDmc.loadState(bytes);
+  else if (kind == 2) stateDmc.loadState(bytes);
+  else {
+    const padded = new Uint8Array(bytes.length + 7);
+    padded.set(bytes, 3);
+    ppu.loadState(padded.subarray(3, 3 + bytes.length));
+  }
 }
 export function componentStep(kind: i32, odd: boolean, busy: boolean, held: i32): i32 {
   events.length = 0;
@@ -47,6 +53,10 @@ export function componentStep(kind: i32, odd: boolean, busy: boolean, held: i32)
 }
 export function eventCount(): i32 { return events.length; }
 export function eventAt(i: i32): i32 { return events[i]; }
+export function ppuStep(dots: i32): boolean { return ppu.step(dots); }
+export function ppuRead(reg: i32): i32 { return ppu.readRegister(reg); }
+export function ppuWrite(reg: i32, value: i32): void { ppu.writeRegister(reg, value); }
+export function ppuNmi(): boolean { return ppu.consumeNmi(); }
 `);
     const build = spawnSync(process.execPath, ['scripts/build-wasm.mjs'], {
       cwd: fixture, encoding: 'utf8', timeout: 30000,
@@ -57,8 +67,9 @@ export function eventAt(i: i32): i32 { return events[i]; }
       env: { abort() { throw new Error('Invalid CPU/component state'); } },
     });
     const wasm = instance.exports;
-    const rom = new Uint8Array(16 + 16384); rom.set([78, 69, 83, 26, 1, 0]);
+    const rom = new Uint8Array(16 + 16384 + 8192); rom.set([78, 69, 83, 26, 1, 1]);
     rom.fill(0xea, 16); rom.set([0, 0x80], 16 + 0x3ffc);
+    for (let i = 16 + 16384; i < rom.length; i++) rom[i] = (i * 73 + (i >>> 3)) & 255;
     const ptr = wasm.romAllocate(rom.length);
     new Uint8Array(wasm.memory.buffer, ptr, rom.length).set(rom); wasm.loadRom(rom.length); wasm.reset();
     const cpu = new Cpu6502({ read: () => 0xea, write() {} });
@@ -161,5 +172,54 @@ export function eventAt(i: i32): i32 { return events[i]; }
       assert.throws(() => loadComponent(kind, Uint8Array.from(good), good.length - 1), /Invalid/);
       assert.deepEqual(saveComponent(kind, good.length), Uint8Array.from(good));
     }
+    const { ppu } = new Nes(rom);
+    for (const [line, dot] of [[120, 255], [241, 0], [261, 338]]) {
+      ppu.reset(); ppu.step(89342); // Odd frame, including a pending skip decision.
+      ppu.scanline = line; ppu.dot = dot;
+      for (let i = 0; i < ppu.vram.length; i++) ppu.vram[i] = (i * 17 + (i >>> 7)) & 255;
+      for (let i = 0; i < ppu.oam.length; i++) ppu.oam[i] = (i * 29) & 255;
+      for (let i = 0; i < ppu.frame.length; i++) {
+        ppu.frame[i] = (0xff123456 + i * 7) >>> 0; ppu.backgroundOpaque[i] = i & 1;
+      }
+      for (let i = 0; i < ppu.palette.length; i++) ppu.palette[i] = (i * 3) & 63;
+      ppu.writeRegister(0, 0xb8); ppu.writeRegister(1, 0x1e);
+      ppu.writeRegister(5, 173); ppu.writeRegister(5, 239);
+      ppu.writeRegister(6, 0x2f); ppu.writeRegister(6, 0x17); ppu.readRegister(7);
+      ppu.writeRegister(6, 0x3b); // Partly written address, independent of active address.
+      if (line === 241) ppu.readRegister(2); // Suppress VBlank before its dot-1 transition.
+      const state = ppu.saveState(), storage = Buffer.alloc(state.length + 11);
+      if (line === 120) {
+        // Exercise latched flags as well as the cleared state reached on pre-render.
+        state[0x412c] = state[0x412f] = state[0x4130] = 1;
+        state[0x4122] = 0xe0;
+      }
+      storage.set(state, 7); ppu.loadState(storage.subarray(7, 7 + state.length));
+      loadComponent(3, state);
+      assert.deepEqual(saveComponent(3, PPU_STATE_SIZE), state, 'all PPU fields survive cross-build loading');
+      const bytes = new DataView(state.buffer);
+      assert.equal(bytes.getUint32(0x4132, true), 0xff123456);
+      assert.equal(bytes.getUint16(0x4128, true), line);
+      assert.equal(bytes.getUint16(0x412a, true), dot);
+      for (const dots of [1, 2, 3, 341, 89342]) {
+        assert.equal(!!wasm.ppuStep(dots), ppu.step(dots));
+        assert.equal(!!wasm.ppuNmi(), ppu.consumeNmi());
+        for (const reg of [2, 4, 7, 0]) assert.equal(wasm.ppuRead(reg), ppu.readRegister(reg));
+        ppu.writeRegister(5, 211); wasm.ppuWrite(5, 211);
+        assert.deepEqual(saveComponent(3, PPU_STATE_SIZE), ppu.saveState(), 'continued rendering and I/O match');
+        ppu.loadState(saveComponent(3, PPU_STATE_SIZE)); // Also decode the WASM-produced bytes in JS.
+      }
+    }
+    const ppuBefore = ppu.saveState();
+    for (const [offset, value] of [[0x4125, 0x40], [0x4126, 2], [0x4129, 2], [0x412b, 2],
+      [0x412c, 2], [0x412f, 2], [0x4130, 2], [PPU_STATE_SIZE - 12, 7], [PPU_STATE_SIZE - 11, 4],
+      [PPU_STATE_SIZE - 9, 4], [PPU_STATE_SIZE - 7, 4], [PPU_STATE_SIZE - 5, 4],
+      [PPU_STATE_SIZE - 3, 128], [PPU_STATE_SIZE - 1, 2]]) {
+      const invalid = ppuBefore.slice(); invalid[0] ^= 255; invalid[offset] = value;
+      assert.throws(() => loadComponent(3, invalid), /Invalid/);
+      assert.throws(() => ppu.loadState(invalid), /Invalid/);
+      assert.deepEqual(saveComponent(3, PPU_STATE_SIZE), ppuBefore);
+      assert.deepEqual(ppu.saveState(), ppuBefore);
+    }
+    assert.throws(() => loadComponent(3, ppuBefore, ppuBefore.length - 1), /Invalid/);
   } finally { await rm(fixture, { recursive: true, force: true }); }
 });
