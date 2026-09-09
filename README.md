@@ -180,6 +180,9 @@ before crossing the ABI, where the original JavaScript value is no longer availa
 `Nes.step()` applies the same cumulative safe-integer guard: a budget that would
 make its CPU cycle counter exceed `Number.MAX_SAFE_INTEGER` is rejected before
 any CPU, PPU, APU, DMA or audio state changes.
+The guard reserves seven additional cycles for a possible NMI or IRQ entry after
+the final instruction, so a near-limit call cannot overflow after partially
+executing its budget.
 
 ## Cartridge support
 

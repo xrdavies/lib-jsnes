@@ -28,3 +28,13 @@ test('Nes rejects a budget that would make the cumulative cycle count unsafe', (
   assert.throws(() => value.runFrame(2), /safe integer range/);
   assert.equal(value.cpu.cycles, Number.MAX_SAFE_INTEGER - 1);
 });
+
+test('Nes reserves interrupt-entry headroom before executing near the safe limit', () => {
+  const value = nes();
+  value.cpu.cycles = Number.MAX_SAFE_INTEGER - 7;
+  assert.throws(() => value.step(1), /safe integer range/);
+  assert.equal(value.cpu.cycles, Number.MAX_SAFE_INTEGER - 7);
+  value.cpu.cycles = Number.MAX_SAFE_INTEGER - 9;
+  value.step(1);
+  assert.equal(value.cpu.cycles, Number.MAX_SAFE_INTEGER - 6);
+});
