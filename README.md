@@ -101,8 +101,8 @@ retain, since collection traces globals and pinned objects, not host pointers or
 WASM stack locals. Frame, battery RAM and current audio buffers are rooted by the
 core; previously documented view lifetimes still apply.
 
-With explicit collection, a synthetic Node run with per-pixel output measured about 1.61 ms/frame
-in WASM versus about 2.17 ms/frame in TypeScript (about 1.35× WASM speedup).
+With explicit collection, a synthetic Node run with per-pixel output measured about 2.52 ms/frame
+in WASM versus about 3.95 ms/frame in TypeScript (about 1.56× WASM speedup).
 These are Node 24 results on macOS arm64, not browser measurements or a universal
 speedup; device-clock and DMA fidelity take priority over this microbenchmark.
 In both debug and optimized builds, a stress test runs one large step spanning
