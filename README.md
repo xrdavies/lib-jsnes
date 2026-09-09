@@ -738,6 +738,7 @@ in both cores:
 | `ppu_vbl_nmi/rom_singles/` | All 10 tests pass |
 | `ppu_open_bus/ppu_open_bus.nes` | Passes, including decay and partial-refresh checks |
 | `cpu_interrupts_v2/rom_singles/` | All 5 tests pass |
+| `cpu_dummy_reads/cpu_dummy_reads.nes` | Screen output: `Passed` |
 | `sprdma_and_dmc_dma/` | Both combined-DMA timing tests pass |
 | `dmc_dma_during_read4/` | Screen/serial protocol; not supported by the `$6000` runner (see below) |
 
