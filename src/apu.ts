@@ -350,8 +350,8 @@ export class Apu {
     if (this.frame === 7457 || this.frame === 14913 || this.frame === 22371 || this.frame === end) {
       this.clockUnits(this.frame === 14913 || this.frame === end);
     }
-    // The four-step IRQ is a level latch asserted once at the sequence endpoint.
-    if (!this.mode5 && !this.irqInhibit && this.frame === end) this.frameIrq = true;
+    // Each of the three terminal clocks can reassert IRQ after a status read.
+    if (!this.mode5 && !this.irqInhibit && this.frame >= end - 1) this.frameIrq = true;
     if (this.frame === end + 1) this.frame = 0;
     this.scheduleFrameEvent();
   }
@@ -375,7 +375,9 @@ export class Apu {
   private scheduleFrameEvent(): void {
     const end = this.mode5 ? 37281 : 29829;
     this.nextFrameEvent = this.frame < 7457 ? 7457 : this.frame < 14913 ? 14913
-      : this.frame < 22371 ? 22371 : this.frame < end ? end : end + 1;
+      : this.frame < 22371 ? 22371 : !this.mode5
+        ? (this.frame < end - 1 ? end - 1 : this.frame + 1)
+        : this.frame < end ? end : end + 1;
   }
   drainSamples(): Int16Array {
     const out = new Int16Array(this.samples.length);

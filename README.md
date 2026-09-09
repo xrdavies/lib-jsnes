@@ -225,6 +225,13 @@ continued output after stopping, and snapshot replay in TypeScript, with PCM and
 CPU parity checks in WASM.
 
 The CPU advances the APU after each instruction, DMA stall, and interrupt entry.
+In four-step NTSC mode, the frame IRQ latch is asserted on sequence cycles
+29,828, 29,829 and 29,830. Reading `$4015` clears the current latch, but the next
+terminal clock can assert it again. IRQ inhibition suppresses all three clocks;
+five-step mode generates no frame IRQ. Tests cover each terminal clock, snapshot
+restoration around the window, and CPU-driven status reads in both builds.
+Snapshot layout is unchanged. Reads still take effect at instruction granularity;
+this does not establish sub-instruction IRQ read/clear timing.
 Audio register changes and status reads therefore take effect within a host
 `step()` call. Timing within individual CPU instructions is still approximate.
 

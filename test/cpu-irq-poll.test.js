@@ -56,17 +56,17 @@ test('pending APU IRQ waits for the instruction after CLI, including across host
 
 test('SEI and PLP cannot mask an APU IRQ polled before their I-bit update in either core', async () => {
   for (const opcode of [0x78, 0x28]) {
-    // Four-step frame IRQ asserts at cycle 29829, during SEI or PLP.
+    // First frame IRQ assertion is at cycle 29828, during SEI or PLP.
     const prefix = opcode === 0x78 ? [0x58] : [0xa9, 0x24, 0x48, 0x58, 0x24, 0];
     const prefixCycles = opcode === 0x78 ? 2 : 10;
-    const beforeCycles = opcode === 0x78 ? 29828 : 29826;
+    const beforeCycles = opcode === 0x78 ? 29826 : 29824;
     const code = [...prefix, ...Array((beforeCycles - prefixCycles) / 2).fill(0xea), opcode, 0xe6, 0x10];
     const bytes = rom(code), js = new Nes(bytes), wasm = await WasmCore.from(binary);
     js.reset(); wasm.loadRom(bytes); wasm.reset(); js.step(beforeCycles); wasm.step(beforeCycles);
     assert.equal(js.cpu.p & 4, 0);
     js.step(1); wasm.step(1);
     assert.equal(js.cpu.pc, 0xf000); assert.equal(wasm.programCounter, 0xf000);
-    assert.equal(js.cycleCount, 29837); assert.equal(wasm.cycleCount, 29837);
+    assert.equal(js.cycleCount, 29835); assert.equal(wasm.cycleCount, 29835);
     assert.equal(js.read(0x10), 0); assert.equal(wasm.exports.ramRead(0x10), 0);
     assert.equal(js.read(0x1fb) & 4, 4); assert.equal(wasm.exports.ramRead(0x1fb) & 4, 4);
     assert.deepEqual(wasm.audioSamples(), js.audioSamples());
