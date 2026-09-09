@@ -192,8 +192,14 @@ in JavaScript. Byte views with offsets (including Node Buffers) are supported;
 invalid sizes, flag bits and cycle counts are rejected before changing CPU state.
 An isolated WASM test build exercises the actual shared serializer across
 long-running cycle counts, JAM/NMI flags and subsequent execution. This is the
-first component of WASM snapshot support: the production ABI still lacks full
-system save/restore, and CPU-only state cannot restore a running NES.
+first component of WASM snapshot support. Controller and both DMA serializers
+now also compile from the shared sources, preserving the existing four-byte
+controller, six-byte OAM DMA and three-byte DMC DMA layouts. The isolated test
+build restores controller shift positions and every DMA phase, then checks serial
+bits, bus addresses, transferred bytes and rejection without mutation. The
+production ABI still lacks full-system save/restore; PPU, APU and cartridge
+serialization must be connected before these component snapshots can restore
+a running NES.
 OAM DMA now alternates one CPU-bus read and one OAMDATA write per CPU cycle,
 after one or two halt/alignment cycles. Relative to this core's cycle count, an
 odd-cycle `$4014` write takes 513 DMA cycles and an even-cycle write takes 514;

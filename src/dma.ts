@@ -28,7 +28,12 @@ export class OamDma {
     this.writing = !this.writing;
   }
   reset(): void { this.page = this.latch = this.dummy = 0; this.index = 256; this.writing = false; }
-  saveState(): Uint8Array { return Uint8Array.of(this.page, this.index & 255, this.index >>> 8, this.latch, this.dummy, +this.writing); }
+  saveState(): Uint8Array {
+    const out = new Uint8Array(OamDma.STATE_SIZE);
+    out[0] = this.page; out[1] = this.index & 255; out[2] = this.index >>> 8;
+    out[3] = this.latch; out[4] = this.dummy; out[5] = this.writing ? 1 : 0;
+    return out;
+  }
   static validateState(state: Uint8Array): void {
     if (state.length !== OamDma.STATE_SIZE || state[2] > 1 || (state[2] && state[1])
       || state[4] > 2 || state[5] > 1 || (state[2] && (state[4] || state[5]))
@@ -36,7 +41,8 @@ export class OamDma {
   }
   loadState(state: Uint8Array): void {
     OamDma.validateState(state);
-    this.page = state[0]; this.index = state[1] | (state[2] << 8);
+    const high: number = state[2];
+    this.page = state[0]; this.index = state[1] | (high << 8);
     this.latch = state[3]; this.dummy = state[4]; this.writing = !!state[5];
   }
 }
@@ -69,12 +75,18 @@ export class DmcDma {
     return true;
   }
   reset(): void { this.address = this.phase = 0; }
-  saveState(): Uint8Array { return Uint8Array.of(this.address & 255, this.address >>> 8, this.phase); }
+  saveState(): Uint8Array {
+    const out = new Uint8Array(DmcDma.STATE_SIZE);
+    out[0] = this.address & 255; out[1] = this.address >>> 8; out[2] = this.phase;
+    return out;
+  }
   static validateState(state: Uint8Array): void {
     if (state.length !== DmcDma.STATE_SIZE || state[2] > 2
       || (state[1] < 0x80 && (state[0] || state[1] || state[2]))) throw new RangeError('Invalid DMC DMA state');
   }
   loadState(state: Uint8Array): void {
-    DmcDma.validateState(state); this.address = state[0] | (state[1] << 8); this.phase = state[2];
+    DmcDma.validateState(state);
+    const high: number = state[1];
+    this.address = state[0] | (high << 8); this.phase = state[2];
   }
 }

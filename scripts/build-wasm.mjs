@@ -7,7 +7,7 @@ const debug = process.argv.includes('--debug');
 if (process.argv.slice(2).some(arg => arg !== '--debug')) throw new Error('Usage: build-wasm.mjs [--debug]');
 
 // Compile the shared CPU/PPU/APU/controller code, adding AssemblyScript's required
-// integer annotations. CPU byte snapshots compile in both languages; the other
+// integer annotations. CPU/controller/DMA snapshots compile in both languages; the other
 // component serializers still contain JS-only marshaling and are omitted.
 const sources = ['cpu', 'ppu', 'apu', 'controller', 'dma'];
 const program = ts.createProgram(sources.map(name => `src/${name}.ts`), { target: ts.ScriptTarget.ES2020 });
@@ -48,6 +48,7 @@ function compileSource(name) {
         return f.createAsExpression(node, f.createTypeReferenceNode('i32'));
       }
       if (ts.isMethodDeclaration(node) && ['save', 'load', 'saveState', 'loadState', 'validateState'].includes(node.name.getText(source))
+        && !['controller', 'dma'].includes(name)
         && !(name === 'cpu' && ['saveState', 'loadState'].includes(node.name.getText(source)))) return undefined;
       if (ts.isImportDeclaration(node) && node.moduleSpecifier.text === './cartridge.js') {
         return f.updateImportDeclaration(node, node.modifiers, f.updateImportClause(node.importClause, false, node.importClause.name, node.importClause.namedBindings), f.createStringLiteral('../wasm/cartridge'), node.attributes);

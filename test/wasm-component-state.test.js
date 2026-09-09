@@ -1,0 +1,165 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { cp, mkdtemp, readFile, rm, symlink, appendFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve, delimiter } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { Cpu6502, Controller } from '../dist/index.js';
+import { OamDma, DmcDma } from '../dist/dma.js';
+
+test('shared CPU/controller/DMA snapshots restore and continue identically in JS and WASM', async () => {
+  const fixture = await mkdtemp(join(tmpdir(), 'lib-jsnes-component-state-'));
+  try {
+    for (const name of ['src', 'wasm', 'scripts']) await cp(resolve(name), join(fixture, name), { recursive: true });
+    await symlink(resolve('node_modules'), join(fixture, 'node_modules'), 'dir');
+    // Force compilation of the shared serializer without exposing partial-system
+    // restore functions in the shipped emulator ABI. Keep the scratch buffer rooted.
+    await appendFile(join(fixture, 'wasm/index.ts'), `
+let testState = new Uint8Array(Cpu6502.STATE_SIZE);
+export function testSave(): usize { testState = cpu.saveState(); return changetype<usize>(testState.buffer); }
+export function testLoad(): void { cpu.loadState(testState); }
+export function testLoadShort(): void { cpu.loadState(testState.subarray(0, 15)); }
+export function testStep(): void { cpu.step(); }
+const events = new Array<i32>();
+class StateBus implements OamDmaBus, DmcDmaBus {
+  readDma(a: i32): i32 { events.push(a); return (a ^ (a >> 8)) & 255; }
+  writeDma(v: i32): void { events.push(0x10000 | v); }
+  completeDmc(v: i32): void { events.push(0x20000 | v); }
+}
+const stateController = new Controller();
+const stateOam = new OamDma(new StateBus());
+const stateDmc = new DmcDma(new StateBus());
+export function componentSave(kind: i32): usize {
+  testState = kind == 0 ? stateController.saveState() : kind == 1 ? stateOam.saveState() : stateDmc.saveState();
+  return changetype<usize>(testState.buffer);
+}
+export function componentLoad(kind: i32, length: i32): void {
+  const bytes = testState.subarray(0, length);
+  if (kind == 0) stateController.loadState(bytes);
+  else if (kind == 1) stateOam.loadState(bytes);
+  else stateDmc.loadState(bytes);
+}
+export function componentStep(kind: i32, odd: boolean, busy: boolean, held: i32): i32 {
+  events.length = 0;
+  if (kind == 0) return stateController.read();
+  if (kind == 1) { stateOam.step(odd, busy); return 0; }
+  return stateDmc.step(odd, held, busy) ? 1 : 0;
+}
+export function eventCount(): i32 { return events.length; }
+export function eventAt(i: i32): i32 { return events[i]; }
+`);
+    const build = spawnSync(process.execPath, ['scripts/build-wasm.mjs'], {
+      cwd: fixture, encoding: 'utf8', timeout: 30000,
+      env: { ...process.env, PATH: resolve('node_modules/.bin') + delimiter + process.env.PATH },
+    });
+    assert.equal(build.status, 0, build.stderr + build.stdout);
+    const { instance } = await WebAssembly.instantiate(await readFile(join(fixture, 'dist-wasm/lib-jsnes.wasm')), {
+      env: { abort() { throw new Error('Invalid CPU/component state'); } },
+    });
+    const wasm = instance.exports;
+    const rom = new Uint8Array(16 + 16384); rom.set([78, 69, 83, 26, 1, 0]);
+    rom.fill(0xea, 16); rom.set([0, 0x80], 16 + 0x3ffc);
+    const ptr = wasm.romAllocate(rom.length);
+    new Uint8Array(wasm.memory.buffer, ptr, rom.length).set(rom); wasm.loadRom(rom.length); wasm.reset();
+    const cpu = new Cpu6502({ read: () => 0xea, write() {} });
+    const saveWasm = () => new Uint8Array(wasm.memory.buffer, wasm.testSave(), Cpu6502.STATE_SIZE).slice();
+    function loadWasm(bytes) {
+      const pointer = wasm.testSave();
+      new Uint8Array(wasm.memory.buffer, pointer, bytes.length).set(bytes); wasm.testLoad();
+    }
+    for (const cycles of [0, 2 ** 31, 2 ** 32 + 7, 2 ** 40 + 3, Number.MAX_SAFE_INTEGER]) {
+      for (const flags of [0, 1, 2, 3]) {
+        cpu.a = 0x81; cpu.x = 0x32; cpu.y = 0xfe; cpu.sp = 0xa1; cpu.p = 0xe9; cpu.pc = 0x8123; cpu.cycles = cycles;
+        const bytes = cpu.saveState(); bytes[15] = flags;
+        cpu.loadState(bytes); loadWasm(bytes);
+        assert.deepEqual(saveWasm(), bytes);
+        const offset = Buffer.alloc(bytes.length + 9); offset.set(bytes, 5);
+        cpu.loadState(offset.subarray(5, 5 + bytes.length));
+        assert.deepEqual(cpu.save(), Array.from(bytes), 'legacy number[] API preserves encoding');
+        if (cycles < Number.MAX_SAFE_INTEGER - 2) {
+          cpu.step(); wasm.testStep();
+          assert.deepEqual(saveWasm(), cpu.saveState(), 'next NOP/JAM preserves decoded state');
+        }
+      }
+    }
+    const before = saveWasm();
+    for (const cycles of [-1, 1.5, NaN, Infinity, 2 ** 53]) {
+      const invalid = before.slice(); new DataView(invalid.buffer).setFloat64(7, cycles, true);
+      assert.throws(() => cpu.loadState(invalid), /Invalid CPU/);
+      assert.throws(() => loadWasm(invalid), /Invalid CPU/);
+      assert.deepEqual(saveWasm(), before); assert.deepEqual(cpu.saveState(), before);
+    }
+    const invalid = before.slice(); invalid[15] = 4;
+    assert.throws(() => loadWasm(invalid), /Invalid CPU/); assert.deepEqual(saveWasm(), before);
+    assert.throws(() => wasm.testLoadShort(), /Invalid CPU/); assert.deepEqual(saveWasm(), before);
+    assert.throws(() => cpu.loadState(before.subarray(0, 15)), /Invalid CPU/);
+
+    function saveComponent(kind, size) {
+      const pointer = wasm.componentSave(kind);
+      return new Uint8Array(wasm.memory.buffer, pointer, size).slice();
+    }
+    function loadComponent(kind, bytes, length = bytes.length) {
+      const pointer = wasm.componentSave(kind);
+      new Uint8Array(wasm.memory.buffer, pointer, bytes.length).set(bytes);
+      wasm.componentLoad(kind, length);
+    }
+    for (const strobe of [0, 1]) for (let index = 0; index <= 8; index++) {
+      const controller = new Controller(), bytes = Uint8Array.of(0xa5, 0x3c, index, strobe);
+      controller.loadState(bytes); loadComponent(0, bytes);
+      for (let i = 0; i < 10; i++) {
+        assert.equal(wasm.componentStep(0, false, false, 0), controller.read());
+        assert.deepEqual(saveComponent(0, 4), controller.saveState());
+      }
+    }
+    const events = [], bus = {
+      readDma(a) { events.push(a); return (a ^ (a >>> 8)) & 255; },
+      writeDma(v) { events.push(0x10000 | v); },
+      completeDmc(v) { events.push(0x20000 | v); },
+    };
+    // Reload every phase, including the final index=256 sentinel and a paused
+    // write containing a byte different from its address. Check actual bus effects.
+    for (const oddStart of [false, true]) {
+      const oam = new OamDma(bus); oam.start(0xab, oddStart);
+      let cycle = 0;
+      do {
+        const bytes = oam.saveState(); loadComponent(1, bytes);
+        assert.deepEqual(saveComponent(1, 6), bytes);
+        const odd = !!((Number(oddStart) + ++cycle) % 2), busy = cycle % 13 === 0;
+        events.length = 0; oam.step(odd, busy); wasm.componentStep(1, odd, busy, 0);
+        assert.deepEqual(Array.from({ length: wasm.eventCount() }, (_, i) => wasm.eventAt(i)), events);
+        assert.deepEqual(saveComponent(1, 6), oam.saveState());
+        assert.ok(cycle < 700);
+      } while (oam.active);
+      loadComponent(1, oam.saveState()); wasm.componentStep(1, true, false, 0);
+      assert.equal(wasm.eventCount(), 0); assert.deepEqual(saveComponent(1, 6), oam.saveState());
+    }
+    for (const address of [0x8000, 0xc123, 0xffff]) for (const held of [0x2007, 0x4016]) {
+      for (const oamActive of [false, true]) for (const oddStart of [false, true]) {
+        const dmc = new DmcDma(bus); dmc.request(address);
+        for (let cycle = 0; cycle < 5; cycle++) {
+          const bytes = dmc.saveState(); loadComponent(2, bytes);
+          assert.deepEqual(saveComponent(2, 3), bytes);
+          events.length = 0;
+          const odd = !!((Number(oddStart) + cycle) % 2);
+          assert.equal(wasm.componentStep(2, odd, oamActive, held), Number(dmc.step(odd, held, oamActive)));
+          assert.deepEqual(Array.from({ length: wasm.eventCount() }, (_, i) => wasm.eventAt(i)), events);
+          assert.deepEqual(saveComponent(2, 3), dmc.saveState());
+        }
+      }
+    }
+    for (const [kind, good, invalids] of [
+      [0, [0xa5, 0x3c, 3, 0], [[0, 0, 9, 0], [0, 0, 0, 2]]],
+      [1, [2, 0, 0, 0x87, 0, 1], [[0, 1, 1, 0, 0, 0], [0, 0, 2, 0, 0, 0],
+        [0, 0, 0, 0, 3, 0], [0, 0, 0, 0, 0, 2], [0, 0, 1, 0, 0, 1], [0, 1, 0, 0, 1, 0]]],
+      [2, [0x23, 0xc1, 2], [[0, 0, 1], [1, 0, 0], [0, 0x7f, 0], [0, 0x80, 3]]],
+    ]) {
+      loadComponent(kind, Uint8Array.from(good));
+      for (const invalid of invalids) {
+        assert.throws(() => loadComponent(kind, Uint8Array.from(invalid)), /Invalid/);
+        assert.deepEqual(saveComponent(kind, good.length), Uint8Array.from(good));
+      }
+      assert.throws(() => loadComponent(kind, Uint8Array.from(good), good.length - 1), /Invalid/);
+      assert.deepEqual(saveComponent(kind, good.length), Uint8Array.from(good));
+    }
+  } finally { await rm(fixture, { recursive: true, force: true }); }
+});
