@@ -111,3 +111,17 @@ test('replacing a WASM cartridge clears the previous PPU memory', async () => {
   assert.equal(wasm.exports.ramRead(0), 0);
   assert.equal(wasm.exports.ramRead(1), 0);
 });
+
+test('WASM grayscale renders palette-column colors rather than RGB luminance', async () => {
+  const { wasm } = await compare(scene({ mask: 0x1f }));
+  assert.equal(wasm.frame()[8], 0xffffffff);
+  assert.equal(wasm.frame()[20 * 256 + 20], 0xffaaaaaa);
+  const rom = registerRom((write, read) => {
+    write(0x2006, 0x3f); write(0x2006, 0); write(0x2007, 0x2a);
+    write(0x2001, 1); write(0x2006, 0x3f); write(0x2006, 0); read(0x2007, 0);
+    write(0x2001, 0); write(0x2006, 0x3f); write(0x2006, 0); read(0x2007, 1);
+  });
+  const result = await compare(rom, 1000);
+  assert.equal(result.wasm.exports.ramRead(0), 0x20);
+  assert.equal(result.wasm.exports.ramRead(1), 0x2a);
+});

@@ -145,6 +145,11 @@ background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.
 WASM uses the same frame-batched renderer as TypeScript: raster effects, exact
 sprite evaluation, and per-bus-cycle PPU timing remain incomplete. Frame views
 use packed `0xAARRGGBB` pixels; they are not RGBA byte views for `ImageData`.
+PPUMASK grayscale masks palette codes with `$30` for rendering and palette-port
+reads, preserving the stored colors for later color output. Tests cover all 64
+palette codes, background/sprite output, and WASM parity. Color emphasis and
+analog video output remain approximations.
+
 Obtain a fresh view from `core.frame()` after stepping, since WASM memory growth
 can invalidate an older view.
 
