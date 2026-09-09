@@ -41,3 +41,30 @@ test('grayscale applies to both background and sprite colors and survives snapsh
   assert.equal(nes.frame[8], 0xffffffff);
   assert.equal(nes.frame[20 * 256 + 20], 0xffaaaaaa);
 });
+
+test('frame colors refresh after palette edits, mask changes, snapshots and reset', () => {
+  const nes = scene(); nes.ppu.oam.fill(255);
+  for (let row = 0; row < 8; row++) nes.cartridge.writeChr(row, 255);
+  nes.ppu.oam.set([19, 0, 0, 20]);
+  const expected = (code, mask) => {
+    const color = NES_PALETTE[code & (mask & 1 ? 0x30 : 0x3f)];
+    const channels = [color >>> 16 & 255, color >>> 8 & 255, color & 255];
+    for (let i = 0; i < 3; i++) if (mask & (0x20 << i)) channels[i] = Math.min(255, channels[i] + 32);
+    return (0xff000000 | channels[0] << 16 | channels[1] << 8 | channels[2]) >>> 0;
+  };
+  for (let flags = 0; flags < 16; flags++) {
+    const mask = 0x1e | (flags & 1) | ((flags >>> 1) << 5);
+    nes.ppu.palette[1] = flags + 0x10; nes.ppu.palette[17] = flags + 0x20;
+    nes.write(0x2001, mask);
+    nes.ppu.step(341 * 262);
+    assert.equal(nes.frame[8], expected(flags + 0x10, mask));
+    assert.equal(nes.frame[20 * 256 + 20], expected(flags + 0x20, mask));
+    const saved = nes.saveState();
+    nes.ppu.palette.fill(0x0f); nes.write(0x2001, 0); nes.ppu.step(341 * 262);
+    nes.loadState(saved); nes.ppu.step(341 * 262);
+    assert.equal(nes.frame[8], expected(flags + 0x10, mask));
+    assert.equal(nes.frame[20 * 256 + 20], expected(flags + 0x20, mask));
+  }
+  nes.reset(); nes.ppu.palette[0] = 0x2a; nes.ppu.step(341 * 262);
+  assert.equal(nes.frame[8], expected(0x2a, 0));
+});

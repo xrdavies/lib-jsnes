@@ -55,6 +55,16 @@ Boundary tests compare batch advances against individual dots, including VBlank,
 NMI, scanline counts and multiple frame wraps. This optimization preserves the
 existing frame-batched renderer; it does not add raster-effect accuracy.
 
+Profiling also identified repeated per-pixel color conversion and per-cycle APU
+frame-sequencer dispatch. The renderer now builds its 32 packed colors once per
+frame, and the APU dispatches only at its next sequencer event while continuing
+to clock oscillators every CPU cycle. Recent synthetic Node runs on this machine
+changed from roughly 0.85 to 0.67 ms/frame in TypeScript and 2.29 to 1.90 ms/frame
+in WASM. Both derived caches are rebuilt after their inputs change or snapshots
+are restored; snapshot sizes are unchanged. Tests cover palette/mask changes,
+reset and restoration around each sequencer boundary. These remain Node results,
+and WASM remains slower in this workload.
+
 ## API
 
 ```ts

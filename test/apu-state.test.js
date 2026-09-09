@@ -11,6 +11,28 @@ function configure(apu, mask) {
   }
 }
 
+test('APU restores the next sequencer event at every boundary in both frame modes', () => {
+  for (const mode of [0, 0x80]) {
+    const end = mode ? 37281 : 29829;
+    for (const event of [7457, 14913, 22371, end, end + 1]) for (const delta of [-1, 0, 1]) {
+      const source = new Apu(); configure(source, 15); source.write(0x4017, mode);
+      source.step(event + delta); source.drainSamples();
+      const restored = new Apu();
+      restored.write(0x4017, mode ^ 0x80); restored.step(22000);
+      restored.loadState(source.saveState());
+      source.step(15000); restored.step(15000);
+      assert.deepEqual(restored.saveState(), source.saveState(), `${mode}:${event}:${delta}`);
+      assert.deepEqual(restored.drainSamples(), source.drainSamples());
+      // A frame-counter write must discard the previously scheduled deadline.
+      restored.write(0x4017, 0); restored.write(0x4003, 8);
+      restored.step(7456);
+      assert.equal(restored.saveState()[48], 1, 'envelope restart waits for the quarter frame');
+      restored.step(1);
+      assert.equal(restored.saveState()[48], 0);
+    }
+  }
+});
+
 for (const mask of [1, 2, 4, 8, 15]) {
   test(`APU snapshot replays identical PCM for channel mask ${mask}`, () => {
     const apu = new Apu();

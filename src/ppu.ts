@@ -3,13 +3,17 @@ export const PPU_STATE_SIZE = 0x4000 + 32 + 256 + 13 + 245760 + 61440 + 5;
 
 export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,0x5c007e,0x6e0040,0x6c0700,0x561d00,0x333500,0x0b4800,0x005100,0x004b00,0x00402b,0x000000,0x000000,0x000000,0xaaaaaa,0x155fd9,0x4240ff,0x7527fe,0xa01acc,0xb71e7b,0xb53120,0x994e00,0x6b6d00,0x388700,0x0c9300,0x008b00,0x008268,0x000000,0x000000,0x000000,0xffffff,0x64b0ff,0x9290ff,0xb36aff,0xdf54ff,0xf053a4,0xf0705f,0xf1a33b,0xbdc52f,0x8bd53f,0x5eea6f,0x4de6ae,0x4dd2e6,0x4d4d4d,0x000000,0x000000,0xffffff,0xc0dfff,0xd3d2ff,0xe8c8ff,0xfbc2ff,0xfec4d7,0xfcc7b0,0xf9d89c,0xe6e89e,0xd5f0a3,0xc5f7c8,0xc5f7e1,0xc5e9f2,0xbcbcbc,0x000000,0x000000]);export class Ppu {
   constructor(private readonly cartridge: Cartridge) {}
+  private readonly framePalette = new Uint32Array(32);
   reset(): void { this.ctrl=0; this.mask=0; this.status=0; this.backgroundOpaque.fill(0); this.nmiPending=false; this.sprite0Hit=false; this.spriteOverflow=false; this.scrollX=0; this.scrollY=0; this.oamAddr=0; this.addr=0; this.latch=false; this.data=0; this.scanline=0; this.dot=0; this.scanlineTicks=0; this.frame.fill(0xff000000); }
   readonly vram = new Uint8Array(0x4000); readonly backgroundOpaque = new Uint8Array(256*240); readonly palette = new Uint8Array(32); readonly oam = new Uint8Array(256); readonly frame = new Uint32Array(256*240);
   private ctrl=0; private mask=0; private scanlineTicks=0; private nmiPending=false; private sprite0Hit=false; private spriteOverflow=false; private scrollX=0; private scrollY=0; private status=0; private oamAddr=0; private addr=0; private latch=false; private data=0; scanline=0; dot=0;
   readRegister(reg:number):number { switch(reg&7){case 2: {const v=this.status|(this.sprite0Hit?0x40:0)|(this.spriteOverflow?0x20:0); this.status&=0x7f; this.nmiPending=false; this.latch=false; return v;} case 4:return this.oam[this.oamAddr]; case 7:{const a=this.addr&0x3fff; const v=a>=0x3f00?this.readPalette(a):this.data; if(a<0x3f00)this.data=this.readMemory(a); else this.data=this.readMemory((a-0x1000)&0x3fff); this.addr=(a+(this.ctrl&4?32:1))&0x3fff; return v;} default:return 0;} }
   writeRegister(reg:number,value:number):void {value&=255; switch(reg&7){case 0:{const was=this.ctrl;this.ctrl=value;if(!(was&0x80)&&(value&0x80)&&(this.status&0x80))this.nmiPending=true;break;}case 1:this.mask=value;break;case 3:this.oamAddr=value;break;case 4:this.oam[this.oamAddr]=value;this.oamAddr=(this.oamAddr+1)&255;break;case 5:if(!this.latch)this.scrollX=value;else this.scrollY=value;this.latch=!this.latch;break;case 6:if(!this.latch)this.addr=(value&0x3f)<<8;else this.addr=(this.addr&0x3f00)|value;this.latch=!this.latch;break;case 7:{const a=this.addr&0x3fff; if(a>=0x3f00)this.palette[this.paletteIndex(a)]=value; else this.writeMemory(a,value); this.addr=(a+(this.ctrl&4?32:1))&0x3fff; break;}}}
   private renderBackground(): void {
-    this.frame.fill((0xff000000 | this.color(0)) >>> 0);
+    // No register writes occur during the current frame-batched render.
+    // Rebuild every frame so direct palette edits and restored states are included.
+    for (let i = 0; i < 32; i++) this.framePalette[i] = 0xff000000 | this.color(i);
+    this.frame.fill(this.framePalette[0]);
     this.backgroundOpaque.fill(0);
     if (!(this.mask & 8)) return;
     for (let y = 0; y < 240; y++) {
@@ -32,7 +36,7 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
           if (!color) continue;
           const pixel = y * 256 + x + dx;
           this.backgroundOpaque[pixel] = 1;
-          this.frame[pixel] = 0xff000000 | this.color(palette * 4 + color);
+          this.frame[pixel] = this.framePalette[palette * 4 + color];
         }
         x += span;
       }
@@ -71,7 +75,7 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
           const pixel = y * 256 + dx, background = this.backgroundOpaque[pixel];
           if (i === 0 && dx < 255 && background) this.sprite0Hit = true;
           if (background && (attr & 0x20)) continue;
-          this.frame[pixel] = 0xff000000 | this.color(16 + (attr & 3) * 4 + color);
+          this.frame[pixel] = this.framePalette[16 + (attr & 3) * 4 + color];
         }
       }
     }

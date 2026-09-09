@@ -188,6 +188,7 @@ class Dmc {
 export class Apu {
   static readonly STATE_SIZE = 78;
   private readonly dmc = new Dmc();
+  private nextFrameEvent = 7457;
   constructor(private readonly bus: DmcBus | null = null) {}
   readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(1),new Pulse(0)]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private mode5=false; private frameIrq=false; private irqInhibit=false; private samples:number[]=[];
   get irqPending(): boolean { return this.frameIrq || this.dmc.irq; }
@@ -198,7 +199,7 @@ export class Apu {
     else if(address>=0x400c&&address<0x4010)this.noise.write(address&3,value);
     else if(address>=0x4010&&address<=0x4013)this.dmc.write(address&3,value);
     else if(address===0x4015){this.dmc.enable(!!(value&16));this.pulse[0].enabled=!!(value&1);this.pulse[1].enabled=!!(value&2);this.triangle.enabled=!!(value&4);this.noise.enabled=!!(value&8);if(!this.pulse[0].enabled)this.pulse[0].length=0;if(!this.pulse[1].enabled)this.pulse[1].length=0;if(!this.triangle.enabled)this.triangle.length=0;if(!this.noise.enabled)this.noise.length=0;}
-    else if(address===0x4017){this.mode5=!!(value&0x80);this.irqInhibit=!!(value&0x40);if(this.irqInhibit)this.frameIrq=false;this.frame=0;if(this.mode5){for(let i=0;i<this.pulse.length;i++){const pulse=this.pulse[i];pulse.envelope.clock(pulse.regs[0]);pulse.clockLength();pulse.clockSweep();}this.noise.envelope.clock(this.noise.regs[0]);this.noise.clockLength();this.triangle.clockLinear();this.triangle.clockLength();}}
+    else if(address===0x4017){this.mode5=!!(value&0x80);this.irqInhibit=!!(value&0x40);if(this.irqInhibit)this.frameIrq=false;this.frame=0;this.nextFrameEvent=7457;if(this.mode5){for(let i=0;i<this.pulse.length;i++){const pulse=this.pulse[i];pulse.envelope.clock(pulse.regs[0]);pulse.clockLength();pulse.clockSweep();}this.noise.envelope.clock(this.noise.regs[0]);this.noise.clockLength();this.triangle.clockLinear();this.triangle.clockLength();}}
   }
   /** Fixed-width, little-endian oscillator state; queued host audio is not included. */
   saveState(): Uint8Array {
@@ -281,6 +282,7 @@ export class Apu {
     this.triangle.enabled = !!state[36]; this.mode5=!!state[45]; this.triangle.linear=state[46]; this.triangle.linearReload=!!state[47]; this.frameIrq=!!(state[61]&1); this.irqInhibit=!!(state[61]&2); this.pulse[0].sweepDivider=state[37]; this.pulse[1].sweepDivider=state[38]; this.pulse[0].sweepReload=!!state[39]; this.pulse[1].sweepReload=!!state[40];
     this.frac = frac;
     this.frame = frame;
+    this.scheduleFrameEvent();
     for (const [i, channel] of [...this.pulse, this.noise].entries()) {
       const offset = 48 + i * 3;
       channel.envelope.start = !!state[offset];
@@ -290,10 +292,9 @@ export class Apu {
     this.samples = [];
   }
   readStatus():number { const value=(this.pulse[0].length?1:0)|(this.pulse[1].length?2:0)|(this.triangle.length?4:0)|(this.noise.length?8:0)|(this.frameIrq?0x40:0)|(this.dmc.remaining?16:0)|(this.dmc.irq?128:0); this.frameIrq=false; return value; }
-  step(cycles:number):void {for(let i=0;i<cycles;i++){if(this.frame&1)for(let channel=0;channel<this.pulse.length;channel++)this.pulse[channel].step();this.triangle.step();this.noise.step();this.dmc.step(this.bus);this.clockFrame();this.frac+=SAMPLE_HZ;if(this.frac>=CPU_HZ){this.frac-=CPU_HZ;if(this.samples.length>=SAMPLE_HZ*2)this.samples.splice(0,1024); this.samples.push((this.pulse[0].sample()+this.pulse[1].sample()+this.triangle.sample()+this.noise.sample())*320-4096+this.dmc.output*80);}}}
+  step(cycles:number):void {for(let i=0;i<cycles;i++){if(this.frame&1)for(let channel=0;channel<this.pulse.length;channel++)this.pulse[channel].step();this.triangle.step();this.noise.step();this.dmc.step(this.bus);if(++this.frame===this.nextFrameEvent)this.clockFrame();this.frac+=SAMPLE_HZ;if(this.frac>=CPU_HZ){this.frac-=CPU_HZ;if(this.samples.length>=SAMPLE_HZ*2)this.samples.splice(0,1024); this.samples.push((this.pulse[0].sample()+this.pulse[1].sample()+this.triangle.sample()+this.noise.sample())*320-4096+this.dmc.output*80);}}}
   private clockFrame(): void {
     // NTSC sequencer in CPU cycles. Both sequence lengths are even.
-    this.frame++;
     const end = this.mode5 ? 37281 : 29829;
     if (this.frame === 7457 || this.frame === 14913 || this.frame === 22371 || this.frame === end) {
       for (let i = 0; i < this.pulse.length; i++) { const pulse = this.pulse[i]; pulse.envelope.clock(pulse.regs[0]); }
@@ -307,6 +308,12 @@ export class Apu {
     // The four-step IRQ is a level latch asserted once at the sequence endpoint.
     if (!this.mode5 && !this.irqInhibit && this.frame === end) this.frameIrq = true;
     if (this.frame === end + 1) this.frame = 0;
+    this.scheduleFrameEvent();
+  }
+  private scheduleFrameEvent(): void {
+    const end = this.mode5 ? 37281 : 29829;
+    this.nextFrameEvent = this.frame < 7457 ? 7457 : this.frame < 14913 ? 14913
+      : this.frame < 22371 ? 22371 : this.frame < end ? end : end + 1;
   }
   drainSamples(): Int16Array {
     const out = new Int16Array(this.samples.length);
@@ -314,5 +321,5 @@ export class Apu {
     this.samples = [];
     return out;
   }
-  reset():void {this.dmc.reset();this.frac=0;this.frame=0;this.mode5=false;this.frameIrq=false;this.irqInhibit=false;this.samples=[];for(let i=0;i<this.pulse.length;i++){const p=this.pulse[i];p.envelope.reset();p.regs.fill(0);p.timer=0;p.phase=0;p.length=0;p.sweepDivider=0;p.sweepReload=false;p.enabled=false;}this.triangle.regs.fill(0);this.triangle.timer=0;this.triangle.phase=0;this.triangle.length=0;this.triangle.linear=0;this.triangle.linearReload=false;this.triangle.enabled=false;this.noise.envelope.reset();this.noise.regs.fill(0);this.noise.timer=0;this.noise.shift=1;this.noise.length=0;this.noise.enabled=false;}
+  reset():void {this.dmc.reset();this.frac=0;this.frame=0;this.nextFrameEvent=7457;this.mode5=false;this.frameIrq=false;this.irqInhibit=false;this.samples=[];for(let i=0;i<this.pulse.length;i++){const p=this.pulse[i];p.envelope.reset();p.regs.fill(0);p.timer=0;p.phase=0;p.length=0;p.sweepDivider=0;p.sweepReload=false;p.enabled=false;}this.triangle.regs.fill(0);this.triangle.timer=0;this.triangle.phase=0;this.triangle.length=0;this.triangle.linear=0;this.triangle.linearReload=false;this.triangle.enabled=false;this.noise.envelope.reset();this.noise.regs.fill(0);this.noise.timer=0;this.noise.shift=1;this.noise.length=0;this.noise.enabled=false;}
 }
