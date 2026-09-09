@@ -2,6 +2,7 @@ import { parseRom } from './rom.js';
 
 export interface WasmExports {
   readonly memory: WebAssembly.Memory;
+  romAllocate(length: number): number;
   romWrite(index: number, value: number): void;
   loadRom(length: number): void;
   reset(): void;
@@ -28,7 +29,8 @@ export class WasmCore {
   static readonly FRAME_WIDTH = 256;
   static readonly FRAME_HEIGHT = 240;
   static readonly FRAME_CYCLES = 29780;
-  static readonly MAX_ROM_SIZE = 0x80000;
+  // Largest supported linear NES 2.0 header plus optional trainer and ROM data.
+  static readonly MAX_ROM_SIZE = 16 + 512 + 0xeff * 0x6000;
   private constructor(readonly exports: WasmExports) {}
 
   static async from(source: ArrayBuffer | Uint8Array | Response): Promise<WasmCore> {
@@ -52,7 +54,10 @@ export class WasmCore {
     if (![0, 1, 2, 3, 4, 7, 15, 66].includes(image.mapper)) throw new Error(`Unsupported WASM mapper: ${image.mapper}`);
     if (image.mapper === 1 && (image.prgRom.length > 0x40000 || image.chrRom.length > 0x20000)) throw new Error('Extended MMC1 boards are not supported yet');
     if (image.mapper === 0 && image.prgRom.length > 0x8000) throw new Error('Invalid NROM PRG size');
-    for (let i = 0; i < rom.length; i++) this.exports.romWrite(i, rom[i]);
+    // Allocation may grow memory or reclaim its former ROM buffer.
+    if (rom.buffer === this.exports.memory.buffer) rom = rom.slice();
+    const pointer = this.exports.romAllocate(rom.length);
+    new Uint8Array(this.exports.memory.buffer, pointer, rom.length).set(rom);
     this.exports.loadRom(rom.length);
   }
 

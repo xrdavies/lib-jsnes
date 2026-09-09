@@ -175,6 +175,24 @@ The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning a
 Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, mapper 15, and GxROM (mappers 0, 1, 2, 3, 4, 7, 15, and 66), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
 NES 2.0 linear-size headers are accepted; exponent-size encodings and other unsupported mappers are rejected by this experimental WASM core.
+`WasmCore.loadRom()` now allocates ROM storage to fit the input and copies it in
+one bulk transfer. The former fixed 512 KiB capacity no longer rejects layouts
+such as 512 KiB PRG plus 256 KiB CHR. `MAX_ROM_SIZE` is the largest supported
+linear header layout (16-byte header, optional 512-byte trainer, 3839 PRG units
+and 3839 CHR units), not an eagerly allocated buffer. Mapper and board restrictions
+still apply. CNROM/GxROM CHR selection uses the decoded full size, including NES
+2.0 extension bits. Tests cover large MMC3 banking, all CNROM register values
+with 256 CHR banks, invalid replacements and repeated large/small reloads.
+
+Raw WASM hosts can call `romAllocate(length)` to obtain a pointer, copy bytes into
+the new buffer, then call `loadRom(length)` and `reset()`. Finish that sequence
+before stepping; allocation replaces the previous ROM storage. Acquire the memory
+view after allocation, since memory may grow. `romWrite(index, value)` remains
+available, with an initial 512 KiB buffer for existing raw hosts. The typed wrapper
+validates the ROM before allocation and copies any input view backed by its own
+WASM memory before growth or collection can invalidate it. Use the wrapper and
+binary from the same build; older binaries do not export `romAllocate`.
+
 `parseRom()` handles both NES 2.0 size encodings: byte 9's low/high nibble selects
 PRG/CHR exponent encoding when it equals 15. Other values extend the linear bank
 count. The parser preserves the 12-bit mapper number; WASM validates these high

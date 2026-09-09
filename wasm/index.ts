@@ -2,7 +2,7 @@ import { Cpu6502, CpuBus } from '../dist-wasm/cpu.generated';
 import { Ppu } from '../dist-wasm/ppu.generated';
 import { Apu, DmcBus } from '../dist-wasm/apu.generated';
 import { Controller } from '../dist-wasm/controller.generated';
-import { Cartridge } from './cartridge';
+import { Cartridge, MAX_ROM_SIZE } from './cartridge';
 const RAM = new Uint8Array(0x800);
 const cartridge = new Cartridge();
 const ppu = new Ppu(cartridge);
@@ -45,6 +45,12 @@ export function setController(player: i32, mask: i32): void {
   if (player == 1) controller1.setButtons(mask);
   else if (player == 2) controller2.setButtons(mask);
   else throw new RangeError('player must be 1 or 2');
+}
+export function romAllocate(length: i32): usize {
+  if (length < 16 || length > MAX_ROM_SIZE) throw new RangeError('Invalid ROM capacity');
+  cartridge.rom = new Uint8Array(length);
+  __collect();
+  return changetype<usize>(cartridge.rom.buffer) + cartridge.rom.byteOffset;
 }
 export function romWrite(index: i32, value: i32): void {
   if (index >= 0 && index < cartridge.rom.length) cartridge.rom[index] = value;

@@ -1,6 +1,8 @@
 // WASM cartridge storage for NROM, MMC1, UxROM, CNROM, MMC3, AxROM, mapper 15, and GxROM boards.
+// Largest linear NES 2.0 layout: header, trainer, 3839 PRG and CHR units.
+export const MAX_ROM_SIZE: i32 = 16 + 512 + 0xeff * 0x6000;
 export class Cartridge {
-  readonly rom: Uint8Array = new Uint8Array(0x80000);
+  rom: Uint8Array = new Uint8Array(0x80000);
   readonly prgRam: Uint8Array = new Uint8Array(0x2000);
   private readonly chrRam: Uint8Array = new Uint8Array(0x2000);
   private prgStart: i32 = 0;
@@ -126,10 +128,10 @@ export class Cartridge {
     }
     else if (address >= 0x8000 && this.mapper == 2 && this.prgBanks > 0) this.bank = (value & 255) % this.prgBanks;
     else if (address >= 0x8000 && this.mapper == 7) { this.bank = value & 15; this.mirror = (value >>> 4) & 1; }
-    else if (address >= 0x8000 && this.mapper == 3 && this.rom[5] > 0) this.chrBank = (value & 255) % this.rom[5];
+    else if (address >= 0x8000 && this.mapper == 3 && this.hasChrRom) this.chrBank = (value & 255) % (this.chrBytes / 0x2000);
     else if (address >= 0x8000 && this.mapper == 66) {
       this.bank = (value >>> 4) & 3;
-      this.chrBank = this.hasChrRom ? (value & 3) % this.rom[5] : 0;
+      this.chrBank = this.hasChrRom ? (value & 3) % (this.chrBytes / 0x2000) : 0;
     }
   }
   readChr(address: i32): i32 {
