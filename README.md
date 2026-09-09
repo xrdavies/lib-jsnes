@@ -366,6 +366,15 @@ instructions and indexed NOPs without changing their cycle counts. Bus-trace tes
 cover every implemented opcode using these modes, zero indices, zero-page wrap
 and pointer-high-byte wrap at `$FF`.
 
+Stack instructions now include discarded instruction/stack reads. JSR fetches
+the target high byte after pushing the return address, so executing JSR from
+overlapping stack memory sees the written value. RTS reads the saved return
+address before incrementing it; BRK fetches its padding byte; accepted IRQ/NMI
+entries perform two discarded PC reads without advancing PC. Tests check access
+order, stack/address wrap and status flags, including JSR stack overlap in WASM.
+The system still advances devices at instruction boundaries, so interrupt polling
+and bus-cycle alignment remain approximate.
+
 The shared CPU also implements ALR (`$4B`), ARR (`$6B`) and AXS (`$CB`) immediate
 instructions, in addition to ANC (`$0B/$2B`) and the SBC alias (`$EB`). They consume
 the operand and take two cycles. ARR sets carry from result bit 6 and overflow

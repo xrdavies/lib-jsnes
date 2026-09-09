@@ -102,3 +102,17 @@ test('WASM stack return and indirect jump preserve NMOS address wrapping', async
   core.reset(); core.step(23);
   assert.equal(core.programCounter, 0x8134, 'JMP ($02ff) reads its high byte at $0200');
 });
+
+test('WASM JSR observes target bytes changed by overlapping stack writes', async () => {
+  const core = await WasmCore.from(binary);
+  core.loadRom(image([0xa9, 0x20, 0x8d, 0xfb, 1, 0xa9, 0x34, 0x8d, 0xfc, 1,
+    0xa9, 0x92, 0x8d, 0xfd, 1, 0x4c, 0xfb, 1]));
+  core.reset(); core.step(21);
+  assert.equal(core.programCounter, 0x1fb);
+  core.step(1);
+  assert.equal(core.programCounter, 0x134);
+  assert.equal(core.cycleCount, 27);
+  assert.equal(core.exports.ramRead(0x1fd), 1);
+  assert.equal(core.exports.ramRead(0x1fc), 0xfd);
+  assert.equal(core.exports.cpuRegister(3), 0xfb);
+});

@@ -78,13 +78,21 @@ export class Cpu6502 {
             case 0x88: this.y = (this.y - 1) & 255; this.nz(this.y); used = 2; break;
             case 0x4c: this.pc = this.abs(); used = 3; break;
             case 0x6c: { const a = this.abs(), lo = this.bus.read(a), hi = this.bus.read((a & 0xff00) | ((a + 1) & 255)); this.pc = lo | (hi << 8); used = 5; break; }
-            case 0x20: { const d = this.abs(); this.push((this.pc - 1) >>> 8); this.push(this.pc - 1); this.pc = d; used = 6; break; }
-            case 0x60: this.pc = ((this.pop() | (this.pop() << 8)) + 1) & 0xffff; used = 6; break;
-            case 0x00: this.pc = (this.pc + 1) & 0xffff; this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p | B | U); this.p |= I; this.pc = this.read16(0xfffe); used = 7; break;
-            case 0x40: this.p = (this.pop() | U) & ~B; this.pc = this.pop() | (this.pop() << 8); used = 6; break;
-            case 0x68: this.a = this.pop(); this.nz(this.a); used = 4; break;
-            case 0x08: this.push(this.p | B | U); used = 3; break;
-            case 0x28: this.p = (this.pop() | U) & ~B; used = 4; break;
+            case 0x20: {
+                const low = this.fetch();
+                this.bus.read(0x100 | this.sp);
+                this.push(this.pc >>> 8); this.push(this.pc);
+                this.pc = low | (this.fetch() << 8); used = 6; break;
+            }
+            case 0x60:
+                this.preparePull(); this.pc = this.pop() | (this.pop() << 8);
+                this.bus.read(this.pc); this.pc = (this.pc + 1) & 0xffff;
+                used = 6; break;
+            case 0x00: this.fetch(); this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p | B | U); this.p |= I; this.pc = this.read16(0xfffe); used = 7; break;
+            case 0x40: this.preparePull(); this.p = (this.pop() | U) & ~B; this.pc = this.pop() | (this.pop() << 8); used = 6; break;
+            case 0x68: this.preparePull(); this.a = this.pop(); this.nz(this.a); used = 4; break;
+            case 0x08: this.bus.read(this.pc); this.push(this.p | B | U); used = 3; break;
+            case 0x28: this.preparePull(); this.p = (this.pop() | U) & ~B; used = 4; break;
             case 0x69: this.adc(this.imm()); used = 2; break;
             case 0xe9: this.adc(this.imm() ^ 255); used = 2; break;
             case 0x65: this.adc(this.bus.read(this.fetch())); used = 3; break;
@@ -178,7 +186,7 @@ export class Cpu6502 {
             case 0xaa: this.x = this.a; this.nz(this.x); used = 2; break;
             case 0xba: this.x = this.sp; this.nz(this.x); used = 2; break;
             case 0x9a: this.sp = this.x; used = 2; break;
-            case 0x48: this.push(this.a); used = 3; break;
+            case 0x48: this.bus.read(this.pc); this.push(this.a); used = 3; break;
             case 0x8a: this.a = this.x; this.nz(this.a); used = 2; break;
             case 0xa8: this.y = this.a; this.nz(this.y); used = 2; break;
             case 0x98: this.a = this.y; this.nz(this.a); used = 2; break;
@@ -328,8 +336,9 @@ export class Cpu6502 {
     private indX() { const a = this.zpx(); return this.bus.read(a) | (this.bus.read((a + 1) & 255) << 8); }
     private indY(penalty = false) { const a = this.fetch(), base = this.bus.read(a) | (this.bus.read((a + 1) & 255) << 8); return this.indexed(base, this.y, penalty); }
     private read16(a: number) { return this.bus.read(a) | (this.bus.read((a + 1) & 0xffff) << 8); }
-    private interrupt(vector: number) { this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p & ~B | U); this.p |= I; this.pc = this.read16(vector); }
+    private interrupt(vector: number) { this.bus.read(this.pc); this.bus.read(this.pc); this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p & ~B | U); this.p |= I; this.pc = this.read16(vector); }
     private push(v: number) { this.bus.write(0x100 | this.sp, v); this.sp = (this.sp - 1) & 255; }
+    private preparePull(): void { this.bus.read(this.pc); this.bus.read(0x100 | this.sp); }
     private pop() { this.sp = (this.sp + 1) & 255; return this.bus.read(0x100 | this.sp); }
     private nz(v: number) { this.p = (this.p & ~(N | Z)) | (v ? 0 : Z) | (v & 128); }
     private readForModify(address: number) { const value=this.bus.read(address); this.bus.write(address,value); return value; }
