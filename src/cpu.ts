@@ -4,7 +4,9 @@ export interface CpuBus {
 }
 const C = 1, Z = 2, I = 4, D = 8, B = 16, U = 32, V = 64, N = 128;
 export class Cpu6502 {
-    static readonly STATE_SIZE = 15;
+    static readonly STATE_SIZE = 16;
+    private halted = false;
+    get jammed(): boolean { return this.halted; }
     a = 0;
     x = 0;
     y = 0;
@@ -18,16 +20,17 @@ export class Cpu6502 {
     private pageCycles = 0;
     private instructionIrqMasked = true;
     constructor(private readonly bus: CpuBus, private readonly strict = false) { }
-    reset(): void { this.instructionIrqMasked = true; this.sp = 0xfd; this.p = U | I; this.pc = this.read16(0xfffc); this.cycles = 0; this.unknownOpcodes = 0; this.lastUnknownOpcode = -1; this.unknownOpcodeCounts.fill(0); }
+    reset(): void { this.halted = false; this.instructionIrqMasked = true; this.sp = 0xfd; this.p = U | I; this.pc = this.read16(0xfffc); this.cycles = 0; this.unknownOpcodes = 0; this.lastUnknownOpcode = -1; this.unknownOpcodeCounts.fill(0); }
     save(): number[] {
         if (!Number.isSafeInteger(this.cycles) || this.cycles < 0) throw new RangeError('Invalid CPU cycle count');
         const bytes = new Uint8Array(Cpu6502.STATE_SIZE);
         bytes.set([this.a, this.x, this.y, this.sp, this.p, this.pc & 255, this.pc >>> 8]);
         new DataView(bytes.buffer).setFloat64(7, this.cycles, true);
+        bytes[15] = +this.halted;
         return Array.from(bytes);
     }
     static validateState(v: number[]): void {
-        if (v.length !== Cpu6502.STATE_SIZE) throw new RangeError('Invalid CPU state');
+        if (v.length !== Cpu6502.STATE_SIZE || v[15] > 1) throw new RangeError('Invalid CPU state');
         for (const value of v) {
             if (!Number.isInteger(value) || value < 0 || value > 255) throw new RangeError('Invalid CPU state');
         }
@@ -37,24 +40,32 @@ export class Cpu6502 {
     load(v: number[]): void {
         Cpu6502.validateState(v);
         [this.a, this.x, this.y, this.sp, this.p] = v;
+        this.halted = !!v[15];
         this.instructionIrqMasked = !!(this.p & I);
         this.pc = v[5] | (v[6] << 8);
         this.cycles = new DataView(Uint8Array.from(v).buffer).getFloat64(7, true);
     }
-    irq(): boolean { if (this.p & I) return false; this.interrupt(0xfffe); return true; }
+    irq(): boolean { if (this.halted || (this.p & I)) return false; this.interrupt(0xfffe); return true; }
     /** Poll a pending IRQ immediately after step(), using the instruction's I-bit timing. */
     irqAfterInstruction(): boolean {
-        if (this.instructionIrqMasked) return false;
+        if (this.halted || this.instructionIrqMasked) return false;
         this.interrupt(0xfffe);
         return true;
     }
-    nmi(): boolean { this.interrupt(0xfffa); return true; }
+    nmi(): boolean { if (this.halted) return false; this.interrupt(0xfffa); return true; }
     step(): number {
+        // ponytail: retain the locked CPU state; the repeating JAM bus sequence
+        // needs per-cycle bus modeling. Device clocks continue in the host.
+        if (this.halted) { this.cycles++; return 1; }
         this.pageCycles = 0;
         this.instructionIrqMasked = !!(this.p & I);
         const op = this.fetch();
         let used = 2;
         switch (op) {
+            case 0x02: case 0x12: case 0x22: case 0x32:
+            case 0x42: case 0x52: case 0x62: case 0x72:
+            case 0x92: case 0xb2: case 0xd2: case 0xf2:
+                this.bus.read(this.pc); this.halted = true; used = 2; break;
             case 0xea: this.bus.read(this.pc); break;
             case 0xa9: this.a = this.imm(); this.nz(this.a); used = 2; break;
             case 0xa2: this.x = this.imm(); this.nz(this.x); used = 2; break;

@@ -82,7 +82,7 @@ export function step(count: i32): void {
     }
     const used = cpu.step(); remaining -= used; clockDevices(used);
     ppu.consumeScanlines();
-    if (ppu.consumeNmi()) { cpu.nmi(); cpu.cycles += 7; remaining -= 7; clockDevices(7); }
+    if (ppu.consumeNmi() && cpu.nmi()) { cpu.cycles += 7; remaining -= 7; clockDevices(7); }
     else if ((apu.irqPending || cartridge.irqPending) && cpu.irqAfterInstruction()) { cpu.cycles += 7; remaining -= 7; clockDevices(7); }
   }
 }
@@ -118,3 +118,5 @@ export function framePointer():usize{return changetype<usize>(ppu.frame.buffer)+
 export function frameLength():i32{return ppu.frame.length;}
 export function batteryRamPointer(): usize { return changetype<usize>(cartridge.prgRam.buffer) + cartridge.prgRam.byteOffset; }
 export function batteryRamLength(): i32 { return cartridge.prgRam.length; }
+
+export function cpuJammed(): boolean { return cpu.jammed; }

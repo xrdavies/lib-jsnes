@@ -54,6 +54,8 @@ export async function benchmark(rom, wasmBytes, progress = async () => {}) {
     equalArray(candidate.frame(), reference.frame, `Frame ${frame} pixels`);
     equalArray(candidate.audioSamples(), reference.audioSamples(), `Frame ${frame} PCM`);
   }
+  equal(reference.cpu.jammed, false, 'TypeScript CPU jammed');
+  equal(candidate.jammed, false, 'WASM CPU jammed');
   equal(reference.cpu.unknownOpcodes, 0, 'TypeScript unknown opcodes');
   equal(candidate.exports.unknownOpcodeCount(), 0, 'WASM unknown opcodes');
   const measurements = [[], []];

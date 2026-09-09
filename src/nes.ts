@@ -80,8 +80,7 @@ export class Nes implements CpuBus {
       }
       this.clockDevices(this.cpu.step());
       this.ppu.consumeScanlines();
-      if (this.ppu.consumeNmi()) {
-        this.cpu.nmi();
+      if (this.ppu.consumeNmi() && this.cpu.nmi()) {
         this.cpu.cycles += 7;
         this.clockDevices(7);
       } else if ((this.apu.irqPending || this.cartridge.irqPending) && this.cpu.irqAfterInstruction()) {

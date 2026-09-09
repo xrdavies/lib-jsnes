@@ -17,6 +17,7 @@ export interface WasmExports {
   chrRead(index: number): number;
   /** A, X, Y, SP, P, PC at indices 0 through 5. */
   cpuRegister(index: number): number;
+  cpuJammed(): number;
   unknownOpcodeCount(): number;
   framePointer(): number;
   frameLength(): number;
@@ -45,7 +46,7 @@ export class WasmCore {
     const exports = instance.exports as unknown as Record<string, unknown>;
     const required = ['romAllocate', 'romWrite', 'loadRom', 'reset', 'setController', 'step',
       'sampleRate', 'audioDrain', 'audioPointer', 'cycleCount', 'programCounter', 'cpuRegister',
-      'unknownOpcodeCount', 'ramRead', 'chrRead', 'framePointer', 'frameLength',
+      'cpuJammed', 'unknownOpcodeCount', 'ramRead', 'chrRead', 'framePointer', 'frameLength',
       'batteryRamPointer', 'batteryRamLength'];
     if (!(exports.memory instanceof WebAssembly.Memory) || required.some(name => typeof exports[name] !== 'function')) {
       throw new TypeError('WASM module does not implement the lib-jsnes ABI');
@@ -95,6 +96,7 @@ export class WasmCore {
     this.exports.step(cycles);
   }
   runFrame(cycles = WasmCore.FRAME_CYCLES): Uint32Array { this.step(cycles); return this.frame(); }
+  get jammed(): boolean { return !!this.exports.cpuJammed(); }
   get cycleCount(): number { return this.exports.cycleCount(); }
   get programCounter(): number { return this.exports.programCounter(); }
   frame(): Uint32Array { return new Uint32Array(this.exports.memory.buffer, this.exports.framePointer(), this.exports.frameLength()); }

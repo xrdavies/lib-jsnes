@@ -12,8 +12,8 @@ test('6502 shifts and rotates carry through accumulator and memory', () => {
   const cpu=new Cpu6502(bus); cpu.reset(); for(let i=0;i<7;i++) cpu.step(); assert.equal(cpu.a,6); assert.equal(mem[0x10],1); assert.ok(cpu.p&1);
 });
 test('6502 exposes unknown opcode diagnostics without breaking stepping', () => {
-  const mem = new Uint8Array(65536); const bus={read:a=>mem[a&65535],write:(a,v)=>{mem[a&65535]=v&255;}}; mem[0xfffc]=0; mem[0xfffd]=0x80; mem[0x8000]=0x02;
-  const cpu=new Cpu6502(bus); cpu.reset(); cpu.step(); assert.equal(cpu.unknownOpcodes,1); assert.equal(cpu.lastUnknownOpcode,0x02);
+  const mem = new Uint8Array(65536); const bus={read:a=>mem[a&65535],write:(a,v)=>{mem[a&65535]=v&255;}}; mem[0xfffc]=0; mem[0xfffd]=0x80; mem[0x8000]=0x8b;
+  const cpu=new Cpu6502(bus); cpu.reset(); cpu.step(); assert.equal(cpu.unknownOpcodes,1); assert.equal(cpu.lastUnknownOpcode,0x8b);
 });
 
 test('6502 advances past a not-taken branch operand', () => {
@@ -159,7 +159,7 @@ test('undocumented DCP and ISC perform read-modify-write bus cycles', () => {
   for (const opcode of [0xc7, 0xe7]) { const {cpu,memory,writes}=machine([opcode,0x10]); memory[0x10]=1; cpu.a=2; cpu.p=0x24; assert.equal(cpu.step(),5); assert.deepEqual(writes,[[0x10,1],[0x10,opcode===0xc7?0:2]]); }
 });
 
-test('strict CPU mode rejects unknown opcodes', () => { const {memory}=machine([0x02]); const cpu=new Cpu6502({read:a=>memory[a],write:(a,v)=>{memory[a]=v;}} ,true); cpu.pc=0x8000; assert.throws(()=>cpu.step(),/Unsupported opcode/); });
+test('strict CPU mode rejects unknown opcodes', () => { const {memory}=machine([0x8b]); const cpu=new Cpu6502({read:a=>memory[a],write:(a,v)=>{memory[a]=v;}} ,true); cpu.pc=0x8000; assert.throws(()=>cpu.step(),/Unsupported opcode/); });
 
 test('CPU rejects malformed snapshots without altering registers', () => {
   const bus = { read: () => 0xea, write() {} };

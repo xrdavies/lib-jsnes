@@ -126,14 +126,14 @@ direct PPU snapshot restores copy the intended bytes rather than the Buffer's
 entire backing allocation. WASM loading also copies Buffer views backed by its
 own linear memory before allocating replacement ROM storage. No Node-specific
 dependency is required by the browser build.
-The CPU snapshot is now `Cpu6502.STATE_SIZE` (15 bytes): seven bytes for registers
-and PC followed by an eight-byte little-endian Float64 cycle count. This preserves
+The CPU snapshot is now `Cpu6502.STATE_SIZE` (16 bytes): seven bytes for registers
+and PC, an eight-byte little-endian Float64 cycle count, and a JAM flag. This preserves
 nonnegative safe-integer counts beyond 2³², where the former four-byte encoding
 wrapped after roughly 40 minutes of emulated NTSC time. Non-finite, fractional,
 negative and unsafe cycle counts are rejected before restoring state. Previous
-11-byte CPU snapshots and full `Nes` snapshots containing that CPU layout are
-rejected. Full snapshots are four bytes larger; other component layouts are
-unchanged. Boundary tests seed long-running counts and verify continuation through
+11-byte and 15-byte CPU snapshots and full `Nes` snapshots containing those layouts
+are rejected. The JAM flag adds one byte to the previous full snapshot; other
+component layouts are unchanged. Boundary tests seed long-running counts and verify continuation through
 pending DMA after restore.
 CHR RAM cartridges append their 8 KiB of pattern memory to the cartridge section;
 CHR ROM cartridges do not append pattern memory. `cartridge.stateSize` gives
@@ -416,7 +416,18 @@ borrow, stores X, and retains A and overflow. As on the NES CPU, setting the
 decimal flag does not enable decimal arithmetic. Tests exhaust operand pairs and
 carry/decimal inputs in TypeScript and WASM, check AXS with varying A/X, and
 include the SBC alias in the exhaustive arithmetic checks. Unstable undocumented
-instructions and CPU jam behavior remain outside this coverage.
+instructions remain outside this coverage.
+
+KIL (`$02/$12/$22/$32/$42/$52/$62/$72/$92/$B2/$D2/$F2`) now jams the CPU,
+instead of falling through to unknown-opcode handling and running later bytes.
+`nes.cpu.jammed` and `core.jammed` report the condition; raw WASM hosts can use
+`cpuJammed()`. Interrupts cannot release the jam, while reset or loading a running
+TypeScript snapshot can. Device clocks and audio continue during system stepping.
+The initial instruction takes two cycles and retains PC at the following byte;
+subsequent CPU steps advance one halted cycle. The detailed repeating electrical
+bus sequence during JAM is not modeled. KIL is recognized even in strict CPU mode
+and does not increment unknown-opcode diagnostics. Tests cover all 12 encodings,
+interrupt rejection, reset, snapshot replay and JS/WASM device-clock parity.
 
 Synthetic ROMs compare complete frames between the two builds and assert known
 background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.

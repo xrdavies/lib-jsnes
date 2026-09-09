@@ -85,7 +85,7 @@ test('WASM branch page penalties and signed displacement match 6502 timing', asy
 
 test('WASM unknown opcode diagnostics distinguish missing instructions from NOPs', async () => {
   const core = await WasmCore.from(binary);
-  core.loadRom(image([0x02, 0xea])); core.reset(); core.step(4);
+  core.loadRom(image([0x8b, 0xea])); core.reset(); core.step(4);
   assert.equal(core.exports.unknownOpcodeCount(), 1);
   assert.equal(core.programCounter, 0x8002);
   core.reset(); assert.equal(core.exports.unknownOpcodeCount(), 0);
