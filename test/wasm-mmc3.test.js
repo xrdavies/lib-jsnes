@@ -115,3 +115,44 @@ test('WASM MMC3 CHR inversion reaches background rendering and leaves ROM immuta
     assert.equal(run.wasm.programCounter, 0xe000);
   }
 });
+
+test('MMC3 $A001 gates RAM reads and writes for every control byte in both builds', async () => {
+  for (let control = 0; control < 256; control++) {
+    const p = program(); p.read(0x6000, 6); p.write(0xa001, 0x80);
+    p.write(0x6000, 0x12); p.write(0x7fff, 0x34);
+    p.write(0xbfff, control); // Mirrored odd address selects RAM control.
+    p.read(0x6000, 0); p.read(0x7fff, 1);
+    p.write(0x6000, 0x56); p.write(0x7fff, 0x78);
+    p.read(0x6000, 2); p.read(0x7fff, 3);
+    p.write(0xa001, 0x80); p.read(0x6000, 4); p.read(0x7fff, 5);
+    const run = await pair(image(p, 0)); run.step(1000);
+    const enabled = !!(control & 0x80), writable = enabled && !(control & 0x40);
+    run.ram([enabled ? 0x12 : 0, enabled ? 0x34 : 0,
+      enabled ? (writable ? 0x56 : 0x12) : 0, enabled ? (writable ? 0x78 : 0x34) : 0,
+      writable ? 0x56 : 0x12, writable ? 0x78 : 0x34]);
+    run.js.write(0xa001, 0); // Re-disable only the JS side before reset.
+    run.js.reset(); run.wasm.reset(); run.step(7);
+    assert.equal(run.wasm.exports.ramRead(6), writable ? 0x56 : 0x12);
+    assert.equal(run.js.read(6), writable ? 0x56 : 0x12);
+  }
+});
+
+test('MMC3 snapshot restores RAM protection independently of IRQ state', () => {
+  for (const control of [0, 0x40, 0x80, 0xc0]) for (const pending of [false, true]) {
+    const nes = new Nes(image(program(), 0)); nes.reset();
+    nes.write(0xa001, 0x80); nes.write(0x6000, 0x5a);
+    nes.write(0xa001, control);
+    if (pending) {
+      nes.write(0xc000, 0); nes.write(0xe001, 0); nes.cartridge.clockScanline();
+    }
+    const saved = nes.saveState();
+    nes.write(0xa001, 0x80); nes.write(0x6000, 0xff); nes.write(0xe000, 0);
+    nes.loadState(saved);
+    assert.equal(nes.cartridge.irqPending, pending);
+    assert.equal(nes.read(0x6000), control & 0x80 ? 0x5a : 0);
+    nes.write(0x6000, 0x33); nes.write(0xa001, 0x80);
+    assert.equal(nes.read(0x6000), control === 0x80 ? 0x33 : 0x5a);
+    nes.write(0xa001, 0); nes.reset();
+    assert.equal(nes.read(0x6000), control === 0x80 ? 0x33 : 0x5a, 'reset preserves RAM and restores default access');
+  }
+});

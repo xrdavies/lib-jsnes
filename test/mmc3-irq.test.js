@@ -83,7 +83,7 @@ test('MMC3 reload waits for a clock and CPU interrupt entry does not acknowledge
 
 test('corrupt pending IRQ snapshot flag is rejected before changing the cartridge', () => {
   const nes = machine(); pending(nes);
-  const state = nes.cartridge.saveState(), corrupt = state.slice(); corrupt[25] = 2;
+  const state = nes.cartridge.saveState(), corrupt = state.slice(); corrupt[25] = 8;
   assert.throws(() => nes.cartridge.loadState(corrupt), /Invalid cartridge state/);
   assert.deepEqual(nes.cartridge.saveState(), state);
 });

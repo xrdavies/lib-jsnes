@@ -23,6 +23,8 @@ export class Cartridge {
   private irqCounter: i32 = 0;
   private irqEnabled: boolean = false;
   private pending: boolean = false;
+  private ramDisabled: boolean = false;
+  private ramProtected: boolean = false;
   get irqPending(): boolean { return this.mapper == 4 && this.pending; }
   // ponytail: scanline approximation; replace with qualified PPU A12 edges for raster timing.
   clockScanline(): void {
@@ -49,8 +51,9 @@ export class Cartridge {
     this.shift = 0x10; this.control = 0x0c; this.chrLow = this.chrHigh = 0;
     this.mmc3Select = 0; this.mmc3Regs.fill(0);
     this.irqLatch = this.irqCounter = 0; this.irqEnabled = this.pending = false;
+    this.ramDisabled = this.ramProtected = false;
   }
-  private get ramEnabled(): boolean { return this.mapper != 1 || (this.bank & 16) == 0; }
+  private get ramEnabled(): boolean { return this.mapper == 4 ? !this.ramDisabled : this.mapper != 1 || (this.bank & 16) == 0; }
   readCpu(address: i32): i32 {
     if (address < 0x6000 || this.prgBanks == 0) return 0;
     if (address < 0x8000) return this.ramEnabled ? this.prgRam[address - 0x6000] : 0;
@@ -79,13 +82,14 @@ export class Cartridge {
   }
   writeCpu(address: i32, value: i32): void {
     if (address >= 0x6000 && address < 0x8000) {
-      if (this.ramEnabled) this.prgRam[address - 0x6000] = value & 255;
+      if (this.ramEnabled && !(this.mapper == 4 && this.ramProtected)) this.prgRam[address - 0x6000] = value & 255;
     }
     else if (address >= 0x8000 && this.mapper == 4) {
       switch (address & 0xe001) {
         case 0x8000: this.mmc3Select = value; break;
         case 0x8001: this.mmc3Regs[this.mmc3Select & 7] = value; break;
         case 0xa000: this.mirror = value & 1; break;
+        case 0xa001: this.ramDisabled = !(value & 0x80); this.ramProtected = (value & 0x40) != 0; break;
         case 0xc000: this.irqLatch = value; break;
         case 0xc001: this.irqCounter = 0; break;
         case 0xe000: this.irqEnabled = this.pending = false; break;

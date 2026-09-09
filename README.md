@@ -103,8 +103,13 @@ The TypeScript core supports the broader mapper list above.
 WASM MMC3 implements both PRG/CHR bank modes, CHR RAM, mapper mirroring and
 four-screen boards, plus the same coarse scanline IRQ latch as TypeScript.
 CPU-driven tests compare memory, rendered frames, PCM, and interrupt handling.
-A12 edge filtering, revision-specific IRQ behavior, and `$A001` PRG RAM protection
-are not yet implemented in either core.
+Both cores implement `$A001` PRG RAM enable (bit 7) and write protection (bit 6).
+Disabled RAM reads currently return zero rather than CPU open-bus data. Reset
+deterministically enables writable RAM without discarding its contents; this is
+an emulator initialization choice, not a guarantee about hardware power-on state.
+The TypeScript cartridge snapshot packs RAM-disable/write-protect into bits 1/2
+of byte 25 alongside IRQ pending in bit 0. A12 edge filtering and revision-specific
+IRQ behavior remain incomplete.
 
 WASM MMC1 supports serial register writes, all four PRG modes, aligned 8 KiB and
 split 4 KiB CHR banks, four mirroring modes, and PRG RAM disable. Tests execute
