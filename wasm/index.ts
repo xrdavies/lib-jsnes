@@ -11,6 +11,7 @@ let audio = new Int16Array(0);
 const controller1 = new Controller(), controller2 = new Controller();
 let dmaStall: i32 = 0;
 let collectionCycles: i32 = 0;
+let frameCompleted: boolean = false;
 class Bus implements CpuBus, DmcBus {
   readDmc(address: i32): i32 { dmaStall += 4; return read(address); }
   read(address: i32): i32 { return read(address); }
@@ -86,8 +87,15 @@ export function step(count: i32): void {
     else if ((apu.irqPending || cartridge.irqPending) && cpu.irqAfterInstruction()) { cpu.cycles += 7; remaining -= 7; clockDevices(7); }
   }
 }
+export function runFrame(): void {
+  frameCompleted = false;
+  do {
+    const dots = (262 - ppu.scanline) * 341 - ppu.dot;
+    step(max(1, dots / 3));
+  } while (!frameCompleted);
+}
 function clockDevices(cycles: i32): void {
-  ppu.step(cycles * 3); apu.step(cycles);
+  frameCompleted = ppu.step(cycles * 3) || frameCompleted; apu.step(cycles);
   collectionCycles += cycles;
   if (collectionCycles >= 29780) {
     collectionCycles = 0;

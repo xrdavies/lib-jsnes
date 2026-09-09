@@ -5,7 +5,7 @@ import { Ppu, PPU_STATE_SIZE } from './ppu.js';
 import { Cartridge } from './cartridge.js';
 import { Apu } from './apu.js';
 export interface Frame { readonly pixels: Uint32Array; readonly width: 256; readonly height: 240; }
-export const NTSC_FRAME_RATE = 60;
+export const NTSC_FRAME_RATE = 1789773 * 3 / 89341.5;
 export const FRAME_WIDTH = 256;
 export const FRAME_HEIGHT = 240;
 export class Nes implements CpuBus {
@@ -18,6 +18,7 @@ export class Nes implements CpuBus {
   readonly apu = new Apu(this);
   private readonly ram = new Uint8Array(0x800);
   private cycles = 0;
+  private frameCompleted = false;
   private dmaStall = 0; private readonly rgba = new Uint8ClampedArray(FRAME_WIDTH*FRAME_HEIGHT*4);
 
   get frame(): Uint32Array { return this.ppu.frame; }
@@ -99,7 +100,7 @@ export class Nes implements CpuBus {
 
   private clockDevices(cycles: number): void {
     // ponytail: instruction-level bus timing; clock individual CPU bus accesses for cycle-exact register effects.
-    this.ppu.step(cycles * 3);
+    this.frameCompleted = this.ppu.step(cycles * 3) || this.frameCompleted;
     this.apu.step(cycles);
   }
   saveState(): Uint8Array {
@@ -149,5 +150,16 @@ export class Nes implements CpuBus {
     this.ram.set(state.subarray(offset, offset + this.ram.length));
     this.dmaStall = dmaStall;
   }
-  runFrame(cycles = 29780): Frame { this.step(cycles); return { pixels: this.frame, width: 256, height: 240 }; } get cycleCount(){return this.cpu.cycles;}
+  runFrame(cycles?: number): Frame {
+    if (cycles !== undefined) this.step(cycles);
+    else {
+      this.frameCompleted = false;
+      do {
+        const dots = (262 - this.ppu.scanline) * 341 - this.ppu.dot;
+        this.step(Math.max(1, Math.floor(dots / 3)));
+      } while (!this.frameCompleted);
+    }
+    return { pixels: this.frame, width: 256, height: 240 };
+  }
+  get cycleCount(){return this.cpu.cycles;}
 }

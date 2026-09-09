@@ -98,7 +98,7 @@ import { Nes } from 'lib-jsnes';
 const nes = new Nes(await fetch('/game.nes').then(r => r.arrayBuffer()));
 nes.reset();
 const frame = nes.runFrame(); // 256x240 packed pixels
-// Pass a different cycle budget to runFrame(cycles) when the host clock requires it
+// runFrame() completes the current PPU frame; runFrame(cycles) uses an explicit CPU budget
 const rgba = nes.frameRgba(); // stable RGBA bytes for ImageData
 const pcm = nes.audioSamples(); // signed 16-bit PCM
 const sampleRate = nes.apu.sampleRate; // 44.1 kHz
@@ -499,8 +499,16 @@ rendering is disabled, and reset starts on an even frame. Tests cover mask chang
 at the boundary, single-dot versus batched advancement, snapshots and the 200th
 VBlank deadline in both builds. PPU snapshots append a parity byte after the I/O
 latch; previous PPU and full-system snapshots lacking that byte are rejected.
-`runFrame(cycles)` still advances the requested CPU budget rather than waiting
-for a PPU frame boundary.
+`runFrame()` without an argument now finishes the current PPU frame, accounting
+for odd-frame skipping. From a partial frame it draws only the remaining lines;
+from a frame boundary it runs the next frame. CPU instructions and interrupt entry
+are not split, so a few dots of the next frame may elapse. Explicit
+`runFrame(cycles)` retains budget-based stepping. `WasmCore.FRAME_CYCLES` remains
+29780 for callers wanting the old nominal budget, while `NTSC_FRAME_RATE` is now
+approximately 60.0988 Hz. Tests verify 200 consecutive frame boundaries, NMI
+counts, partial-frame entry and snapshot continuation in both builds. Load the
+wrapper and WASM binary from the same build; the wrapper now requires the native
+`runFrame` export.
 
 PPUMASK grayscale masks palette codes with `$30` for rendering and palette-port
 reads, preserving the stored colors for later color output. Tests cover all 64

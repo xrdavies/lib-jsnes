@@ -11,6 +11,7 @@ export interface WasmExports {
   audioDrain(): number;
   audioPointer(): number;
   step(cycles: number): void;
+  runFrame(): void;
   cycleCount(): number;
   programCounter(): number;
   ramRead(index: number): number;
@@ -44,7 +45,7 @@ export class WasmCore {
     const result = await WebAssembly.instantiate(bytes, { env: { abort() { throw new Error('WASM abort'); } } });
     const instance = ('instance' in result ? result.instance : result) as WebAssembly.Instance;
     const exports = instance.exports as unknown as Record<string, unknown>;
-    const required = ['romAllocate', 'romWrite', 'loadRom', 'reset', 'setController', 'step',
+    const required = ['romAllocate', 'romWrite', 'loadRom', 'reset', 'setController', 'step', 'runFrame',
       'sampleRate', 'audioDrain', 'audioPointer', 'cycleCount', 'programCounter', 'cpuRegister',
       'cpuJammed', 'unknownOpcodeCount', 'ramRead', 'chrRead', 'framePointer', 'frameLength',
       'batteryRamPointer', 'batteryRamLength'];
@@ -95,7 +96,10 @@ export class WasmCore {
     if (cycles > 0x7fffffff) throw new RangeError('cycles must not exceed 2147483647 per WASM step');
     this.exports.step(cycles);
   }
-  runFrame(cycles = WasmCore.FRAME_CYCLES): Uint32Array { this.step(cycles); return this.frame(); }
+  runFrame(cycles?: number): Uint32Array {
+    if (cycles === undefined) this.exports.runFrame(); else this.step(cycles);
+    return this.frame();
+  }
   get jammed(): boolean { return !!this.exports.cpuJammed(); }
   get cycleCount(): number { return this.exports.cycleCount(); }
   get programCounter(): number { return this.exports.programCounter(); }
