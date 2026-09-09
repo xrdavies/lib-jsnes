@@ -31,7 +31,7 @@ class Pulse {
 
   regs = new Uint8Array(4);
   readonly envelope = new Envelope();
-  timer = 0; phase = 0; length = 0; enabled = false;
+  timer = 0; phase = 0; length = 0; linear = 0; linearReload = false; enabled = false;
   write(i: number, value: number): void {
     this.regs[i] = value & 255;
     if (i === 1) this.sweepReload = true;
@@ -44,6 +44,7 @@ class Pulse {
     }
   }
   step(): void {
+    if (!this.linear) return;
     if (this.timer-- <= 0) {
       this.timer = (this.regs[2] | ((this.regs[3] & 7) << 8)) + 1;
       this.phase = (this.phase + 1) & 7;
@@ -61,9 +62,11 @@ class Pulse {
 
 class Triangle {
   regs = new Uint8Array(4);
+  linear = 0; linearReload = false;
   timer = 0; phase = 0; length = 0; enabled = false;
   write(i: number, value: number): void {
     this.regs[i] = value & 255;
+    if (i === 3) this.linearReload = true;
     if (i === 3) {
       if (this.enabled) this.length = LENGTH[value >>> 3];
       this.timer = (value & 7) << 8;
@@ -76,6 +79,7 @@ class Triangle {
     }
   }
   clockLength(): void { if (this.length > 0 && !(this.regs[0] & 0x80)) this.length--; }
+  clockLinear(): void { if(this.linearReload)this.linear=this.regs[0]&127; else if(this.linear>0)this.linear--; if(!(this.regs[0]&0x80))this.linearReload=false; }
   sample(): number { return !this.enabled || !this.length ? 0 : this.phase < 16 ? this.phase : 31 - this.phase; }
 }
 
@@ -102,7 +106,7 @@ class Noise {
 }
 /** Pulse, triangle, and noise synthesis; five-step frame sequencing, sweep, triangle linear counting, and DMC remain incomplete. */
 export class Apu {
-  static readonly STATE_SIZE = 57;
+  static readonly STATE_SIZE = 60;
   readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(),new Pulse()]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private samples:number[]=[];
   write(address:number,value:number):void {
     value&=255;
@@ -136,10 +140,10 @@ export class Apu {
     out.set(this.triangle.regs, 32);
     out[36] = +this.triangle.enabled; out[37]=this.pulse[0].sweepDivider; out[38]=this.pulse[1].sweepDivider; out[39]=+this.pulse[0].sweepReload; out[40]=+this.pulse[1].sweepReload;
     view.setUint32(41, this.frac, true);
-    view.setUint16(45, this.frame, true);
-    out[56] = 3; // APU snapshot format version.
+    view.setUint16(57, this.frame, true);
+    out[46]=this.triangle.linear; out[47]=+this.triangle.linearReload; out[59] = 4; // APU snapshot format version.
     for (const [i, channel] of [...this.pulse, this.noise].entries()) {
-      out.set([+channel.envelope.start, channel.envelope.divider, channel.envelope.decay], 47 + i * 3);
+      out.set([+channel.envelope.start, channel.envelope.divider, channel.envelope.decay], 48 + i * 3);
     }
     return out;
   }
@@ -147,9 +151,9 @@ export class Apu {
   loadState(state: Uint8Array): void {
     if (state.length !== Apu.STATE_SIZE) throw new RangeError('Invalid APU state size');
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
-    const frac = view.getUint32(41, true), frame = view.getUint16(45, true);
-    if (state[56] !== 3 || frac >= CPU_HZ || frame >= 29830
-      || [47, 50, 53].some(offset => state[offset] > 1 || state[offset + 1] > 15 || state[offset + 2] > 15)
+    const frac = view.getUint32(41, true), frame = view.getUint16(57, true);
+    if (state[59] !== 4 || frac >= CPU_HZ || frame >= 29830
+      || [48, 51, 54].some(offset => state[offset] > 1 || state[offset + 1] > 15 || state[offset + 2] > 15)
       || state[12] > 7 || state[13] > 7 || state[19] > 31
       || view.getUint16(14, true) > 0x7fff
       || [16, 17, 18, 36].some(offset => state[offset] > 1)
@@ -174,11 +178,11 @@ export class Apu {
     this.triangle.timer = view.getUint16(28, true);
     this.noise.timer = view.getUint16(30, true);
     this.triangle.regs.set(state.subarray(32, 36));
-    this.triangle.enabled = !!state[36]; this.pulse[0].sweepDivider=state[37]; this.pulse[1].sweepDivider=state[38]; this.pulse[0].sweepReload=!!state[39]; this.pulse[1].sweepReload=!!state[40];
+    this.triangle.enabled = !!state[36]; this.triangle.linear=state[46]; this.triangle.linearReload=!!state[47]; this.pulse[0].sweepDivider=state[37]; this.pulse[1].sweepDivider=state[38]; this.pulse[0].sweepReload=!!state[39]; this.pulse[1].sweepReload=!!state[40];
     this.frac = frac;
     this.frame = frame;
     for (const [i, channel] of [...this.pulse, this.noise].entries()) {
-      const offset = 47 + i * 3;
+      const offset = 48 + i * 3;
       channel.envelope.start = !!state[offset];
       channel.envelope.divider = state[offset + 1];
       channel.envelope.decay = state[offset + 2];
@@ -193,7 +197,7 @@ export class Apu {
     if (this.frame === 7457 || this.frame === 14913 || this.frame === 22371 || this.frame === 29829) {
       for (const pulse of this.pulse) pulse.envelope.clock(pulse.regs[0]);
       this.pulse[0].clockSweep(1); this.pulse[1].clockSweep(2);
-      this.noise.envelope.clock(this.noise.regs[0]);
+      this.noise.envelope.clock(this.noise.regs[0]); this.triangle.clockLinear();
     }
     if (this.frame === 14913 || this.frame === 29829) {
       for (const pulse of this.pulse) pulse.clockLength();
@@ -203,5 +207,5 @@ export class Apu {
     if (this.frame === 29830) this.frame = 0;
   }
   drainSamples():Int16Array {const out=Int16Array.from(this.samples);this.samples=[];return out;}
-  reset():void {this.frac=0;this.frame=0;this.samples=[];for(const p of this.pulse){p.envelope.reset();p.regs.fill(0);p.timer=0;p.phase=0;p.length=0;p.enabled=false;}this.triangle.regs.fill(0);this.triangle.timer=0;this.triangle.phase=0;this.triangle.length=0;this.triangle.enabled=false;this.noise.envelope.reset();this.noise.regs.fill(0);this.noise.timer=0;this.noise.shift=1;this.noise.length=0;this.noise.enabled=false;}
+  reset():void {this.frac=0;this.frame=0;this.samples=[];for(const p of this.pulse){p.envelope.reset();p.regs.fill(0);p.timer=0;p.phase=0;p.length=0;p.enabled=false;}this.triangle.regs.fill(0);this.triangle.timer=0;this.triangle.phase=0;this.triangle.length=0;this.triangle.linear=0;this.triangle.linearReload=false;this.triangle.enabled=false;this.noise.envelope.reset();this.noise.regs.fill(0);this.noise.timer=0;this.noise.shift=1;this.noise.length=0;this.noise.enabled=false;}
 }

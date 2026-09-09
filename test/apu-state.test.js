@@ -77,7 +77,7 @@ test('APU snapshots accept offset views and reject invalid field values atomical
     bytes => { bytes[12] = 8; },
     bytes => { bytes[36] = 2; },
     bytes => { new DataView(bytes.buffer).setUint32(41, 1789773, true); },
-    bytes => { new DataView(bytes.buffer).setUint16(45, 29830, true); },
+    bytes => { new DataView(bytes.buffer).setUint16(57, 29830, true); },
     bytes => { new DataView(bytes.buffer).setUint16(30, 65535, true); },
   ]) {
     const bytes = snapshot.slice(); corrupt(bytes);
