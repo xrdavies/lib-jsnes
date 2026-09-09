@@ -73,10 +73,14 @@ test('WASM ADC/SBC implement carry and signed overflow for every operand pair', 
 
 test('WASM branch page penalties and signed displacement match 6502 timing', async () => {
   const core = await WasmCore.from(binary);
-  core.loadRom(image([0xd0, 0x80], 0x80fe)); core.reset();
-  core.step(1);
-  assert.equal(core.programCounter, 0x8080);
-  assert.equal(core.cycleCount, 4);
+  for (const [start, operand, target, cycles] of [[0x8000, 0, 0x8002, 3],
+    [0x80fd, 1, 0x8100, 4], [0x8100, 0x80, 0x8082, 4], [0x80fe, 0x80, 0x8080, 4]]) {
+    core.loadRom(image([0xd0, operand], start)); core.reset();
+    core.step(1);
+    assert.equal(core.programCounter, target);
+    assert.equal(core.cycleCount, cycles);
+    assert.equal(core.exports.cpuRegister(4), 0x24);
+  }
 });
 
 test('WASM unknown opcode diagnostics distinguish missing instructions from NOPs', async () => {

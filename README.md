@@ -343,6 +343,14 @@ These checks establish CPU parity, not complete hardware compatibility; CPU bus
 access timing remains approximate and undocumented opcode coverage is partial.
 `core.exports.unknownOpcodeCount()` reports encounters with unimplemented opcodes.
 
+Taken branches now perform their discarded opcode fetch, and page-crossing
+branches also read the provisional address using the old page and target low
+byte. These accesses reach the CPU bus so mapped-device read side effects occur;
+untaken branches only fetch their operand. Tests verify the read order for all
+eight branch opcodes, forward/backward crossings and 16-bit wrap, with a real
+PPUSTATUS side-effect check and WASM cycle/PC regression coverage. Devices still
+advance after each instruction, so this does not establish cycle-exact bus timing.
+
 The shared CPU also implements ALR (`$4B`), ARR (`$6B`) and AXS (`$CB`) immediate
 instructions, in addition to ANC (`$0B/$2B`) and the SBC alias (`$EB`). They consume
 the operand and take two cycles. ARR sets carry from result bit 6 and overflow
