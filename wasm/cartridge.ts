@@ -21,6 +21,7 @@ export class Cartridge {
     if (address < 0x8000) return this.prgRam[address - 0x6000];
     const selected = this.mapper == 2
       ? (address < 0xc000 ? this.bank : this.prgBanks - 1)
+      : this.mapper == 66 ? this.bank * 2 + ((address - 0x8000) >>> 14)
       : ((address - 0x8000) >>> 14) % this.prgBanks;
     return this.rom[this.prgStart + selected * 0x4000 + (address & 0x3fff)];
   }
@@ -28,6 +29,7 @@ export class Cartridge {
     if (address >= 0x6000 && address < 0x8000) this.prgRam[address - 0x6000] = value & 255;
     else if (address >= 0x8000 && this.mapper == 2 && this.prgBanks > 0) this.bank = (value & 255) % this.prgBanks;
     else if (address >= 0x8000 && this.mapper == 3 && this.rom[5] > 0) this.chrBank = (value & 255) % this.rom[5];
+    else if (address >= 0x8000 && this.mapper == 66) { this.bank = ((value >>> 4) & 3) % (this.prgBanks / 2); this.chrBank = (value & 3) % this.rom[5]; }
   }
   readChr(address: i32): i32 {
     return this.hasChrRom ? this.rom[this.chrStart + (this.mapper == 3 ? this.chrBank * 0x2000 : 0) + (address & 0x1fff)] : this.chrRam[address & 0x1fff];
@@ -41,7 +43,7 @@ export class Cartridge {
     if (this.rom[0] != 78 || this.rom[1] != 69 || this.rom[2] != 83 || this.rom[3] != 26) throw new Error('Invalid iNES header');
     if ((this.rom[7] & 0x0c) != 0) throw new Error('WASM requires iNES 1.0');
     const mapper = (this.rom[6] >>> 4) | (this.rom[7] & 0xf0);
-    if (mapper != 0 && mapper != 2 && mapper != 3) throw new Error('Unsupported WASM mapper');
+    if (mapper != 0 && mapper != 2 && mapper != 3 && mapper != 66) throw new Error('Unsupported WASM mapper');
     const banks: i32 = this.rom[4];
     if (banks == 0 || (mapper == 0 && banks > 2)) throw new Error('Invalid PRG size');
     const start = 16 + ((this.rom[6] & 4) != 0 ? 512 : 0);
