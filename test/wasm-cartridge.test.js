@@ -83,7 +83,7 @@ test('native WASM loadRom validates layout and mapper even without the TypeScrip
   const nes2 = rom(0, 1).bytes; nes2[7] = 8;
   const noPrg = rom(0, 0).bytes;
   for (const bytes of [new Uint8Array(16), rom(0, 1).bytes.subarray(0, 32),
-    rom(4, 2).bytes, noPrg,
+    rom(5, 2).bytes, noPrg,
     rom(2, 2, 1).bytes.subarray(0, 16 + 0x8000)]) {
     for (let i = 0; i < bytes.length; i++) e.romWrite(i, bytes[i]);
     assert.throws(() => e.loadRom(bytes.length));
@@ -98,7 +98,7 @@ test('wrapper rejects unsupported cartridges before replacing the running ROM', 
   vector(valid.bytes, valid.start, 1, 0x8000);
   core.loadRom(valid.bytes); core.reset();
   const nes2 = rom(0, 1).bytes; nes2[7] = 8;
-  for (const invalid of [rom(4, 2).bytes, rom(0, 3).bytes]) {
+  for (const invalid of [rom(5, 2).bytes, rom(0, 3).bytes]) {
     assert.throws(() => core.loadRom(invalid));
     assert.equal(core.programCounter, 0x8000);
     assert.equal(core.cycleCount, 0);

@@ -90,7 +90,7 @@ so PPU A12 filtering and MMC3 revision-specific IRQ edge behavior remain incompl
 
 The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning at
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
-Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, AxROM, and GxROM (mappers 0, 1, 2, 3, 7, and 66), including
+Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, and GxROM (mappers 0, 1, 2, 3, 4, 7, and 66), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
 NES 2.0 linear-size headers are accepted; exponent-size encodings and other unsupported mappers are rejected by this experimental WASM core.
 `parseRom()` handles both NES 2.0 size encodings: byte 9's low/high nibble selects
@@ -99,6 +99,12 @@ count. The parser preserves the 12-bit mapper number; WASM validates these high
 bits before accepting a cartridge. Parsing a layout does not imply support for
 its board, submapper, or extended RAM configuration.
 The TypeScript core supports the broader mapper list above.
+
+WASM MMC3 implements both PRG/CHR bank modes, CHR RAM, mapper mirroring and
+four-screen boards, plus the same coarse scanline IRQ latch as TypeScript.
+CPU-driven tests compare memory, rendered frames, PCM, and interrupt handling.
+A12 edge filtering, revision-specific IRQ behavior, and `$A001` PRG RAM protection
+are not yet implemented in either core.
 
 WASM MMC1 supports serial register writes, all four PRG modes, aligned 8 KiB and
 split 4 KiB CHR banks, four mirroring modes, and PRG RAM disable. Tests execute

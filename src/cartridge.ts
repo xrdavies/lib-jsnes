@@ -29,7 +29,7 @@ export class Cartridge {
 
   get mirroring(): NametableMirroring {
     if (this.rom.mapper === 7) return this.axBank&16 ? 'single-upper' : 'single-lower';
-    if (this.rom.mapper === 4) return this.mmc3Mirror ? 'horizontal' : 'vertical';
+    if (this.rom.mapper === 4) return this.rom.mirroring === 'four-screen' ? 'four-screen' : this.mmc3Mirror ? 'horizontal' : 'vertical';
     if (this.rom.mapper === 15 || this.rom.mapper === 113 || this.rom.mapper === 177 || this.rom.mapper === 225) return this.m15Mirror ? 'horizontal' : 'vertical';
     if (this.rom.mapper !== 1) return this.rom.mirroring;
     switch (this.control & 3) {

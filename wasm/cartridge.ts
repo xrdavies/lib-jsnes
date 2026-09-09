@@ -1,4 +1,4 @@
-// WASM cartridge storage for NROM, MMC1, UxROM, CNROM, AxROM, and GxROM boards.
+// WASM cartridge storage for NROM, MMC1, UxROM, CNROM, MMC3, AxROM, and GxROM boards.
 export class Cartridge {
   readonly rom: Uint8Array = new Uint8Array(0x80000);
   readonly prgRam: Uint8Array = new Uint8Array(0x2000);
@@ -17,8 +17,23 @@ export class Cartridge {
   private chrLow: i32 = 0;
   private chrHigh: i32 = 0;
   private chrBytes: i32 = 0x2000;
+  private mmc3Select: i32 = 0;
+  private readonly mmc3Regs: Uint8Array = new Uint8Array(8);
+  private irqLatch: i32 = 0;
+  private irqCounter: i32 = 0;
+  private irqEnabled: boolean = false;
+  private pending: boolean = false;
+  get irqPending(): boolean { return this.mapper == 4 && this.pending; }
+  // ponytail: scanline approximation; replace with qualified PPU A12 edges for raster timing.
+  clockScanline(): void {
+    if (this.mapper != 4) return;
+    if (this.irqCounter == 0) this.irqCounter = this.irqLatch;
+    else this.irqCounter--;
+    if (this.irqCounter == 0 && this.irqEnabled) this.pending = true;
+  }
 
   get mirroring(): string {
+    if (this.mapper == 4) return this.flags & 8 ? 'four-screen' : this.mirror ? 'horizontal' : 'vertical';
     if (this.mapper == 1) {
       switch (this.control & 3) {
         case 0: return 'single-lower';
@@ -32,11 +47,20 @@ export class Cartridge {
   reset(): void {
     this.bank = 0; this.chrBank = 0; this.mirror = 0;
     this.shift = 0x10; this.control = 0x0c; this.chrLow = this.chrHigh = 0;
+    this.mmc3Select = 0; this.mmc3Regs.fill(0);
+    this.irqLatch = this.irqCounter = 0; this.irqEnabled = this.pending = false;
   }
   private get ramEnabled(): boolean { return this.mapper != 1 || (this.bank & 16) == 0; }
   readCpu(address: i32): i32 {
     if (address < 0x6000 || this.prgBanks == 0) return 0;
     if (address < 0x8000) return this.ramEnabled ? this.prgRam[address - 0x6000] : 0;
+    if (this.mapper == 4) {
+      const count = this.prgBanks * 2, slot = (address - 0x8000) >>> 13;
+      const swapped = (this.mmc3Select & 0x40) != 0;
+      const bank = slot == 3 ? count - 1 : slot == 1 ? this.mmc3Regs[7]
+        : slot == (swapped ? 2 : 0) ? this.mmc3Regs[6] : count - 2;
+      return this.rom[this.prgStart + (bank % count) * 0x2000 + (address & 0x1fff)];
+    }
     let selected = this.mapper == 2
       ? (address < 0xc000 ? this.bank : this.prgBanks - 1)
       : this.mapper == 66 || this.mapper == 7 ? (this.bank * 2 + ((address - 0x8000) >>> 14)) % this.prgBanks
@@ -56,6 +80,17 @@ export class Cartridge {
   writeCpu(address: i32, value: i32): void {
     if (address >= 0x6000 && address < 0x8000) {
       if (this.ramEnabled) this.prgRam[address - 0x6000] = value & 255;
+    }
+    else if (address >= 0x8000 && this.mapper == 4) {
+      switch (address & 0xe001) {
+        case 0x8000: this.mmc3Select = value; break;
+        case 0x8001: this.mmc3Regs[this.mmc3Select & 7] = value; break;
+        case 0xa000: this.mirror = value & 1; break;
+        case 0xc000: this.irqLatch = value; break;
+        case 0xc001: this.irqCounter = 0; break;
+        case 0xe000: this.irqEnabled = this.pending = false; break;
+        case 0xe001: this.irqEnabled = true; break;
+      }
     }
     else if (address >= 0x8000 && this.mapper == 1) {
       // ponytail: instruction-level writes; consecutive-cycle suppression needs CPU bus timestamps.
@@ -80,6 +115,10 @@ export class Cartridge {
     }
   }
   readChr(address: i32): i32 {
+    if (this.mapper == 4) {
+      const offset = this.mmc3ChrAddress(address);
+      return this.hasChrRom ? this.rom[this.chrStart + offset] : this.chrRam[offset];
+    }
     if (this.mapper == 1) {
       const offset = this.mmc1ChrAddress(address);
       return this.hasChrRom ? this.rom[this.chrStart + offset] : this.chrRam[offset];
@@ -87,7 +126,14 @@ export class Cartridge {
     return this.hasChrRom ? this.rom[this.chrStart + this.chrBank * 0x2000 + (address & 0x1fff)] : this.chrRam[address & 0x1fff];
   }
   writeChr(address: i32, value: i32): void {
-    if (!this.hasChrRom) this.chrRam[this.mapper == 1 ? this.mmc1ChrAddress(address) : address & 0x1fff] = value & 255;
+    if (!this.hasChrRom) this.chrRam[this.mapper == 1 ? this.mmc1ChrAddress(address)
+      : this.mapper == 4 ? this.mmc3ChrAddress(address) : address & 0x1fff] = value & 255;
+  }
+  private mmc3ChrAddress(address: i32): i32 {
+    address &= 0x1fff;
+    const slot = (address >>> 10) ^ (this.mmc3Select & 0x80 ? 4 : 0);
+    const bank = slot < 4 ? (this.mmc3Regs[slot >>> 1] & 0xfe) | (slot & 1) : this.mmc3Regs[slot - 2];
+    return (bank % (this.chrBytes / 0x400)) * 0x400 + (address & 0x3ff);
   }
   private mmc1ChrAddress(address: i32): i32 {
     address &= 0x1fff;
@@ -105,7 +151,7 @@ export class Cartridge {
     const mapperExtension: i32 = this.rom[8], sizeExtension: i32 = this.rom[9];
     if (nes2 && ((sizeExtension & 15) == 15 || (sizeExtension >>> 4) == 15)) throw new Error('Unsupported NES 2.0 size encoding');
     const mapper = (this.rom[6] >>> 4) | (this.rom[7] & 0xf0) | (nes2 ? ((mapperExtension & 15) << 8) : 0);
-    if (mapper != 0 && mapper != 1 && mapper != 2 && mapper != 3 && mapper != 7 && mapper != 66) throw new Error('Unsupported WASM mapper');
+    if (mapper != 0 && mapper != 1 && mapper != 2 && mapper != 3 && mapper != 4 && mapper != 7 && mapper != 66) throw new Error('Unsupported WASM mapper');
     const banks: i32 = this.rom[4] | (nes2 ? ((sizeExtension & 15) << 8) : 0);
     if (banks == 0 || (mapper == 0 && banks > 2)) throw new Error('Invalid PRG size');
     const start = 16 + ((this.rom[6] & 4) != 0 ? 512 : 0);
