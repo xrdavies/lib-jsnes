@@ -55,7 +55,8 @@ export class WasmCore {
     return new WasmCore(exports as unknown as WasmExports);
   }
 
-  loadRom(rom: Uint8Array): void {
+  loadRom(input: ArrayBuffer | Uint8Array): void {
+    let rom = input instanceof Uint8Array ? input : new Uint8Array(input);
     if (rom.length > WasmCore.MAX_ROM_SIZE) throw new RangeError('ROM exceeds WASM capacity');
     const image = parseRom(rom);
     if (image.consoleType !== 'nes') throw new Error(`Unsupported console type: ${image.consoleType}`);

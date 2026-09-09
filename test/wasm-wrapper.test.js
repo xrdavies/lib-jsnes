@@ -11,6 +11,14 @@ test('WasmCore accepts a fetch Response and exposes the shared frame view', asyn
   assert.equal(core.frame()[0], 0xff000000);
 });
 
+test('WasmCore.loadRom accepts an ArrayBuffer like the JavaScript core', async () => {
+  const core = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
+  const rom = new Uint8Array(16 + 0x4000);
+  rom.set([78, 69, 83, 26, 1, 0]); rom.set([0, 0x80], 16 + 0x3ffc);
+  core.loadRom(rom.buffer); core.reset(); core.runFrame();
+  assert.equal(core.frame().length, 256 * 240);
+});
+
 test('WasmCore accepts a precompiled WebAssembly.Module for compile caching', async () => {
   const bytes = await readFile('dist-wasm/lib-jsnes.wasm');
   const module = await WebAssembly.compile(bytes);
