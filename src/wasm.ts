@@ -23,6 +23,9 @@ export interface WasmExports {
 
 /** Thin browser/Node wrapper around the optional AssemblyScript build. */
 export class WasmCore {
+  static readonly FRAME_WIDTH = 256;
+  static readonly FRAME_HEIGHT = 240;
+  static readonly FRAME_CYCLES = 29780;
   static readonly MAX_ROM_SIZE = 0x80000;
   private constructor(readonly exports: WasmExports) {}
 
@@ -62,6 +65,7 @@ export class WasmCore {
     if (!Number.isInteger(cycles) || cycles < 1) throw new RangeError('cycles must be a positive integer');
     this.exports.step(cycles);
   }
+  runFrame(cycles = WasmCore.FRAME_CYCLES): Uint32Array { this.step(cycles); return this.frame(); }
   get cycleCount(): number { return this.exports.cycleCount(); }
   get programCounter(): number { return this.exports.programCounter(); }
   frame(): Uint32Array { return new Uint32Array(this.exports.memory.buffer, this.exports.framePointer(), this.exports.frameLength()); }

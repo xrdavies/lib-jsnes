@@ -97,7 +97,7 @@ const core = await WasmCore.from(await fetch('/lib-jsnes.wasm'));
 core.loadRom(new Uint8Array(await fetch('/game.nes').then(r => r.arrayBuffer())));
 core.reset();
 core.setController(1, Button.Start); // Replace player 1's held buttons.
-core.step(29780);
+core.runFrame();
 core.setController(1, 0); // Release all buttons.
 const pixels = core.frame();
 const pcm = core.audioSamples(); // Owned Int16Array; drains the queued mono samples.
