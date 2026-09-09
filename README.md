@@ -50,7 +50,7 @@ The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning a
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
 Its cartridge path accepts iNES 1.0 NROM, UxROM, CNROM, AxROM, and GxROM (mappers 0, 2, 3, 7, and 66), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
-NES 2.0 and other mappers are rejected by this experimental WASM core.
+NES 2.0 linear-size headers are accepted; exponent-size encodings and other unsupported mappers are rejected by this experimental WASM core.
 The TypeScript core supports the broader mapper list above.
 
 AxROM and GxROM tests cover every bank-register value, both PRG halves, the full CHR window,
