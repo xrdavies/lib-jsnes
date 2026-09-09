@@ -28,6 +28,13 @@ const sampleRate = nes.apu.sampleRate; // 44.1 kHz
 
 Controllers use `nes.setController(1, Button.A | Button.Start)` with the exported `Button` constants. `saveState()` and `loadState()` preserve CPU, mapper, PPU, audio, controller, and RAM state. Use `saveBatteryRam()` and `loadBatteryRam()` to persist cartridge battery RAM in browser storage or Node.
 
+Snapshot bytes are an evolving development format. The current APU snapshot stores
+all implemented oscillator registers, timers, lengths, and sampling/frame phases;
+older snapshots with the 32-byte APU section are rejected. Restoring discards queued
+PCM from the abandoned timeline and preserves the phase of newly generated audio.
+This does not imply hardware-accurate audio: envelopes, sweep, DMC, and full frame
+sequencing remain incomplete.
+
 ## Cartridge support
 
 The current mapper layer supports NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 bank switching (4), AxROM (7), and GxROM (66). MMC3 scanline IRQ counting is available; advanced mapper variants and exact edge timing remain in progress.
