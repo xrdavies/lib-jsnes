@@ -90,7 +90,7 @@ class Triangle {
     if (this.linear === 0) return;
     if (this.timer-- <= 0) {
       this.timer = (this.regs[2] | ((this.regs[3] & 7) << 8)) + 1;
-      this.phase = (this.phase + 1) & 31;
+      if (this.length > 0 && this.linear > 0) this.phase = (this.phase + 1) & 31;
     }
   }
   clockLength(): void { if (this.length > 0 && !(this.regs[0] & 0x80)) this.length--; }

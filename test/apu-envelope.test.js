@@ -114,3 +114,11 @@ test('$4015 reports and clears the four-step frame IRQ, while $4017 inhibit supp
   apu.step(29830);
   assert.equal(apu.readStatus() & 0x40, 0);
 });
+
+test('triangle phase freezes while length or linear counters are inactive', () => {
+  const apu = new Apu();
+  apu.write(0x4008, 0x80); apu.write(0x400a, 1); apu.write(0x400b, 0x08); apu.write(0x4015, 4);
+  apu.step(1000); assert.equal(apu.saveState()[19], 0);
+  apu.write(0x4008, 0x02); apu.step(7457); assert.equal(apu.saveState()[19], 0);
+  apu.write(0x400b, 0x08); apu.step(7457); assert.notEqual(apu.saveState()[19], 0);
+});
