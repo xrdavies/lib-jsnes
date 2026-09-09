@@ -4,7 +4,7 @@ import { Controller } from './controller.js';
 import { Ppu, PPU_STATE_SIZE } from './ppu.js';
 import { Cartridge } from './cartridge.js';
 import { Apu } from './apu.js';
-import { OamDma } from './dma.js';
+import { OamDma, DmcDma } from './dma.js';
 export interface Frame { readonly pixels: Uint32Array; readonly width: 256; readonly height: 240; }
 export const NTSC_FRAME_RATE = 1789773 * 3 / 89341.5;
 export const FRAME_WIDTH = 256;
@@ -27,7 +27,8 @@ export class Nes implements CpuBus {
   private nmiEarlier = false;
   private irqEarlier = false;
   private readonly oamDma = new OamDma(this);
-  private dmaStall = 0; private readonly rgba = new Uint8ClampedArray(FRAME_WIDTH*FRAME_HEIGHT*4);
+  private readonly dmcDma = new DmcDma(this);
+  private readonly rgba = new Uint8ClampedArray(FRAME_WIDTH*FRAME_HEIGHT*4);
 
   get frame(): Uint32Array { return this.ppu.frame; }
   setController(player: 1|2, mask: number): void { if(player===1)this.controller1.setButtons(mask); else if(player===2)this.controller2.setButtons(mask); else throw new RangeError('player must be 1 or 2'); }
@@ -44,7 +45,15 @@ export class Nes implements CpuBus {
   }
 
   read(address: number, cpuCycle = false): number {
-    if (cpuCycle) this.beginCpuCycle();
+    if (cpuCycle) {
+      for (;;) {
+        const stalled = this.dmcDma.active;
+        this.beginCpuCycle();
+        if (!stalled) break;
+        this.dmcDma.step(((this.cpu.cycles + this.cpu.busCycles) & 1) !== 0, address, false);
+        this.endCpuCycle(); this.cpu.stallCycle();
+      }
+    }
     address &= 0xffff;
     // APU status is internal to the CPU and does not drive its external data bus.
     if (address === 0x4015) {
@@ -79,26 +88,24 @@ export class Nes implements CpuBus {
     } else this.cartridge.writeCpu(address, value, consecutive);
     if (cpuCycle) this.endCpuCycle();
   }
-  reset(){this.nmiPolled=this.irqPolled=this.nmiEarlier=this.irqEarlier=false;this.ram.fill(0); this.cartridge.reset(); this.apu.reset(); this.oamDma.reset(); this.dmaStall=0; this.ppu.reset(); this.cpu.reset(); this.cycles=0;}
+  reset(){this.nmiPolled=this.irqPolled=this.nmiEarlier=this.irqEarlier=false;this.ram.fill(0); this.cartridge.reset(); this.apu.reset(); this.oamDma.reset(); this.dmcDma.reset(); this.ppu.reset(); this.cpu.reset(); this.cycles=0;}
   step(cycles = 1): void {
     if (!Number.isInteger(cycles) || cycles < 1) throw new RangeError('cycles must be a positive integer');
     // The final instruction can overshoot by 7 cycles (8-cycle instruction with
-    // one cycle left), followed by a 7-cycle interrupt before checking the target.
+    // one cycle left), plus initial/refill DMC DMAs (up to 8) and a 7-cycle interrupt.
     if (!Number.isSafeInteger(this.cpu.cycles) || this.cpu.cycles < 0
-      || cycles > Number.MAX_SAFE_INTEGER - this.cpu.cycles - 14) {
+      || cycles > Number.MAX_SAFE_INTEGER - this.cpu.cycles - 22) {
       throw new RangeError('cycle budget exceeds the safe integer range');
     }
     const target = this.cpu.cycles + cycles;
     while (this.cpu.cycles < target) {
-      if (this.dmaStall) {
-        const used = Math.min(this.dmaStall, target - this.cpu.cycles);
-        this.dmaStall -= used;
-        this.cpu.cycles += used;
-        this.clockDevices(used);
-        continue;
-      }
-      if (this.oamDma.active) {
-        this.beginCpuCycle(); this.oamDma.step(); this.endCpuCycle(); this.cpu.cycles++; continue;
+      if (this.dmcDma.active || this.oamDma.active) {
+        const odd = ((this.cpu.cycles + 1) & 1) !== 0;
+        const dmcActive = this.dmcDma.active;
+        this.beginCpuCycle();
+        const busy = dmcActive && this.dmcDma.step(odd, this.cpu.pc, this.oamDma.active);
+        this.oamDma.step(odd, busy);
+        this.endCpuCycle(); this.cpu.cycles++; continue;
       }
       const used = this.cpu.step();
       if (used > this.cpu.busCycles) this.clockDevices(used - this.cpu.busCycles);
@@ -117,10 +124,9 @@ export class Nes implements CpuBus {
   writeDma(value: number): void { this.openBus = value; this.ppu.writeRegister(4, value); }
 
   readDmc(address: number): number {
-    // ponytail: four-cycle fetch stall; bus-phase alignment and OAM overlap need cycle-level DMA.
-    this.dmaStall += 4;
-    return this.read(address);
+    this.dmcDma.request(address); return 256;
   }
+  completeDmc(value: number): void { this.apu.completeDmc(value); }
 
   private clockDevices(cycles: number): void {
     this.clockPpu(cycles * 3);
@@ -137,7 +143,7 @@ export class Nes implements CpuBus {
   private endCpuCycle(): void { this.clockPpu(1); this.cpu.nmiPending = this.ppu.consumeNmi() || this.cpu.nmiPending; }
   saveState(): Uint8Array {
     const cart = this.cartridge.saveState(), ppu = this.ppu.saveState(), apu = this.apu.saveState();
-    const out = new Uint8Array(Cpu6502.STATE_SIZE + cart.length + ppu.length + apu.length + 8 + this.ram.length + 1 + OamDma.STATE_SIZE + 8);
+    const out = new Uint8Array(Cpu6502.STATE_SIZE + cart.length + ppu.length + apu.length + 8 + this.ram.length + 1 + OamDma.STATE_SIZE + DmcDma.STATE_SIZE);
     let offset = 0;
     out.set(this.cpu.save(), offset); offset += Cpu6502.STATE_SIZE;
     out.set(cart, offset); offset += cart.length;
@@ -148,20 +154,18 @@ export class Nes implements CpuBus {
     out.set(this.ram, offset); offset += this.ram.length;
     out[offset++] = this.openBus;
     out.set(this.oamDma.saveState(), offset); offset += OamDma.STATE_SIZE;
-    // Preserve pending DMC stall cycles.
-    new DataView(out.buffer).setFloat64(offset, this.dmaStall, true);
+    out.set(this.dmcDma.saveState(), offset);
     return out;
   }
   loadState(state: Uint8Array): void {
     const cartSize = this.cartridge.stateSize, ppuSize = PPU_STATE_SIZE, apuSize = Apu.STATE_SIZE;
-    const size = Cpu6502.STATE_SIZE + cartSize + ppuSize + apuSize + 8 + this.ram.length + 1 + OamDma.STATE_SIZE + 8;
+    const size = Cpu6502.STATE_SIZE + cartSize + ppuSize + apuSize + 8 + this.ram.length + 1 + OamDma.STATE_SIZE + DmcDma.STATE_SIZE;
     if (state.length !== size) throw new RangeError('Invalid state size');
     state = new Uint8Array(state); // Validate and apply the same bytes, including shared-memory inputs.
-    const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
-    const dmaState = state.subarray(size - 8 - OamDma.STATE_SIZE, size - 8);
+    const dmaState = state.subarray(size - DmcDma.STATE_SIZE - OamDma.STATE_SIZE, size - DmcDma.STATE_SIZE);
     OamDma.validateState(dmaState);
-    const dmaStall = view.getFloat64(size - 8, true);
-    if (!Number.isSafeInteger(dmaStall) || dmaStall < 0) throw new RangeError('Invalid DMA state');
+    const dmcState = state.subarray(size - DmcDma.STATE_SIZE);
+    DmcDma.validateState(dmcState);
     let offset = Cpu6502.STATE_SIZE;
     const cart = state.subarray(offset, offset += cartSize);
     const ppu = state.subarray(offset, offset += ppuSize);
@@ -174,6 +178,7 @@ export class Nes implements CpuBus {
     this.cartridge.validateState(cart);
     Ppu.validateState(ppu);
     Apu.validateState(apu);
+    if (!!(apu[67] & 4) !== !!(dmcState[0] || dmcState[1])) throw new RangeError('Invalid DMC DMA request state');
     Controller.validateState(controller1);
     Controller.validateState(controller2);
     this.cpu.load(cpu);
@@ -187,7 +192,7 @@ export class Nes implements CpuBus {
     this.openBus = state[offset + this.ram.length];
     this.nmiPolled = this.irqPolled = this.nmiEarlier = this.irqEarlier = false;
     this.oamDma.loadState(dmaState);
-    this.dmaStall = dmaStall;
+    this.dmcDma.loadState(dmcState);
   }
   runFrame(cycles?: number): Frame {
     if (cycles !== undefined) this.step(cycles);

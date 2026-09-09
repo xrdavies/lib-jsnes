@@ -41,7 +41,7 @@ test('system DMA reads source data when its read cycle occurs and retains a buff
   const restored = new Nes(rom()); restored.reset(); restored.loadState(saved);
   restored.write(0x200, 0xff); restored.write(0x201, 0x56); restored.step(3);
   assert.deepEqual(restored.saveState(), nes.saveState());
-  const invalid = saved.slice(); invalid[invalid.length - 14 + 4] = 3;
+  const invalid = saved.slice(); invalid[invalid.length - 9 + 4] = 3;
   const before = restored.saveState();
   assert.throws(() => restored.loadState(invalid), /Invalid OAM DMA state/);
   assert.deepEqual(restored.saveState(), before);

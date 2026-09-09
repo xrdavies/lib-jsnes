@@ -137,20 +137,24 @@ class Noise {
   clockLength(): void { if (this.length > 0 && !(this.regs[0] & 0x20)) this.length--; }
   sample(): number { return this.enabled && this.length > 0 && !(this.shift & 1) ? this.envelope.volume(this.regs[0]) : 0; }
 }
-/** The host reads CPU-mapped sample memory and charges the fetch stall. */
+/** Return a byte immediately, or 256 and later call Apu.completeDmc(). */
 export interface DmcBus { readDmc(address: number): number; }
 const DMC_PERIOD = [428,380,340,320,286,254,226,214,190,160,142,128,106,84,72,54];
+// The host cycle count excludes the seven CPU reset cycles.
+const DMC_RESET_TIMER = 428 - 1 - 7;
 class Dmc {
   regs = new Uint8Array(4);
   output = 0;
   address = 0xc000;
   remaining = 0;
-  timer = 0;
+  timer = DMC_RESET_TIMER;
+  startDelay = 0;
   shift = 0;
   bits = 8;
   buffer = 256; // Empty; every 8-bit sample value is valid.
   silence = true;
   irq = false;
+  fetchPending = false;
   write(index: number, value: number): void {
     this.regs[index] = value;
     if (index === 0 && !(value & 0x80)) this.irq = false;
@@ -161,20 +165,22 @@ class Dmc {
     this.address = 0xc000 + start * 64;
     this.remaining = length * 16 + 1;
   }
-  enable(enabled: boolean): void {
+  enable(enabled: boolean, oddCycle: boolean): void {
     this.irq = false;
+    // ponytail: a queued DMA still completes on disable; CPU-specific abort timing remains unmodeled.
     if (!enabled) this.remaining = 0;
-    else if (this.remaining === 0) this.restart();
+    else if (this.remaining === 0) { this.restart(); this.startDelay = oddCycle ? 3 : 2; }
+  }
+  private request(bus: DmcBus | null): void {
+    if (!this.fetchPending && this.buffer === 256 && this.remaining > 0 && bus !== null) {
+      this.fetchPending = true;
+      const value = bus.readDmc(this.address);
+      if (value !== 256) this.complete(value);
+    }
   }
   step(bus: DmcBus | null): void {
-    if (this.buffer === 256 && this.remaining > 0 && bus !== null) {
-      this.buffer = bus.readDmc(this.address) & 255;
-      this.address = this.address === 0xffff ? 0x8000 : this.address + 1;
-      if (--this.remaining === 0) {
-        if (this.regs[0] & 0x40) this.restart();
-        else if (this.regs[0] & 0x80) this.irq = true;
-      }
-    }
+    if (this.startDelay) this.startDelay--;
+    if (!this.startDelay) this.request(bus);
     if (this.timer-- > 0) return;
     this.timer = DMC_PERIOD[this.regs[0] & 15] - 1;
     if (!this.silence) {
@@ -185,17 +191,31 @@ class Dmc {
     if (--this.bits === 0) {
       this.bits = 8;
       this.silence = this.buffer === 256;
-      if (!this.silence) { this.shift = this.buffer; this.buffer = 256; }
+      if (!this.silence) {
+        this.shift = this.buffer; this.buffer = 256;
+        if (!this.startDelay) this.request(bus);
+      }
+    }
+  }
+  complete(value: number): void {
+    if (!this.fetchPending) return;
+    this.fetchPending = false;
+    if (!this.remaining) return;
+    this.buffer = value & 255;
+    this.address = this.address === 0xffff ? 0x8000 : this.address + 1;
+    if (--this.remaining === 0) {
+      if (this.regs[0] & 0x40) this.restart();
+      else if (this.regs[0] & 0x80) this.irq = true;
     }
   }
   reset(): void {
-    this.regs.fill(0); this.output = this.remaining = this.timer = this.shift = 0;
-    this.address = 0xc000; this.bits = 8; this.buffer = 256; this.silence = true; this.irq = false;
+    this.regs.fill(0); this.output = this.remaining = this.shift = this.startDelay = 0; this.timer = DMC_RESET_TIMER;
+    this.address = 0xc000; this.bits = 8; this.buffer = 256; this.silence = true; this.irq = this.fetchPending = false;
   }
 }
-/** Five-channel NTSC synthesis; exact DMA bus arbitration remains incomplete. */
+/** Five-channel NTSC synthesis, with immediate or deferred DMC sample delivery. */
 export class Apu {
-  static readonly STATE_SIZE = 130;
+  static readonly STATE_SIZE = 131;
   private frameWriteDelay = 0;
   private pendingMode5 = false;
   private frameClockBlock = 0;
@@ -206,13 +226,14 @@ export class Apu {
   constructor(private readonly bus: DmcBus | null = null) {}
   readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(1),new Pulse(0)]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private mode5=false; private frameIrq=false; private irqInhibit=false; private samples:number[]=[];
   get irqPending(): boolean { return this.frameIrq || this.dmc.irq; }
+  completeDmc(value: number): void { this.dmc.complete(value); }
   write(address:number,value:number):void {
     value&=255;
     if(address>=0x4000&&address<0x4008)this.pulse[address<0x4004?0:1].write(address&3,value);
     else if(address>=0x4008&&address<0x400c)this.triangle.write(address&3,value);
     else if(address>=0x400c&&address<0x4010)this.noise.write(address&3,value);
     else if(address>=0x4010&&address<=0x4013)this.dmc.write(address&3,value);
-    else if(address===0x4015){this.dmc.enable(!!(value&16));this.pulse[0].enabled=!!(value&1);this.pulse[1].enabled=!!(value&2);this.triangle.enabled=!!(value&4);this.noise.enabled=!!(value&8);if(!this.pulse[0].enabled)this.pulse[0].length=0;if(!this.pulse[1].enabled)this.pulse[1].length=0;if(!this.triangle.enabled)this.triangle.length=0;if(!this.noise.enabled)this.noise.length=0;}
+    else if(address===0x4015){this.dmc.enable(!!(value&16), this.pulseClock);this.pulse[0].enabled=!!(value&1);this.pulse[1].enabled=!!(value&2);this.triangle.enabled=!!(value&4);this.noise.enabled=!!(value&8);if(!this.pulse[0].enabled)this.pulse[0].length=0;if(!this.pulse[1].enabled)this.pulse[1].length=0;if(!this.triangle.enabled)this.triangle.length=0;if(!this.noise.enabled)this.noise.length=0;}
     else if(address===0x4017){
       this.pendingMode5 = !!(value & 0x80);
       this.frameWriteDelay = this.pulseClock ? 4 : 3;
@@ -251,12 +272,13 @@ export class Apu {
       out.set([+channel.envelope.start, channel.envelope.divider, channel.envelope.decay], 48 + i * 3);
     }
     out.set(this.dmc.regs, 62);
-    out[66] = this.dmc.output; out[67] = +this.dmc.silence | (+this.dmc.irq << 1);
+    out[66] = this.dmc.output; out[67] = +this.dmc.silence | (+this.dmc.irq << 1) | (+this.dmc.fetchPending << 2);
     out[68] = this.dmc.bits; out[69] = this.dmc.shift;
     view.setUint16(70, this.dmc.buffer, true); view.setUint16(72, this.dmc.address, true);
     view.setUint16(74, this.dmc.remaining, true); view.setUint16(76, this.dmc.timer, true);
     out[78] = +this.pulseClock;
     out[127] = this.frameWriteDelay; out[128] = +this.pendingMode5; out[129] = this.frameClockBlock;
+    out[130] = this.dmc.startDelay;
     for (let i = 0; i < this.filterState.length; i++) view.setFloat64(79 + i * 8, this.filterState[i], true);
     return out;
   }
@@ -285,7 +307,8 @@ export class Apu {
       || [24, 26].some(offset => view.getUint16(offset, true) > 0x7ff)
       || view.getUint16(28, true) > 0x800
       || view.getUint16(30, true) > 4068) throw new RangeError('Invalid APU state values');
-    if (state[66] > 127 || state[67] > 3 || state[68] < 1 || state[68] > 8
+    if (state[130] > 3 || state[66] > 127 || state[67] > 7 || state[68] < 1 || state[68] > 8
+      || ((state[67] & 4) && view.getUint16(70, true) !== 256)
       || view.getUint16(70, true) > 256 || view.getUint16(72, true) < 0x8000
       || view.getUint16(74, true) > 4081 || view.getUint16(76, true) > 427) throw new RangeError('Invalid DMC state');
   }
@@ -299,6 +322,8 @@ export class Apu {
     this.pulseClock = !!state[78];
     this.dmc.regs.set(state.subarray(62, 66)); this.dmc.output = state[66];
     this.dmc.silence = !!(state[67] & 1); this.dmc.irq = !!(state[67] & 2);
+    this.dmc.fetchPending = !!(state[67] & 4);
+    this.dmc.startDelay = state[130];
     this.dmc.bits = state[68]; this.dmc.shift = state[69];
     this.dmc.buffer = view.getUint16(70, true); this.dmc.address = view.getUint16(72, true);
     this.dmc.remaining = view.getUint16(74, true); this.dmc.timer = view.getUint16(76, true);

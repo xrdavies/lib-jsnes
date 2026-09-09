@@ -42,17 +42,23 @@ test('DMC completion enters CPU IRQ once and $4015 acknowledges it in both cores
   assert.deepEqual(wasm.audioSamples(), js.audioSamples());
 });
 
-test('each DMC fetch adds four CPU stall cycles and snapshots preserve a pending fetch stall', () => {
-  const bytes = rom(); const js = new Nes(bytes); js.reset();
-  // Enable a one-byte sample via host writes before the first instruction.
-  js.write(0x4010, 15); js.write(0x4012, 0); js.write(0x4013, 0); js.write(0x4015, 16);
-  js.step(1); assert.equal(js.cycleCount, 2); const pc = js.cpu.pc;
-  const snapshot = js.saveState(); js.audioSamples();
-  js.step(4); assert.equal(js.cpu.pc, pc); assert.equal(js.cycleCount, 6);
-  js.step(1); assert.equal(js.cycleCount, 10); // STA absolute, four cycles.
-  const target = new Nes(bytes); target.reset(); target.loadState(snapshot); target.step(5);
-  assert.equal(target.cycleCount, js.cycleCount); assert.equal(target.cpu.pc, js.cpu.pc);
-  assert.deepEqual(target.audioSamples(), js.audioSamples());
+test('DMC snapshots retain halt/dummy/read phases and fetch current memory only on the read cycle', () => {
+  const bytes = rom(), source = new Nes(bytes); source.reset();
+  source.write(0x4010, 15); source.write(0x4012, 0); source.write(0x4013, 0); source.write(0x4015, 16);
+  source.step(1); assert.equal(source.cycleCount, 2);
+  const saved = source.saveState(), restored = new Nes(bytes); restored.reset(); restored.loadState(saved);
+  for (const core of [source, restored]) {
+    const pc = core.cpu.pc;
+    core.step(2); assert.equal(core.cpu.pc, pc); assert.equal(core.cycleCount, 4);
+    assert.equal(new DataView(core.apu.saveState().buffer).getUint16(74, true), 1);
+    core.rom.prgRom[0x4000] = 0x81;
+    core.step(1); assert.equal(core.cpu.pc, pc); assert.equal(core.cycleCount, 5);
+    assert.equal(core.apu.saveState()[70], 0x81);
+    assert.equal(new DataView(core.apu.saveState().buffer).getUint16(74, true), 0);
+    core.step(1); assert.equal(core.cycleCount, 9);
+  }
+  assert.deepEqual(restored.saveState(), source.saveState());
+  assert.deepEqual(restored.audioSamples(), source.audioSamples());
 });
 
 test('Nes DMC snapshots reproduce active sample output and mapper state', () => {
@@ -71,7 +77,7 @@ test('DMC reads current mapper banks after address wrap in both builds', async (
   const loop=0xc100+code.length;code.push(0x4c,loop&255,loop>>>8);
   bytes.set(code,16+0xc100);bytes.set([0,0xc1],16+0xfffc);
   const js=new Nes(bytes),wasm=await WasmCore.from(binary);js.reset();wasm.loadRom(bytes);wasm.reset();
-  const reads=[],read=js.readDmc.bind(js);js.readDmc=a=>{const v=read(a);reads.push([a,v]);return v;};
+  const reads=[],read=js.readDma.bind(js);js.readDma=a=>{const v=read(a);if(a>=0xffc0||a===0x8000)reads.push([a,v]);return v;};
   js.step(40000);wasm.step(40000);
   assert.equal(reads.length,65);assert.deepEqual(reads[0],[0xffc0,0x43]);assert.deepEqual(reads[64],[0x8000,0x42]);
   assert.deepEqual(wasm.audioSamples(),js.audioSamples());assert.equal(wasm.cycleCount,js.cycleCount);

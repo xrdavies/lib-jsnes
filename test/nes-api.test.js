@@ -34,9 +34,9 @@ test('Nes reserves interrupt-entry headroom before executing near the safe limit
   value.cpu.cycles = Number.MAX_SAFE_INTEGER - 7;
   assert.throws(() => value.step(1), /safe integer range/);
   assert.equal(value.cpu.cycles, Number.MAX_SAFE_INTEGER - 7);
-  value.cpu.cycles = Number.MAX_SAFE_INTEGER - 15;
+  value.cpu.cycles = Number.MAX_SAFE_INTEGER - 23;
   value.step(1);
-  assert.equal(value.cpu.cycles, Number.MAX_SAFE_INTEGER - 12);
+  assert.equal(value.cpu.cycles, Number.MAX_SAFE_INTEGER - 20);
 });
 
 test('cycle guard covers an eight-cycle instruction followed by NMI or IRQ without partial changes', () => {
@@ -47,14 +47,20 @@ test('cycle guard covers an eight-cycle instruction followed by NMI or IRQ witho
     const value = new Nes(rom); value.reset(); value.write(0x10, 0); value.write(0x11, 2);
     value.write(0x200, 0x81);
     if (nmi) { value.write(0x2000, 0x80); value.ppu.step(241 * 341 + 1); }
-    else { value.cpu.p &= ~4; value.apu.step(29829); }
-    for (const remaining of [8, 9, 14]) {
+    else value.cpu.p &= ~4;
+    value.apu.step(29829);
+    value.write(0x4013, 1); value.write(0x4015, 16); value.apu.step(2);
+    // Initial fetch halts the operand read; consuming its byte then requests a
+    // refill before the pointer read. Both transfers take four clocks.
+    const apuState = value.apu.saveState(); apuState[68] = 1;
+    new DataView(apuState.buffer).setUint16(76, 6, true); value.apu.loadState(apuState);
+    for (const remaining of [8, 9, 14, 18, 22]) {
       value.cpu.cycles = Number.MAX_SAFE_INTEGER - remaining;
       const before = value.saveState();
       assert.throws(() => value.step(1), /safe integer range/);
       assert.deepEqual(value.saveState(), before);
     }
-    value.cpu.cycles = Number.MAX_SAFE_INTEGER - 15;
+    value.cpu.cycles = Number.MAX_SAFE_INTEGER - 23;
     value.step(1);
     assert.equal(value.cycleCount, Number.MAX_SAFE_INTEGER);
     assert.equal(value.cpu.pc, 0x8100);

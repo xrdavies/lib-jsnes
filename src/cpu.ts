@@ -63,6 +63,7 @@ export class Cpu6502 {
         return true;
     }
     nmi(): boolean { if (this.halted) return false; this.interrupt(0xfffa); return true; }
+    stallCycle(): void { this.cycles++; this.busOdd = !this.busOdd; }
     step(): number {
         this.busCycles = 0;
         this.interruptPollEarly = false;

@@ -50,3 +50,18 @@ test('CPU-requested OAM DMA uses write-cycle parity for every relevant store mod
     }
   }
 });
+
+test('DMA stalls inside an operand read update the following CPU write parity', () => {
+  for (const start of [0, 1, 2 ** 32]) for (const stalls of [3, 4]) {
+    const memory = new Uint8Array(65536); memory.set([0x8d, 0, 2], 0x8000);
+    let writeOdd;
+    const cpu = new Cpu6502({ read(a) {
+      if (a === 0x8001) for (let i = 0; i < stalls; i++) cpu.stallCycle();
+      return memory[a];
+    }, write(a, v, consecutive, odd) { writeOdd = odd; } });
+    cpu.pc = 0x8000; cpu.cycles = start;
+    assert.equal(cpu.step(), 4); assert.equal(cpu.busCycles, 4);
+    assert.equal(cpu.cycles, start + stalls + 4);
+    assert.equal(writeOdd, cpu.cycles % 2 === 1);
+  }
+});

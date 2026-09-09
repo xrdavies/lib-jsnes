@@ -177,7 +177,7 @@ DMA reads complete on odd cycles and writes on even cycles. Source bytes are rea
 when their transfer cycle occurs; OAM fills progressively instead of changing
 immediately on `$4014`. The source page, byte index, read latch, alignment count
 and read/write phase are stored in a six-byte snapshot section after CPU RAM,
-the CPU bus byte, followed by the eight-byte DMC stall counter. Earlier full-system
+the CPU bus byte, followed by a three-byte DMC DMA address/phase section. Earlier full-system
 snapshots lacking the new section are rejected. Tests restore every transfer
 phase, check read/write parity, change source memory mid-transfer and check
 CPU-visible OAM in both builds. DMA accesses use the same two-before/one-after
@@ -186,9 +186,11 @@ later PPUSTATUS acknowledgement and snapshot restoration.
 Repeated host writes before stepping replace the pending page rather than queue
 multiple transfers. The standalone `Ppu.dma(bytes)` utility remains an immediate
 copy; CPU `$4014` writes use the shared DMA state machine.
-DMC fetch stalls temporarily pause OAM DMA in this model. Exact get/put alignment,
-DMC/OAM arbitration and DMA halt-read side effects still require more detailed
-DMA timing.
+DMC halt/dummy clocks overlap ongoing OAM cycles. A ready DMC fetch owns the next
+odd read cycle; OAM retains its buffered byte or waits, and an empty even write
+cycle is skipped. A fetch in the middle of an OAM transfer therefore adds two
+cycles instead of four. CPU-specific aborts and internal-register bus conflicts
+remain incomplete.
 OAM alignment now uses the parity of the actual CPU write access, including
 the extra cycle in indexed stores and the second write of RMW instructions.
 The CPU bus passes this as a fourth `oddCycle` argument to `write`; custom hosts
@@ -238,10 +240,19 @@ snapshot continuation, and matching PCM from the TypeScript and WASM builds.
 
 DMC implements the 16 NTSC sample rates, one-byte prefetch, LSB-first delta
 output, seven-bit DAC limits, address wrap, looping, and completion IRQs. Both
-system cores read samples through their current CPU cartridge mapping and charge
-four stall cycles per fetch. This is an instruction-level DMA approximation:
-read-cycle alignment, OAM/DMC arbitration, and controller-read glitches are not
-modeled. The output feeds the shared nonlinear mixer and three-stage filter chain.
+system cores request DMA rather than fetching immediately. The CPU can be halted
+only on a read; the transfer performs halt, dummy, optional alignment and sample
+read cycles. Standalone transfers take three or four cycles. Operand and dummy
+reads can be stalled inside an instruction, and the CPU retains correct write
+parity afterward. The final fetch uses the current cartridge mapping and only
+then updates the buffer, address, remaining length and completion IRQ.
+Enabling a sample schedules its initial request after two or three clocks;
+buffer reloads request immediately when the output unit consumes the byte.
+The default divider accounts for the seven reset cycles excluded from the host
+counter. DMA repeats the held CPU read; standard NES controller ports are clocked
+only on the first held read. Revision-specific abort/duplication and bus-conflict
+quirks remain unimplemented. The output feeds the shared nonlinear mixer and
+three-stage filter chain.
 
 The mixer uses generated transfer-curve tables: `95.52 / (8128 / p + 100)`
 for the sum of the two pulse DACs, and `163.67 / (24329 / tnd + 100)` for
@@ -263,16 +274,21 @@ step/release behavior, gain against analytic transfer functions from 20 Hz to
 
 `new Apu()` remains valid for standalone synthesis, including direct `$4011` DAC
 writes. For DMC sample playback, supply `new Apu({ readDmc(address) { ... } })`;
-the host supplies memory and accounts for fetch stalls. `Nes` and `WasmCore`
-connect this bus automatically. Reading `$4015` clears only the frame IRQ;
+the host may return a byte immediately, or return `256` and later supply the byte
+through `apu.completeDmc(value)`. Deferred requests are not repeated while pending.
+`Nes` and `WasmCore` connect and clock this bus automatically. Reading `$4015` clears only the frame IRQ;
 writing `$4015` or disabling IRQ in `$4010` acknowledges DMC IRQ. Stopping the
 reader leaves buffered output and the current DAC level intact.
 
-The APU snapshot is now 130 bytes and includes the DMC reader, prefetch byte,
+The APU snapshot is now 131 bytes and includes the DMC reader, prefetch byte,
 shift register, timer, DAC, IRQ, independent pulse-clock phase and filter history.
 The three previous-input/output pairs are little-endian Float64 values at
 offsets 79/87, 95/103 and 111/119. Bytes 127–129 store the pending frame-write delay, pending mode and clock
-suppression state. Earlier APU snapshots without these fields are rejected.
+suppression state. Byte 130 stores the DMC start delay; bit 2 of byte 67 records
+a pending fetch. The three-byte system DMA section stores the requested address
+and halt/dummy/read phase, replacing the former eight-byte stall count. Earlier
+APU/system snapshots are rejected; inconsistent pending-request sections are
+rejected before any live state changes.
 DMC tests cover all rates, maximum length, mapper wrap, output limits, CPU IRQs,
 continued output after stopping, and snapshot replay in TypeScript, with PCM and
 CPU parity checks in WASM.
@@ -296,10 +312,10 @@ before crossing the ABI, where the original JavaScript value is no longer availa
 `Nes.step()` applies the same cumulative safe-integer guard: a budget that would
 make its CPU cycle counter exceed `Number.MAX_SAFE_INTEGER` is rejected before
 any CPU, PPU, APU, DMA or audio state changes.
-The guard reserves 14 additional cycles: up to seven for the final instruction's
-budget overshoot and seven for a following NMI or IRQ entry. The raw WASM step
+The guard reserves 22 additional cycles: up to seven for the final instruction's
+budget overshoot, eight for initial/refill DMC fetches and seven for a following NMI or IRQ entry. The raw WASM step
 function checks the same cumulative limit. Tests exercise an eight-cycle SLO
-followed by NMI or IRQ, verifying rejection without partial changes and exact
+with two intervening DMC fetches and NMI or IRQ, verifying rejection without partial changes and exact
 execution at the last permitted starting count.
 
 ## Cartridge support
@@ -460,8 +476,8 @@ source is temporary and is not shipped. There is no separately maintained WASM
 opcode switch or renderer. Tests compare all 151 official opcodes and the 52 stable LAX, SAX,
 SLO, RLA, SRE, RRA, DCP, and ISC encodings against the TypeScript CPU
 (registers, RAM, and cycles) and independently check every ADC/SBC operand pair.
-These checks establish CPU parity, not complete hardware compatibility;
-DMA arbitration and undocumented opcode coverage remain incomplete.
+These checks establish CPU parity, not complete hardware compatibility; board
+conflicts and unstable undocumented opcodes remain incomplete.
 `core.exports.unknownOpcodeCount()` reports encounters with unimplemented opcodes.
 
 Taken branches now perform their discarded opcode fetch, and page-crossing
@@ -702,7 +718,7 @@ in both cores:
 | `ppu_vbl_nmi/rom_singles/` | All 10 tests pass |
 | `ppu_open_bus/ppu_open_bus.nes` | Passes, including decay and partial-refresh checks |
 | `cpu_interrupts_v2/rom_singles/` | All 5 tests pass |
-| `sprdma_and_dmc_dma/` | Both combined-DMA timing tests fail |
+| `sprdma_and_dmc_dma/` | Both combined-DMA timing tests pass |
 
 The full instruction suite exposed missing immediate LAX and SHY/SHX support;
 those instructions are now implemented. The PPU suite exposed instruction-at-once
@@ -712,7 +728,7 @@ approximation still limit compatibility. These results do not establish full
 PPU or game compatibility.
 The additional CPU interrupt suite passes NMI takeover of BRK/IRQ vectoring and
 the OAM DMA boundary after correcting DMA bus parity. The combined DMC/OAM tests
-still fail: serial four-cycle DMC stalls do not model shared DMA arbitration.
+also pass with deferred fetching, shared preparation clocks and read-cycle priority.
 
 For a typed wrapper, load the generated bytes with `WasmCore.from()`:
 

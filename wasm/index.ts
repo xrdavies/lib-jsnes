@@ -2,27 +2,36 @@ import { Cpu6502, CpuBus } from '../dist-wasm/cpu.generated';
 import { Ppu } from '../dist-wasm/ppu.generated';
 import { Apu, DmcBus } from '../dist-wasm/apu.generated';
 import { Controller } from '../dist-wasm/controller.generated';
-import { OamDma, OamDmaBus } from '../dist-wasm/dma.generated';
+import { OamDma, OamDmaBus, DmcDma, DmcDmaBus } from '../dist-wasm/dma.generated';
 import { Cartridge, MAX_ROM_SIZE } from './cartridge';
 const RAM = new Uint8Array(0x800);
 const cartridge = new Cartridge();
 const ppu = new Ppu(cartridge);
 const apu = new Apu(new Bus());
 const oamDma = new OamDma(new Bus());
+const dmcDma = new DmcDma(new Bus());
 let audio = new Int16Array(0);
 const controller1 = new Controller(), controller2 = new Controller();
-let dmaStall: i32 = 0;
 let collectionCycles: i32 = 0;
 let frameCompleted: boolean = false;
 let openBus: i32 = 0;
 let nmiPolled: boolean = false, irqPolled: boolean = false;
 let nmiEarlier: boolean = false, irqEarlier: boolean = false;
-class Bus implements CpuBus, DmcBus, OamDmaBus {
+class Bus implements CpuBus, DmcBus, OamDmaBus, DmcDmaBus {
   readDma(address: i32): i32 { return read(address); }
   writeDma(value: i32): void { openBus = value; ppu.writeRegister(4, value); }
-  readDmc(address: i32): i32 { dmaStall += 4; return read(address); }
+  readDmc(address: i32): i32 { dmcDma.request(address); return 256; }
+  completeDmc(value: i32): void { apu.completeDmc(value); }
   read(address: i32, cpuCycle: boolean): i32 {
-    if (cpuCycle) beginCpuCycle();
+    if (cpuCycle) {
+      for (;;) {
+        const stalled = dmcDma.active;
+        beginCpuCycle();
+        if (!stalled) break;
+        dmcDma.step((<i64>(cpu.cycles + cpu.busCycles) & 1) != 0, address, false);
+        endCpuCycle(); cpu.stallCycle();
+      }
+    }
     const value = read(address);
     if (cpuCycle) endCpuCycle();
     return value;
@@ -80,34 +89,35 @@ export function loadRom(length: i32): void {
 }
 export function reset(): void {
   nmiPolled = irqPolled = nmiEarlier = irqEarlier = false;
-  RAM.fill(0); cartridge.reset(); ppu.reset(); apu.reset(); oamDma.reset(); audio = new Int16Array(0); dmaStall = 0;
+  RAM.fill(0); cartridge.reset(); ppu.reset(); apu.reset(); oamDma.reset(); audio = new Int16Array(0); dmcDma.reset();
   cpu.reset();
   collectionCycles = 0;
   __collect();
 }
 export function step(count: i32): void {
   if (count <= 0) return;
-  // Match the JS host: allow instruction overshoot plus interrupt entry.
-  if (cpu.cycles < 0 || cpu.cycles > 9007199254740991 - <f64>count - 14) {
+  // Match JS: instruction overshoot, initial/refill DMC DMAs, then interrupt entry.
+  if (cpu.cycles < 0 || cpu.cycles > 9007199254740991 - <f64>count - 22) {
     throw new RangeError('cycle budget exceeds the safe integer range');
   }
-  let remaining = count;
-  while (remaining > 0) {
+  const target = cpu.cycles + count;
+  while (cpu.cycles < target) {
     collectIfNeeded();
-    if (dmaStall > 0) {
-      const used = min(dmaStall, remaining);
-      dmaStall -= used; remaining -= used; cpu.cycles += used;
-      clockDevices(used);
-      continue;
+    if (dmcDma.active || oamDma.active) {
+      const odd = (<i64>(cpu.cycles + 1) & 1) != 0;
+      const dmcActive = dmcDma.active;
+      beginCpuCycle();
+      const busy = dmcActive && dmcDma.step(odd, cpu.pc, oamDma.active);
+      oamDma.step(odd, busy);
+      endCpuCycle(); cpu.cycles++; continue;
     }
-    if (oamDma.active) { beginCpuCycle(); oamDma.step(); endCpuCycle(); cpu.cycles++; remaining--; continue; }
-    const used = cpu.step(); remaining -= used;
+    const used = cpu.step();
     if (used > cpu.busCycles) clockDevices(used - cpu.busCycles);
     ppu.consumeScanlines();
     if (cpu.interruptEntry) continue;
     if (cpu.interruptPollEarly ? nmiEarlier : nmiPolled) {
-      if (cpu.nmi()) { cpu.cycles += 7; remaining -= 7; }
-    } else if (irqPolled && (!cpu.interruptPollEarly || irqEarlier) && cpu.irqAfterInstruction()) { cpu.cycles += 7; remaining -= 7; }
+      if (cpu.nmi()) cpu.cycles += 7;
+    } else if (irqPolled && (!cpu.interruptPollEarly || irqEarlier) && cpu.irqAfterInstruction()) cpu.cycles += 7;
   }
   collectIfNeeded();
 }

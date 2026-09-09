@@ -13,7 +13,7 @@ function voice(data = 0x85, rate = 15) {
 test('DMC shifts samples LSB first at every NTSC rate after the silent output cycle', () => {
   for (const [rate, period] of periods.entries()) {
     const { apu, reads } = voice(0x85, rate);
-    apu.step(1 + 7 * period); assert.equal(output(apu), 64); assert.deepEqual(reads, [0xc000]);
+    apu.step(421 + 7 * period); assert.equal(output(apu), 64); assert.deepEqual(reads, [0xc000]);
     for (const expected of [66, 64, 66, 64, 62, 60, 58, 60]) {
       const before = output(apu); apu.step(period - 1); assert.equal(output(apu), before);
       apu.step(1); assert.equal(output(apu), expected);
@@ -55,14 +55,14 @@ test('DMC loop restarts at the programmed address and suppresses completion IRQ'
 
 test('DMC repeated enable preserves the reader, and stopping preserves buffered output', () => {
   const { apu, reads } = voice(255); apu.write(0x4015, 0); apu.write(0x4013, 1); apu.write(0x4015, 16);
-  apu.step(1); assert.equal(remaining(apu), 16); apu.write(0x4015, 16); assert.equal(remaining(apu), 16);
-  apu.write(0x4015, 0); apu.step(1000);
+  apu.step(2); assert.equal(remaining(apu), 16); apu.write(0x4015, 16); assert.equal(remaining(apu), 16);
+  apu.write(0x4015, 0); apu.step(1500);
   assert.deepEqual(reads, [0xc000]); assert.equal(output(apu), 80);
 });
 
 test('DMC completion IRQ is acknowledged by either $4015 write or disabling IRQ via $4010', () => {
   for (const address of [0x4010, 0x4015]) {
-    const { apu } = voice(); apu.write(0x4010, 0x8f); apu.step(1);
+    const { apu } = voice(); apu.write(0x4010, 0x8f); apu.step(2);
     assert.equal(apu.readStatus() & 0x90, 0x80); assert.equal(output(apu), 64);
     apu.write(address, 0); assert.equal(apu.irqPending, false);
   }
@@ -75,7 +75,7 @@ test('DMC snapshot preserves prefetch, bit phase, DAC, and subsequent reads and 
   const restored = voice(); restored.apu.loadState(state); restored.apu.step(10000);
   assert.deepEqual(restored.reads, expectedReads); assert.deepEqual(restored.apu.drainSamples(), pcm);
   assert.deepEqual(restored.apu.saveState(), final);
-  for (const [offset, value] of [[66,128], [67,4], [68,0], [68,9], [71,2], [73,0], [75,255], [77,255]]) {
+  for (const [offset, value] of [[66,128], [67,8], [68,0], [68,9], [71,2], [73,0], [75,255], [77,255]]) {
     const corrupt = state.slice(); corrupt[offset] = value;
     assert.throws(() => restored.apu.loadState(corrupt), /DMC state/);
     assert.deepEqual(restored.apu.saveState(), final);
@@ -93,4 +93,24 @@ test('DMC maximum length fetches exactly 4081 bytes and retains its completion I
   assert.equal(restored.apu.readStatus() & 0x90, 0x80);
   assert.equal(restored.apu.irqPending, true);
   restored.apu.write(0x4015, 0); assert.equal(restored.apu.irqPending, false);
+});
+
+test('deferred DMC requests wait for completion, preserve snapshots and discard bytes after disable', () => {
+  const requests = [], apu = new Apu({ readDmc(a) { requests.push(a); return 256; } });
+  apu.write(0x4010, 0x8f); apu.write(0x4015, 16);
+  apu.step(1); assert.deepEqual(requests, []);
+  apu.step(1); assert.deepEqual(requests, [0xc000]);
+  assert.equal(apu.readStatus() & 0x90, 16);
+  const saved = apu.saveState(), restored = new Apu({ readDmc() { assert.fail('request already pending'); } });
+  restored.loadState(saved);
+  for (const core of [apu, restored]) {
+    core.step(100); core.completeDmc(0x85);
+    assert.equal(core.readStatus() & 0x90, 0x80);
+    assert.equal(core.saveState()[70], 0x85);
+  }
+  assert.deepEqual(apu.saveState(), restored.saveState());
+  assert.deepEqual(requests, [0xc000]);
+  restored.loadState(saved); restored.write(0x4015, 0); restored.completeDmc(0xff);
+  assert.equal(restored.readStatus() & 0x90, 0);
+  assert.equal(new DataView(restored.saveState().buffer).getUint16(70, true), 256);
 });

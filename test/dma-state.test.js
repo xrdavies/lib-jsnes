@@ -52,9 +52,9 @@ test('DMA snapshot metadata validates before mutation and accepts offset views',
   const nes = machine(); nes.write(0x4014, 0); nes.step(100);
   const state = nes.saveState();
   assert.throws(() => nes.loadState(state.subarray(0, state.length - 8)), /Invalid state size/);
-  for (const invalid of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
-    const corrupt = state.slice(); new DataView(corrupt.buffer).setFloat64(corrupt.length - 8, invalid, true);
-    assert.throws(() => nes.loadState(corrupt), /Invalid DMA state/);
+  for (const invalid of [[0, 0, 1], [0, 0, 3], [1, 0, 0], [0, 0x7f, 0], [0, 0x80, 0]]) {
+    const corrupt = state.slice(); corrupt.set(invalid, corrupt.length - 3);
+    assert.throws(() => nes.loadState(corrupt), /Invalid DMC DMA/);
     assert.equal(Buffer.compare(nes.saveState(), state), 0);
   }
   const storage = new Uint8Array(state.length + 11); storage.set(state, 7);
