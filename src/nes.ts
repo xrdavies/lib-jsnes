@@ -63,10 +63,10 @@ export class Nes implements CpuBus {
   reset(){this.ram.fill(0); this.cartridge.reset(); this.apu.reset(); this.dmaStall=0; this.ppu.reset(); this.cpu.reset(); this.cycles=0;}
   step(cycles = 1): void {
     if (!Number.isInteger(cycles) || cycles < 1) throw new RangeError('cycles must be a positive integer');
-    // An instruction can be followed by a seven-cycle interrupt entry before the
-    // loop checks its target again. Reserve that headroom so the counter never
-    // crosses MAX_SAFE_INTEGER after a partially executed step.
-    if (!Number.isSafeInteger(this.cpu.cycles) || cycles > Number.MAX_SAFE_INTEGER - this.cpu.cycles - 7) {
+    // The final instruction can overshoot by 7 cycles (8-cycle instruction with
+    // one cycle left), followed by a 7-cycle interrupt before checking the target.
+    if (!Number.isSafeInteger(this.cpu.cycles) || this.cpu.cycles < 0
+      || cycles > Number.MAX_SAFE_INTEGER - this.cpu.cycles - 14) {
       throw new RangeError('cycle budget exceeds the safe integer range');
     }
     const target = this.cpu.cycles + cycles;

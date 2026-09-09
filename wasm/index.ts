@@ -68,6 +68,10 @@ export function reset(): void {
 }
 export function step(count: i32): void {
   if (count <= 0) return;
+  // Match the JS host: allow instruction overshoot plus interrupt entry.
+  if (cpu.cycles < 0 || cpu.cycles > 9007199254740991 - <f64>count - 14) {
+    throw new RangeError('cycle budget exceeds the safe integer range');
+  }
   let remaining = count;
   while (remaining > 0) {
     if (dmaStall > 0) {

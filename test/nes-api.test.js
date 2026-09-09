@@ -34,7 +34,33 @@ test('Nes reserves interrupt-entry headroom before executing near the safe limit
   value.cpu.cycles = Number.MAX_SAFE_INTEGER - 7;
   assert.throws(() => value.step(1), /safe integer range/);
   assert.equal(value.cpu.cycles, Number.MAX_SAFE_INTEGER - 7);
-  value.cpu.cycles = Number.MAX_SAFE_INTEGER - 9;
+  value.cpu.cycles = Number.MAX_SAFE_INTEGER - 15;
   value.step(1);
-  assert.equal(value.cpu.cycles, Number.MAX_SAFE_INTEGER - 6);
+  assert.equal(value.cpu.cycles, Number.MAX_SAFE_INTEGER - 12);
+});
+
+test('cycle guard covers an eight-cycle instruction followed by NMI or IRQ without partial changes', () => {
+  for (const nmi of [true, false]) {
+    const rom = new Uint8Array(16 + 0x4000);
+    rom.set([78, 69, 83, 26, 1, 0]); rom.set([0x03, 0x10], 16); // SLO ($10,X), eight cycles.
+    rom.set([0, 0x81, 0, 0x80, 0, 0x81], 16 + 0x3ffa);
+    const value = new Nes(rom); value.reset(); value.write(0x10, 0); value.write(0x11, 2);
+    value.write(0x200, 0x81);
+    if (nmi) { value.write(0x2000, 0x80); value.ppu.step(241 * 341 + 1); }
+    else { value.cpu.p &= ~4; value.apu.step(29829); }
+    for (const remaining of [8, 9, 14]) {
+      value.cpu.cycles = Number.MAX_SAFE_INTEGER - remaining;
+      const before = value.saveState();
+      assert.throws(() => value.step(1), /safe integer range/);
+      assert.deepEqual(value.saveState(), before);
+    }
+    value.cpu.cycles = Number.MAX_SAFE_INTEGER - 15;
+    value.step(1);
+    assert.equal(value.cycleCount, Number.MAX_SAFE_INTEGER);
+    assert.equal(value.cpu.pc, 0x8100);
+    assert.equal(value.read(0x200), 2);
+    const stopped = value.saveState();
+    assert.throws(() => value.runFrame(1), /safe integer range/);
+    assert.deepEqual(value.saveState(), stopped);
+  }
 });
