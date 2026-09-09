@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lib-jsnes browser benchmark</title>
+<style>
+  body { font: 1rem/1.5 system-ui, sans-serif; max-width: 54rem; margin: 2rem auto; padding: 0 1rem; }
+  button { font: inherit; padding: .5rem 1rem; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f2f2f2; padding: 1rem; }
+</style>
+<h1>lib-jsnes browser benchmark</h1>
+<p>Run <code>npm test</code>, then serve the repository over HTTP. This page uses
+the same synthetic ROM and benchmark as <code>node scripts/benchmark.mjs</code>.
+No game file is required.</p>
+<p>The check compares 240 frames of CPU registers, cycles, pixels and PCM before
+timing five alternating rounds (60 warmup frames and 180 measured frames per core).
+Timings include emulation and audio drains. Loading, display, RGBA conversion,
+audio playback and parity checks are excluded.</p>
+<p>Keep this tab visible and avoid other intensive work. The page may briefly pause
+while measuring. A WASM speedup above 1 means WASM was faster on this run.</p>
+<button id="run" type="button">Run benchmark</button>
+<p id="status" role="status">Ready.</p>
+<pre id="result" aria-label="Benchmark results">No measurements yet.</pre>
+<script type="module">
+  const button = document.querySelector('#run');
+  const status = document.querySelector('#status');
+  const result = document.querySelector('#result');
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    result.textContent = 'No measurements yet.';
+    let hidden = document.hidden;
+    const visibility = () => { hidden ||= document.hidden; };
+    document.addEventListener('visibilitychange', visibility);
+    try {
+      status.textContent = 'Loading core and WASM…';
+      const { benchmark, workload } = await import('./benchmark-core.mjs');
+      const response = await fetch('../dist-wasm/lib-jsnes.wasm');
+      if (!response.ok) throw new Error(`WASM request failed: ${response.status}. Run npm test first.`);
+      const measurements = await benchmark(workload(), await response.arrayBuffer(), async message => {
+        status.textContent = message;
+        // Give the page time to paint and process visibility changes outside timing.
+        await new Promise(resolve => setTimeout(resolve, 0));
+        if (hidden || document.hidden) throw new Error('Tab was hidden. Keep it visible and rerun.');
+      });
+      result.textContent = JSON.stringify({
+        userAgent: navigator.userAgent,
+        workload: 'synthetic NROM',
+        ...measurements,
+      }, null, 2);
+      status.textContent = 'Complete. CPU, pixel and PCM parity passed.';
+    } catch (error) {
+      status.textContent = `Benchmark failed: ${error.message}`;
+    } finally {
+      document.removeEventListener('visibilitychange', visibility);
+      button.disabled = false;
+    }
+  });
+</script>
+</html>

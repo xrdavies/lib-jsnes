@@ -26,6 +26,22 @@ but excludes module loading, RGBA conversion, display, and audio playback.
 Optional arguments select a local ROM and WASM binary; paths and ROM names are
 not printed. Timing is informational and is not a CI pass/fail threshold.
 
+For the browser benchmark, run `npm test`, then serve the repository root:
+
+```sh
+python3 -m http.server 8000 --bind 127.0.0.1
+```
+
+Open `http://127.0.0.1:8000/scripts/benchmark.html` and select **Run benchmark**.
+Keep the tab visible; a run that observes a hidden tab is rejected. The browser
+and Node entry points share the synthetic ROM, parity checks and timing loop.
+Both compare all six CPU registers, cycles, every pixel and every PCM sample
+before timing. Results include individual rounds, medians and WASM speedup
+(TypeScript time divided by WASM time; above 1 means WASM was faster).
+The browser page also records its user-agent string. Progress updates and browser
+event-loop yields occur outside the timed regions. No game file is uploaded.
+This measures core execution; it does not measure canvas or Web Audio performance.
+
 On the development macOS arm64 machine (Node 24.15.0), tile-row fetch reuse reduced
 the synthetic median from about 1.99 to 0.87 ms/frame in TypeScript and from 4.55
 to 2.30 ms/frame in WASM. The optimized binary is about 50.6 kB versus 62.6 kB.
