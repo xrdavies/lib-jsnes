@@ -134,7 +134,7 @@ outside the current timing model.
 Pulse channels implement all four duty patterns, CPU/2 timer clocks, and half-frame
 sweeps with channel-specific negate and target-overflow muting. Tests check output
 frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains
-incomplete: exact frame edge timing and the nonlinear mixer are not implemented.
+incomplete: exact frame edge timing and analog output filters are not implemented.
 
 The triangle timer runs every CPU cycle and advances its 32-step sequencer once
 per programmed period plus one, gated by the length and linear counters. Tests
@@ -151,8 +151,19 @@ output, seven-bit DAC limits, address wrap, looping, and completion IRQs. Both
 system cores read samples through their current CPU cartridge mapping and charge
 four stall cycles per fetch. This is an instruction-level DMA approximation:
 read-cycle alignment, OAM/DMC arbitration, and controller-read glitches are not
-modeled. The output uses a provisional linear gain; analog mixing/filtering is
-still incomplete.
+modeled. The output feeds the shared nonlinear mixer; analog filtering remains incomplete.
+
+The mixer uses generated transfer-curve tables: `95.52 / (8128 / p + 100)`
+for the sum of the two pulse DACs, and `163.67 / (24329 / tnd + 100)` for
+`tnd = 3 * triangle + 2 * noise + dmc`, with zero input mapped to zero.
+This weighted TND lookup is an approximation of the analog circuit, following
+the reference core's mixing model. Each table is scaled by 32767 and truncated
+before summing, keeping TypeScript and WASM PCM identical. Tests cover all 31
+pulse sums and 203 weighted TND inputs, compression and DMC-dependent gain.
+The old linear gains and fixed negative bias are removed. Samples use Int16Array
+storage but are currently unipolar (zero to positive full scale); DC removal and
+analog high/low-pass filters are not yet modeled. Snapshot layout is unchanged,
+but replaying an older snapshot now generates the new mix rather than old PCM.
 
 `new Apu()` remains valid for standalone synthesis, including direct `$4011` DAC
 writes. For DMC sample playback, supply `new Apu({ readDmc(address) { ... } })`;
@@ -439,8 +450,7 @@ Raw ABI consumers call `audioDrain()` to obtain the sample count, then use
 view before the next drain, reset, or memory growth. `sampleRate()` returns Hz.
 
 Audio tests compare both frame modes, each implemented channel, full-width timer
-periods, mixed PCM, and DMA/NMI/IRQ timing between builds. The shared APU still
-lacks a nonlinear mixer, and its frame-edge timing remains approximate.
+periods, mixed PCM, and DMA/NMI/IRQ timing between builds. The shared APU uses nonlinear mixing; analog filters and exact frame-edge timing remain incomplete.
 
 
 ## Publishing

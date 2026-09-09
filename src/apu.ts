@@ -2,6 +2,11 @@ const CPU_HZ=1789773, SAMPLE_HZ=44100;
 const LENGTH=[10,254,20,2,40,4,80,6,160,8,60,10,14,12,26,14,12,16,24,18,48,20,96,22,192,24,72,26,16,28,32,30];
 const NOISE_PERIOD=[4,8,16,32,64,96,128,160,202,254,380,508,762,1016,2034,4068];
 const DUTY=[0x02,0x06,0x1e,0xf9];
+// Nonlinear lookup approximation: two pulse DACs, then weighted triangle/noise/DMC.
+// Generate from the transfer curves rather than copying reference table data.
+const PULSE_MIX = new Int16Array(31), TND_MIX = new Int16Array(203);
+for (let i = 1; i < PULSE_MIX.length; i++) PULSE_MIX[i] = Math.floor(32767 * 95.52 * i / (8128.0 + 100.0 * i));
+for (let i = 1; i < TND_MIX.length; i++) TND_MIX[i] = Math.floor(32767 * 163.67 * i / (24329.0 + 100.0 * i));
 class Envelope {
   start = false;
   divider = 0;
@@ -298,7 +303,7 @@ export class Apu {
     this.samples = [];
   }
   readStatus():number { const value=(this.pulse[0].length?1:0)|(this.pulse[1].length?2:0)|(this.triangle.length?4:0)|(this.noise.length?8:0)|(this.frameIrq?0x40:0)|(this.dmc.remaining?16:0)|(this.dmc.irq?128:0); this.frameIrq=false; return value; }
-  step(cycles:number):void {for(let i=0;i<cycles;i++){if(this.frame&1)for(let channel=0;channel<this.pulse.length;channel++)this.pulse[channel].step();this.triangle.step();this.noise.step();this.dmc.step(this.bus);if(++this.frame===this.nextFrameEvent)this.clockFrame();this.frac+=SAMPLE_HZ;if(this.frac>=CPU_HZ){this.frac-=CPU_HZ;if(this.samples.length>=SAMPLE_HZ*2)this.samples.splice(0,1024); this.samples.push((this.pulse[0].sample()+this.pulse[1].sample()+this.triangle.sample()+this.noise.sample())*320-4096+this.dmc.output*80);}}}
+  step(cycles:number):void {for(let i=0;i<cycles;i++){if(this.frame&1)for(let channel=0;channel<this.pulse.length;channel++)this.pulse[channel].step();this.triangle.step();this.noise.step();this.dmc.step(this.bus);if(++this.frame===this.nextFrameEvent)this.clockFrame();this.frac+=SAMPLE_HZ;if(this.frac>=CPU_HZ){this.frac-=CPU_HZ;if(this.samples.length>=SAMPLE_HZ*2)this.samples.splice(0,1024); this.samples.push(PULSE_MIX[this.pulse[0].sample()+this.pulse[1].sample()] + TND_MIX[3*this.triangle.sample()+2*this.noise.sample()+this.dmc.output]);}}}
   private clockFrame(): void {
     // NTSC sequencer in CPU cycles. Both sequence lengths are even.
     const end = this.mode5 ? 37281 : 29829;

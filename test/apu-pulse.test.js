@@ -24,7 +24,7 @@ test('both pulse channels produce the programmed frequency and duty cycle', () =
     let rises = 0;
     for (let i = 1; i < pcm.length; i++) if (pcm[i] > pcm[i - 1]) rises++;
     assert.ok(Math.abs(rises - 100) <= 1, `channel ${channel}, duty ${duty}: ${rises} rises`);
-    const highRatio = pcm.filter(value => value > -4096).length / pcm.length;
+    const highRatio = pcm.filter(value => value > 0).length / pcm.length;
     assert.ok(Math.abs(highRatio - [0.125, 0.25, 0.5, 0.75][duty]) < 0.01);
   }
 });
@@ -66,7 +66,7 @@ test('sweep handles channel-specific negate, zero shift, and muted targets witho
     apu.step(30000);
     assert.equal(period(apu), initial);
     const pcm = apu.drainSamples();
-    assert.equal(pcm.every(value => value === -4096), muted);
+    assert.equal(pcm.every(value => value === 0), muted);
   }
 });
 

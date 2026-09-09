@@ -25,7 +25,7 @@ test('DMC shifts samples LSB first at every NTSC rate after the silent output cy
 
 test('DMC direct DAC writes mask to seven bits and delta output does not overflow', () => {
   const bare = new Apu(); bare.write(0x4011, 255); bare.step(100);
-  assert.equal(output(bare), 127); assert.ok(bare.drainSamples().every(v => v === -4096 + 127 * 80));
+  assert.equal(output(bare), 127); assert.ok(bare.drainSamples().every(v => v === Math.floor(32767 * 163.67 * 127 / (24329 + 100 * 127))));
   bare.write(0x4015, 0); assert.equal(output(bare), 127);
   for (const [data, value] of [[255, 126], [0, 1]]) {
     const { apu } = voice(data); apu.write(0x4011, value); apu.step(9000);

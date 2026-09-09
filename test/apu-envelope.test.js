@@ -17,8 +17,10 @@ function channel(base, mask, control) {
       apu.step(1000); cycles += 1000;
       const pcm = apu.drainSamples();
       assert.ok(pcm.length > 0);
-      // Current mixer maps each channel DAC step to 320 PCM units above its baseline.
-      return (Math.max(...pcm) + 4096) / 320;
+      // Invert the single-channel transfer curve; quantization is below half a DAC step.
+      const level = Math.max(...pcm) / 32767;
+      return Math.round(base === 0x400c ? level * 24329 / (2 * (163.67 - 100 * level))
+        : level * 8128 / (95.52 - 100 * level));
     },
   };
 }
