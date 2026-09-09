@@ -168,14 +168,6 @@ test('MMC3 scanline counter raises an IRQ after the programmed interval', () => 
   const nes = new Nes(image(4, 8, 4)); nes.write(0xc000, 2); nes.write(0xc001, 0); nes.write(0xe001, 0); assert.equal(nes.cartridge.clockScanline(), false); assert.equal(nes.cartridge.clockScanline(), false); assert.equal(nes.cartridge.clockScanline(), true); nes.write(0xe000, 0); assert.equal(nes.cartridge.clockScanline(), false);
 });
 
-test('PPU mask controls background and sprite rendering', () => {
-  const raw=image(0,1,1); raw.fill(255,16+0x4000,16+0x4000+16); const nes=new Nes(raw); nes.ppu.writeRegister(1,0); nes.runFrame(); assert.equal(nes.frame[0],0xff000000); nes.ppu.writeRegister(1,8); nes.runFrame(); assert.notEqual(nes.frame[16],0xff000000);
-});
-
-test('PPU mask clips the first eight background columns', () => {
-  const raw=image(0,1,1); raw.fill(255,16+0x4000,16+0x4000+16); const nes=new Nes(raw); nes.ppu.writeRegister(1,8); nes.runFrame(); const drawn=nes.frame[16]; nes.ppu.writeRegister(1,8); nes.runFrame(); assert.equal(nes.frame[4],0xff000000); assert.equal(nes.frame[16],drawn);
-});
-
 test('PPU enables an immediate NMI when NMI output is turned on during VBlank', () => {
   const nes=new Nes(image(0,1,1)); nes.ppu.step(241*341+1); assert.equal(nes.ppu.consumeNmi(),false); nes.ppu.writeRegister(0,0x80); assert.equal(nes.ppu.consumeNmi(),true);
 });

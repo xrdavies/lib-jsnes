@@ -7,7 +7,28 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   private ctrl=0; private mask=0; private scanlineTicks=0; private nmiPending=false; private sprite0Hit=false; private spriteOverflow=false; private scrollX=0; private scrollY=0; private status=0; private oamAddr=0; private addr=0; private latch=false; private data=0; scanline=0; dot=0;
   readRegister(reg:number):number { switch(reg&7){case 2: {const v=this.status|(this.sprite0Hit?0x40:0)|(this.spriteOverflow?0x20:0); this.status&=0x7f; this.latch=false; return v;} case 4:return this.oam[this.oamAddr]; case 7:{const a=this.addr&0x3fff; const v=a>=0x3f00?this.palette[this.paletteIndex(a)]:this.data; if(a<0x3f00)this.data=this.readMemory(a); else this.data=this.readMemory((a-0x1000)&0x3fff); this.addr=(a+(this.ctrl&4?32:1))&0x3fff; return v;} default:return 0;} }
   writeRegister(reg:number,value:number):void {value&=255; switch(reg&7){case 0:{const was=this.ctrl;this.ctrl=value;if(!(was&0x80)&&(value&0x80)&&(this.status&0x80))this.nmiPending=true;break;}case 1:this.mask=value;break;case 3:this.oamAddr=value;break;case 4:this.oam[this.oamAddr++]=value;break;case 5:if(!this.latch)this.scrollX=value;else this.scrollY=value;this.latch=!this.latch;break;case 6:if(!this.latch)this.addr=(value&0x3f)<<8;else this.addr=(this.addr&0x3f00)|value;this.latch=!this.latch;break;case 7:{const a=this.addr&0x3fff; if(a>=0x3f00)this.palette[this.paletteIndex(a)]=value; else this.writeMemory(a,value); this.addr=(a+(this.ctrl&4?32:1))&0x3fff; break;}}}
-  private renderBackground():void { if(!(this.mask&8)){this.backgroundOpaque.fill(0);this.frame.fill(0xff000000);return;} for(let y=0;y<240;y++)for(let x=0;x<256;x++){if(x<8&&!(this.mask&2)){this.backgroundOpaque[y*256+x]=0;this.frame[y*256+x]=0xff000000;continue;} const wx=x+this.scrollX, wy=y+this.scrollY, nx=Math.floor(wx/256)&1, ny=Math.floor(wy/240)&1, sx=((wx%256)+256)%256, sy=((wy%240)+240)%240, nt=((this.ctrl&3)+nx+ny*2)&3, tx=sx>>>3, ty=sy>>>3, table=0x2000+nt*0x400, tile=this.readMemory(table+ty*32+tx), attr=this.readMemory(table+0x3c0+(ty>>>2)*8+(tx>>>2)), shift=((ty&2)?4:0)+((tx&2)?2:0), palette=(attr>>shift)&3; const base=(this.ctrl&16?0x1000:0)+tile*16, row=sy&7, col=sx&7, lo=this.readMemory(base+row), hi=this.readMemory(base+row+8), c=((lo>>(7-col))&1)|(((hi>>(7-col))&1)<<1); this.backgroundOpaque[y*256+x]=c?1:0; this.frame[y*256+x]=0xff000000|this.color((palette*4+c)&63);}}
+  private renderBackground(): void {
+    this.frame.fill((0xff000000 | this.color(0)) >>> 0);
+    this.backgroundOpaque.fill(0);
+    if (!(this.mask & 8)) return;
+    for (let y = 0; y < 240; y++) for (let x = 0; x < 256; x++) {
+      if (x < 8 && !(this.mask & 2)) continue;
+      const wx = x + this.scrollX, wy = y + this.scrollY;
+      const sx = wx % 256, sy = wy % 240;
+      const nt = (this.ctrl & 3) ^ ((wx >>> 8) & 1) ^ ((Math.floor(wy / 240) & 1) << 1);
+      const tx = sx >>> 3, ty = sy >>> 3, table = 0x2000 + nt * 0x400;
+      const tile = this.readMemory(table + ty * 32 + tx);
+      const attr = this.readMemory(table + 0x3c0 + (ty >>> 2) * 8 + (tx >>> 2));
+      const palette = (attr >>> (((ty & 2) << 1) | (tx & 2))) & 3;
+      const base = (this.ctrl & 16 ? 0x1000 : 0) + tile * 16 + (sy & 7);
+      const shift = 7 - (sx & 7);
+      const color = ((this.readMemory(base) >>> shift) & 1) | (((this.readMemory(base + 8) >>> shift) & 1) << 1);
+      if (!color) continue;
+      const pixel = y * 256 + x;
+      this.backgroundOpaque[pixel] = 1;
+      this.frame[pixel] = 0xff000000 | this.color(palette * 4 + color);
+    }
+  }
   private renderSprites(): void {
     if (!(this.mask & 16)) return;
     const height = this.ctrl & 32 ? 16 : 8;

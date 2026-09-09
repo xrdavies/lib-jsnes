@@ -90,3 +90,47 @@ test('8x16 sprites select the tile low-bit table and flip the entire height', ()
   assert.equal(pixel(nes, 27, 20), rgb(0x30));
   assert.equal(pixel(nes, 27, 28), rgb(0x2a));
 });
+
+test('transparent, disabled, and left-clipped backgrounds use the universal backdrop', () => {
+  const nes = scene();
+  nes.ppu.vram[0x23c0] = 3; // Palette 3 in the top-left quadrant.
+  nes.ppu.palette[12] = 0x30;
+  render(nes, 0x0a);
+  assert.equal(pixel(nes, 0, 0), rgb(0x16));
+  for (let y = 0; y < 8; y++) nes.cartridge.writeChr(y, 255);
+  nes.ppu.palette[13] = 0x2a;
+  render(nes, 0x08);
+  assert.equal(pixel(nes, 7, 0), rgb(0x16));
+  assert.equal(pixel(nes, 8, 0), rgb(0x2a));
+  render(nes, 0x0a);
+  assert.equal(pixel(nes, 7, 0), rgb(0x2a));
+  render(nes, 0);
+  assert.ok(nes.frame.every(value => value === rgb(0x16)));
+});
+
+test('horizontal and vertical nametable crossings toggle independent base bits', () => {
+  const bytes = new Uint8Array(16 + 0x4000);
+  bytes.set([78, 69, 83, 26, 1, 0, 8]); // Four-screen mapping keeps all tables distinct.
+  const nes = new Nes(bytes);
+  nes.reset();
+  const colors = [0x16, 0x21, 0x2a, 0x30];
+  for (let id = 0; id < 4; id++) {
+    for (let row = 0; row < 8; row++) {
+      nes.cartridge.writeChr(id * 16 + row, id & 1 ? 255 : 0);
+      nes.cartridge.writeChr(id * 16 + row + 8, id & 2 ? 255 : 0);
+    }
+    nes.ppu.vram.fill(id, 0x2000 + id * 0x400, 0x2000 + id * 0x400 + 960);
+    nes.ppu.palette[id] = colors[id];
+  }
+  for (let base = 0; base < 4; base++) {
+    nes.ppu.writeRegister(0, base);
+    nes.ppu.readRegister(2);
+    nes.ppu.writeRegister(5, 255);
+    nes.ppu.writeRegister(5, 239);
+    render(nes, 0x0a);
+    assert.equal(pixel(nes, 0, 0), rgb(colors[base]));
+    assert.equal(pixel(nes, 1, 0), rgb(colors[base ^ 1]));
+    assert.equal(pixel(nes, 0, 1), rgb(colors[base ^ 2]));
+    assert.equal(pixel(nes, 1, 1), rgb(colors[base ^ 3]));
+  }
+});
