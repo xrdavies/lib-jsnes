@@ -59,9 +59,9 @@ format integration, not real-time audio scheduling or device playback latency.
 For a minimal game screen, open `examples/browser.html` from the same server and
 choose a local `.nes` file. It loads the ESM entry point, lets you select the
 WASM core (default) or TypeScript fallback, renders `frameRgba()` into a 256×240
-Canvas, and runs one frame per animation callback.
-The example schedules NTSC-paced frames, pauses while the tab is hidden, and
-discards stale loads when another file is selected. It has no gamepad or audio policy; applications should wire
+Canvas, and schedules frames at the NTSC rate. It cancels the previous animation
+when a new ROM is selected, pauses while the tab is hidden, and drains audio while
+muted. It has no gamepad or audio policy; applications should wire
 `setController()` and schedule `audioSamples()` according to their own input and
 Web Audio pipeline.
 

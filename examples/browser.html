@@ -1,46 +1,75 @@
 <!doctype html>
+<html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>lib-jsnes browser example</title>
 <style>
-  body { font: 16px system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; }
-  canvas { width: 512px; height: 480px; image-rendering: pixelated; background: #000; }
+  body { font: 16px system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; }
+  canvas { width: 100%; height: auto; image-rendering: pixelated; background: #000; }
 </style>
 <h1>lib-jsnes</h1>
 <p><label>NES ROM <input id="rom" type="file" accept=".nes"></label>
-<label><input id="wasm" type="checkbox" checked> WASM</label>
+<label><input id="wasm" type="checkbox" checked> Use WASM for next ROM</label>
 <button id="pause" type="button" disabled>Pause</button></p>
-<canvas id="screen" width="256" height="240"></canvas>
+<canvas id="screen" width="256" height="240" aria-label="NES game screen"></canvas>
 <p id="status" role="status">Choose a ROM.</p>
 <script type="module">
-  import { Nes, WasmCore } from '../dist/index.js';
+  import { Nes, WasmCore, NTSC_FRAME_RATE } from '../dist/index.js';
   const input = document.querySelector('#rom'), wasmInput = document.querySelector('#wasm'), pause = document.querySelector('#pause'), canvas = document.querySelector('#screen');
   const context = canvas.getContext('2d'), status = document.querySelector('#status');
-  let loop = 0, paused = false, last = 0, elapsed = 0, nes;
-  const image = context.createImageData(256, 240);
+  let generation = 0, animation = null, paused = false, last = 0, elapsed = 0, nes;
+  const image = context?.createImageData(256, 240);
+  if (!context) { input.disabled = true; status.textContent = 'Canvas 2D is unavailable.'; }
+  function stop() {
+    if (animation !== null) cancelAnimationFrame(animation);
+    animation = null; elapsed = 0;
+  }
+  function start() {
+    if (!nes || paused || document.hidden || animation !== null) return;
+    last = performance.now();
+    animation = requestAnimationFrame(frame);
+  }
   input.addEventListener('change', async () => {
     const file = input.files[0]; if (!file) return;
-    const generation = ++loop; paused = false; pause.disabled = true; status.textContent = 'Loading…';
+    const load = ++generation, useWasm = wasmInput.checked;
+    stop(); nes = null; paused = false; pause.disabled = true; pause.textContent = 'Pause';
+    context.clearRect(0, 0, 256, 240); status.textContent = 'Loading…';
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const candidate = wasmInput.checked
-        ? await WasmCore.from(await fetch('../dist-wasm/lib-jsnes.wasm')).then(core => { core.loadRom(bytes); core.reset(); return core; })
-        : new Nes(bytes);
-      if (!wasmInput.checked) candidate.reset();
-      if (generation !== loop) return;
-      nes = candidate; pause.disabled = false; last = performance.now(); elapsed = 0;
-      requestAnimationFrame(frame);
-    } catch (error) { if (generation === loop) status.textContent = `Failed: ${error.message}`; }
+      if (load !== generation) return;
+      let candidate;
+      if (useWasm) {
+        candidate = await WasmCore.from(await fetch('../dist-wasm/lib-jsnes.wasm'));
+        if (load !== generation) return;
+        candidate.loadRom(bytes);
+      } else candidate = new Nes(bytes);
+      candidate.reset();
+      nes = candidate; pause.disabled = false; status.textContent = 'Ready. Audio is muted.';
+      start();
+    } catch (error) { if (load === generation) status.textContent = `Failed: ${error.message}`; }
   });
-  pause.addEventListener('click', () => { paused = !paused; pause.textContent = paused ? 'Resume' : 'Pause'; if (!paused) { last = performance.now(); requestAnimationFrame(frame); } });
-  document.addEventListener('visibilitychange', () => { last = performance.now(); elapsed = 0; });
+  pause.addEventListener('click', () => {
+    if (!nes) return;
+    paused = !paused; pause.textContent = paused ? 'Resume' : 'Pause';
+    if (paused) { stop(); status.textContent = 'Paused.'; } else start();
+  });
+  document.addEventListener('visibilitychange', () => { stop(); start(); });
   function frame(now) {
-    if (!nes || paused) return;
-    elapsed = Math.min(elapsed + Math.max(0, now - last), 100); last = now;
-    // Run at NTSC speed even on 120/144 Hz displays; cap catch-up after stalls.
-    while (elapsed >= 1000 / 60) { nes.runFrame(); elapsed -= 1000 / 60; }
-    image.data.set(nes.frameRgba()); context.putImageData(image, 0, 0);
-    status.textContent = `${nes.cycleCount} CPU cycles`;
-    requestAnimationFrame(frame);
+    animation = null;
+    if (!nes || paused || document.hidden) return;
+    try {
+      // ponytail: cap catch-up at 100 ms; sustained slow hosts need adaptive presentation.
+      elapsed = Math.min(elapsed + Math.max(0, now - last), 100); last = now;
+      while (elapsed >= 1000 / NTSC_FRAME_RATE) {
+        nes.runFrame(); nes.audioSamples(); // Muted example: drain rather than accumulate PCM.
+        elapsed -= 1000 / NTSC_FRAME_RATE;
+      }
+      image.data.set(nes.frameRgba()); context.putImageData(image, 0, 0);
+      status.textContent = `${nes.cycleCount} CPU cycles · Audio muted`;
+      animation = requestAnimationFrame(frame);
+    } catch (error) {
+      stop(); nes = null; pause.disabled = true; status.textContent = `Failed: ${error.message}`;
+    }
   }
 </script>
+</html>
