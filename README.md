@@ -826,4 +826,17 @@ band-limited resampling remain incomplete.
 
 ## Publishing
 
-From a clean checkout, run `npm ci`, `npm test`, and `npm run build:wasm`. Inspect the package with `npm pack --dry-run`, then run `npm version <major|minor|patch>` to create the release commit and tag. Authenticate with `npm login` (or configure a publish token), verify the target with `npm whoami`, and publish with `npm publish --access public`. Push the commit and tag with `git push origin main --follow-tags`. A published version cannot be replaced, so verify the version and package contents before publishing.
+From a clean checkout, run `npm ci`, `npm test`, and `npm run build:wasm`. Inspect the package with `npm pack --dry-run`, then update the version without creating an automatic commit or tag:
+
+```sh
+npm version <major|minor|patch> --no-git-tag-version
+git add package.json package-lock.json
+git commit -m "chore: release v<version>"
+git tag -a "v<version>" -m "v<version>"
+```
+
+Authenticate with `npm login` (or configure a publish token), verify the target
+with `npm whoami`, and publish with `npm publish --access public`. Push the
+Conventional Commit and tag with `git push origin main --follow-tags`. A published
+version cannot be replaced, so verify the version and package contents before
+publishing.
