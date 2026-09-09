@@ -162,6 +162,15 @@ test('GxROM switches PRG and CHR banks from one register', () => {
   const nes = new Nes(image(66, 8, 4)); nes.write(0x8000, 0x21); assert.deepEqual(prgPair(nes), [4,5]); assert.deepEqual(chrPair(nes), [0x42,0x43]);
 });
 
+test('BNROM switches the complete 32KB PRG window and wraps bank selectors', () => {
+  const nes = new Nes(image(34, 4, 0));
+  assert.deepEqual(prgPair(nes), [0, 1]);
+  nes.write(0x8000, 1);
+  assert.deepEqual(prgPair(nes), [2, 3]);
+  nes.write(0xffff, 0xff);
+  assert.deepEqual(prgPair(nes), [2, 3]);
+});
+
 
 test('mapper 79 switches 32KB PRG and 8KB CHR banks from $4100', () => {
   const nes = new Nes(image(79, 8, 8));

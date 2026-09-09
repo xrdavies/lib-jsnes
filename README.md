@@ -10,7 +10,7 @@ npm test
 npm run build:wasm
 ```
 
-`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise/DMC APU as mono PCM, including frame and DMC IRQs. Both builds support the same 15 mapper IDs listed below. Each WASM build uses an isolated temporary directory and atomically replaces the output only after successful compilation.
+`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise/DMC APU as mono PCM, including frame and DMC IRQs. Both builds support the same 16 mapper IDs listed below. Each WASM build uses an isolated temporary directory and atomically replaces the output only after successful compilation.
 
 Concurrent WASM builds do not share generated sources or wait on a directory lock.
 A failed build preserves the previous binary. If a process is forcibly terminated,
@@ -207,7 +207,7 @@ IRQ status and DMC reads after restoring both frame modes, pending writes and
 deferred sample fetches. Invalid oscillator, filter and timing values leave live
 state and queued PCM intact. The WASM cartridge codec translates its storage into
 the existing JS mapper layout, retaining raw bank values until memory is read.
-Full-system tests cover all 15 supported mappers with CHR ROM and CHR RAM,
+Full-system tests cover all 16 supported mappers with CHR ROM and CHR RAM,
 partial DMA, memory growth, fresh-instance restoration and queued-audio handling.
 OAM DMA now alternates one CPU-bus read and one OAMDATA write per CPU cycle,
 after one or two halt/alignment cycles. Relative to this core's cycle count, an
@@ -386,7 +386,7 @@ DMA and snapshot replay.
 
 The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning at
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
-Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, mapper 15, GxROM, and mappers 79, 87, 113, 140, 177, 225 and 241 (mappers 0, 1, 2, 3, 4, 7, 15, 66, 79, 87, 113, 140, 177, 225 and 241), including
+Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, BNROM, mapper 15, GxROM, and mappers 79, 87, 113, 140, 177, 225 and 241 (mappers 0, 1, 2, 3, 4, 7, 15, 34, 66, 79, 87, 113, 140, 177, 225 and 241), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
 NES 2.0 linear and exponent-size headers are accepted for supported mappers; unsupported boards and malformed layouts are rejected by this experimental WASM core.
 Exponent sizes are computed with a widened integer and checked against capacity
@@ -422,6 +422,12 @@ count. The parser preserves the 12-bit mapper number; WASM validates these high
 bits before accepting a cartridge. Parsing a layout does not imply support for
 its board, submapper, or extended RAM configuration.
 Both cores support the same mapper IDs; board variants and accepted ROM layouts can still differ.
+
+BNROM (mapper 34) switches a complete 32 KiB PRG window from writes at
+`$8000–$FFFF`. Both cores wrap selectors across smaller images and retain the
+header mirroring; CHR RAM or ROM uses the normal unbanked 8 KiB window. This
+covers the common BNROM board without claiming support for mapper-34 NINA
+variants with different register wiring.
 
 Mapper 15 now uses all four address-selected PRG modes in both cores: a
 sequential 32 KiB window, a switchable 16 KiB window with a fixed upper bank

@@ -25,7 +25,7 @@ export class Cartridge {
 
   constructor(readonly rom: RomImage) {
     if (rom.consoleType && rom.consoleType !== 'nes') throw new Error(`Unsupported console type: ${rom.consoleType}`);
-    if (![0, 1, 2, 3, 4, 7, 15, 66, 79, 87, 113, 140, 177, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
+    if (![0, 1, 2, 3, 4, 7, 15, 34, 66, 79, 87, 113, 140, 177, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
     if (rom.mapper === 1 && (rom.prgRom.length > 0x40000 || rom.chrRom.length > 0x20000)) {
       throw new Error('Extended MMC1 boards are not supported yet');
     }
@@ -69,6 +69,7 @@ export class Cartridge {
     let bank = slot;
     if (this.rom.mapper === 2) bank = slot === 0 ? this.prg : count - 1;
     if (this.rom.mapper === 7) bank = (this.axBank&15)*2 + slot;
+    if (this.rom.mapper === 34) bank = this.gxBank * 2 + slot;
     if (this.rom.mapper === 15) {
       // ponytail: bit 7 selects mode-2 halves only; distinguish board variants when submapper metadata is supported.
       const slot8 = (address - 0x8000) >>> 13;
@@ -123,6 +124,7 @@ export class Cartridge {
       return;
     }
     if (this.rom.mapper === 2) this.prg = value;
+    if (this.rom.mapper === 34) { this.gxBank = value; return; }
     if (this.rom.mapper === 3) { this.chrBank = value; return; }
     if (this.rom.mapper === 7) { this.axBank=value; return; }
     if (this.rom.mapper === 15) { this.m15Mode = address & 3; this.m15Bank = value; this.m15Mirror = (value >>> 6) & 1; return; }
