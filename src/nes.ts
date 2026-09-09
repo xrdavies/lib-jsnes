@@ -54,7 +54,7 @@ export class Nes implements CpuBus {
       const bytes = new Uint8Array(256);
       for (let i = 0; i < 256; i++) bytes[i] = this.read((value << 8) + i);
       this.ppu.dma(bytes);
-    } else if (address >= 0x4000 && address <= 0x4015) this.apu.write(address, value);
+    } else if ((address >= 0x4000 && address <= 0x4015) || address === 0x4017) this.apu.write(address, value);
     else if (address === 0x4016) {
       this.controller1.write(value);
       this.controller2.write(value);

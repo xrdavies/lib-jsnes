@@ -122,13 +122,14 @@ class Noise {
 /** Pulse, triangle, and noise synthesis; five-step frame sequencing, frame IRQ, and DMC remain incomplete. */
 export class Apu {
   static readonly STATE_SIZE = 60;
-  readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(1),new Pulse(0)]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private samples:number[]=[];
+  readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(1),new Pulse(0)]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private mode5=false; private samples:number[]=[];
   write(address:number,value:number):void {
     value&=255;
     if(address>=0x4000&&address<0x4008)this.pulse[address<0x4004?0:1].write(address&3,value);
     else if(address>=0x4008&&address<0x400c)this.triangle.write(address&3,value);
     else if(address>=0x400c&&address<0x4010)this.noise.write(address&3,value);
     else if(address===0x4015){this.pulse[0].enabled=!!(value&1);this.pulse[1].enabled=!!(value&2);this.triangle.enabled=!!(value&4);this.noise.enabled=!!(value&8);if(!this.pulse[0].enabled)this.pulse[0].length=0;if(!this.pulse[1].enabled)this.pulse[1].length=0;if(!this.triangle.enabled)this.triangle.length=0;if(!this.noise.enabled)this.noise.length=0;}
+    else if(address===0x4017){this.mode5=!!(value&0x80);this.frame=0;if(this.mode5){for(const pulse of this.pulse){pulse.envelope.clock(pulse.regs[0]);pulse.clockLength();pulse.clockSweep();}this.noise.envelope.clock(this.noise.regs[0]);this.noise.clockLength();this.triangle.clockLinear();this.triangle.clockLength();}}
   }
   /** Fixed-width, little-endian oscillator state; queued host audio is not included. */
   saveState(): Uint8Array {
@@ -156,7 +157,7 @@ export class Apu {
     out[36] = +this.triangle.enabled; out[37]=this.pulse[0].sweepDivider; out[38]=this.pulse[1].sweepDivider; out[39]=+this.pulse[0].sweepReload; out[40]=+this.pulse[1].sweepReload;
     view.setUint32(41, this.frac, true);
     view.setUint16(57, this.frame, true);
-    out[46]=this.triangle.linear; out[47]=+this.triangle.linearReload; out[59] = 5; // APU snapshot format version.
+    out[45]=+this.mode5; out[46]=this.triangle.linear; out[47]=+this.triangle.linearReload; out[59] = 6; // APU snapshot format version.
     for (const [i, channel] of [...this.pulse, this.noise].entries()) {
       out.set([+channel.envelope.start, channel.envelope.divider, channel.envelope.decay], 48 + i * 3);
     }
@@ -167,11 +168,11 @@ export class Apu {
     if (state.length !== Apu.STATE_SIZE) throw new RangeError('Invalid APU state size');
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
     const frac = view.getUint32(41, true), frame = view.getUint16(57, true);
-    if (state[59] !== 5 || frac >= CPU_HZ || frame >= 29830
+    if (state[59] !== 6 || frac >= CPU_HZ || frame >= (state[45] ? 37282 : 29830)
       || [48, 51, 54].some(offset => state[offset] > 1 || state[offset + 1] > 15 || state[offset + 2] > 15)
       || state[12] > 7 || state[13] > 7 || state[19] > 31
       || view.getUint16(14, true) > 0x7fff
-      || [16, 17, 18, 36, 39, 40, 47].some(offset => state[offset] > 1)
+      || [16, 17, 18, 36, 39, 40, 45, 47].some(offset => state[offset] > 1)
       || state[37] > 7 || state[38] > 7 || state[46] > 127
       || [24, 26].some(offset => view.getUint16(offset, true) > 0x7ff)
       || view.getUint16(28, true) > 0x800
@@ -195,7 +196,7 @@ export class Apu {
     this.triangle.timer = view.getUint16(28, true);
     this.noise.timer = view.getUint16(30, true);
     this.triangle.regs.set(state.subarray(32, 36));
-    this.triangle.enabled = !!state[36]; this.triangle.linear=state[46]; this.triangle.linearReload=!!state[47]; this.pulse[0].sweepDivider=state[37]; this.pulse[1].sweepDivider=state[38]; this.pulse[0].sweepReload=!!state[39]; this.pulse[1].sweepReload=!!state[40];
+    this.triangle.enabled = !!state[36]; this.mode5=!!state[45]; this.triangle.linear=state[46]; this.triangle.linearReload=!!state[47]; this.pulse[0].sweepDivider=state[37]; this.pulse[1].sweepDivider=state[38]; this.pulse[0].sweepReload=!!state[39]; this.pulse[1].sweepReload=!!state[40];
     this.frac = frac;
     this.frame = frame;
     for (const [i, channel] of [...this.pulse, this.noise].entries()) {
@@ -212,17 +213,18 @@ export class Apu {
     // NTSC four-step sequence, in CPU cycles. $4017 mode switching and frame IRQ are pending.
     // Its even cycle count also preserves the pulse CPU/2 clock phase across wraps and snapshots.
     this.frame++;
-    if (this.frame === 7457 || this.frame === 14913 || this.frame === 22371 || this.frame === 29829) {
+    const end = this.mode5 ? 37281 : 29829;
+    if (this.frame === 7457 || this.frame === 14913 || this.frame === 22371 || this.frame === end) {
       for (const pulse of this.pulse) pulse.envelope.clock(pulse.regs[0]);
       this.noise.envelope.clock(this.noise.regs[0]); this.triangle.clockLinear();
     }
-    if (this.frame === 14913 || this.frame === 29829) {
+    if (this.frame === 14913 || this.frame === end) {
       for (const pulse of this.pulse) { pulse.clockLength(); pulse.clockSweep(); }
       this.triangle.clockLength();
       this.noise.clockLength();
     }
-    if (this.frame === 29830) this.frame = 0;
+    if (this.frame === end + 1) this.frame = 0;
   }
   drainSamples():Int16Array {const out=Int16Array.from(this.samples);this.samples=[];return out;}
-  reset():void {this.frac=0;this.frame=0;this.samples=[];for(const p of this.pulse){p.envelope.reset();p.regs.fill(0);p.timer=0;p.phase=0;p.length=0;p.sweepDivider=0;p.sweepReload=false;p.enabled=false;}this.triangle.regs.fill(0);this.triangle.timer=0;this.triangle.phase=0;this.triangle.length=0;this.triangle.linear=0;this.triangle.linearReload=false;this.triangle.enabled=false;this.noise.envelope.reset();this.noise.regs.fill(0);this.noise.timer=0;this.noise.shift=1;this.noise.length=0;this.noise.enabled=false;}
+  reset():void {this.frac=0;this.frame=0;this.mode5=false;this.samples=[];for(const p of this.pulse){p.envelope.reset();p.regs.fill(0);p.timer=0;p.phase=0;p.length=0;p.sweepDivider=0;p.sweepReload=false;p.enabled=false;}this.triangle.regs.fill(0);this.triangle.timer=0;this.triangle.phase=0;this.triangle.length=0;this.triangle.linear=0;this.triangle.linearReload=false;this.triangle.enabled=false;this.noise.envelope.reset();this.noise.regs.fill(0);this.noise.timer=0;this.noise.shift=1;this.noise.length=0;this.noise.enabled=false;}
 }
