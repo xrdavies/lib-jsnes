@@ -83,7 +83,7 @@ test('native WASM loadRom validates layout and mapper even without the TypeScrip
   const nes2 = rom(0, 1).bytes; nes2[7] = 8;
   const noPrg = rom(0, 0).bytes;
   for (const bytes of [new Uint8Array(16), rom(0, 1).bytes.subarray(0, 32),
-    rom(4, 2).bytes, nes2, noPrg, rom(0, 3).bytes,
+    rom(4, 2).bytes, noPrg,
     rom(2, 2, 1).bytes.subarray(0, 16 + 0x8000)]) {
     for (let i = 0; i < bytes.length; i++) e.romWrite(i, bytes[i]);
     assert.throws(() => e.loadRom(bytes.length));
@@ -98,7 +98,7 @@ test('wrapper rejects unsupported cartridges before replacing the running ROM', 
   vector(valid.bytes, valid.start, 1, 0x8000);
   core.loadRom(valid.bytes); core.reset();
   const nes2 = rom(0, 1).bytes; nes2[7] = 8;
-  for (const invalid of [rom(4, 2).bytes, rom(0, 3).bytes, nes2]) {
+  for (const invalid of [rom(4, 2).bytes, rom(0, 3).bytes]) {
     assert.throws(() => core.loadRom(invalid));
     assert.equal(core.programCounter, 0x8000);
     assert.equal(core.cycleCount, 0);
@@ -108,6 +108,15 @@ test('wrapper rejects unsupported cartridges before replacing the running ROM', 
   const frame = core.frame();
   assert.equal(frame.length, 61440);
   assert.ok(frame.every(pixel => pixel === 0xff000000));
+});
+
+test('WASM accepts standard NES 2.0 linear sizes for supported mappers', async () => {
+  const { bytes, start } = rom(0, 1, 1);
+  bytes[7] = 8; bytes[9] = 0; vector(bytes, start, 1, 0x8000);
+  const core = await WasmCore.from(binary); core.loadRom(bytes); core.reset();
+  assert.equal(core.programCounter, 0x8000);
+  assert.equal(core.exports.chrRead(0), bytes[start + 0x4000]);
+  assert.throws(() => core.loadRom(Uint8Array.from(bytes, (value, i) => i === 4 ? 0x3f : value)), /size encoding|too large/);
 });
 
 function gxrom(banks = 8, chr = 4, value = 0x21) {
