@@ -22,6 +22,7 @@ export class Cartridge {
   get irqPending(): boolean { return this.rom.mapper === 4 && this.mmc3Pending; }
 
   constructor(readonly rom: RomImage) {
+    if (rom.consoleType && rom.consoleType !== 'nes') throw new Error(`Unsupported console type: ${rom.consoleType}`);
     if (![0, 1, 2, 3, 4, 7, 15, 66, 79, 87, 113, 140, 177, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
     if (rom.mapper === 1 && (rom.prgRom.length > 0x40000 || rom.chrRom.length > 0x20000)) {
       throw new Error('Extended MMC1 boards are not supported yet');

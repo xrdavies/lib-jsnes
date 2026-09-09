@@ -202,6 +202,7 @@ export class Cartridge {
     if (this.rom[0] != 78 || this.rom[1] != 69 || this.rom[2] != 83 || this.rom[3] != 26) throw new Error('Invalid iNES header');
     const nes2 = (this.rom[7] & 0x0c) == 8;
     if (!nes2 && (this.rom[7] & 0x0c) != 0) throw new Error('Unsupported ROM format');
+    if ((this.rom[7] & 3) != 0) throw new Error('Unsupported console type');
     // Widen bytes before shifting: u8 << 8 would discard the extension bits.
     const mapperExtension: i32 = this.rom[8], sizeExtension: i32 = this.rom[9];
     const exponentSize = (value: i32): i32 => {

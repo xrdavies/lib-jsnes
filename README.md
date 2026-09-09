@@ -275,6 +275,15 @@ execution at the last permitted starting count.
 
 ## Cartridge support
 
+`parseRom()` now reports `consoleType` (`nes`, `vs`, `playchoice`, or `extended`)
+from the header's console flags. Both system cores accept only standard NES/Famicom
+hardware; VS System, PlayChoice and extended-console images are rejected instead
+of silently running with incorrect PPU/input hardware. Parsing still exposes their
+layout for inspection. Reserved format markers (header byte 7 bits 2–3 equal to
+4 or 12) are rejected consistently. Programmatically constructed legacy `RomImage`
+objects may omit `consoleType`, in which case `Cartridge` assumes standard NES.
+
+
 The current mapper layer supports NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 bank switching (4), AxROM (7), mapper 15, mapper 79, mapper 87, mapper 113, mapper 140, mapper 177, mapper 225, mapper 241, and GxROM (66). MMC3 scanline IRQ counting is available; advanced mapper variants and exact edge timing remain in progress.
 
 MMC3 CHR tests cover all eight 1 KiB windows in both inversion modes, aligned
