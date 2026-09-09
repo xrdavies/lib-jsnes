@@ -19,7 +19,7 @@ class Bus implements CpuBus, DmcBus, OamDmaBus {
   writeDma(value: i32): void { ppu.writeRegister(4, value); }
   readDmc(address: i32): i32 { dmaStall += 4; return read(address); }
   read(address: i32): i32 { return read(address); }
-  write(address: i32, value: i32, consecutive: boolean): void { write(address, value, consecutive); }
+  write(address: i32, value: i32, consecutive: boolean, oddCycle: boolean): void { write(address, value, consecutive, oddCycle); }
 }
 const cpu = new Cpu6502(new Bus());
 function read(address: i32): i32 {
@@ -31,12 +31,12 @@ function read(address: i32): i32 {
   if (address == 0x4017) return controller2.read();
   return cartridge.readCpu(address);
 }
-function write(address: i32, value: i32, consecutive: boolean): void {
+function write(address: i32, value: i32, consecutive: boolean, oddCycle: boolean): void {
   address &= 0xffff; value &= 255;
   if (address < 0x2000) RAM[address & 0x7ff] = value;
   else if (address < 0x4000) ppu.writeRegister(address, value);
   else if (address == 0x4014) {
-    oamDma.start(value, (<i32>cpu.cycles & 1) != 0);
+    oamDma.start(value, oddCycle);
   } else if ((address >= 0x4000 && address <= 0x4015) || address == 0x4017) {
     apu.write(address, value);
   } else if (address == 0x4016) {

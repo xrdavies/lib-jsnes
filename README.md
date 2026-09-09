@@ -170,6 +170,14 @@ copy; CPU `$4014` writes use the shared DMA state machine.
 DMC fetch stalls temporarily pause OAM DMA in this model. Exact get/put alignment,
 DMC/OAM arbitration, DMA halt-read side effects and the write's position within a
 CPU instruction still require more detailed bus timing.
+OAM alignment now uses the parity of the actual CPU write access, including
+the extra cycle in indexed stores and the second write of RMW instructions.
+The CPU bus passes this as a fourth `oddCycle` argument to `write`; custom hosts
+forwarding to `Nes.write()` should preserve it. Hosts that ignore extra arguments
+remain valid. Direct `Nes.write()` calls use the current CPU cycle parity by
+default. Tests cover write modes, both parities, large cycle counts and DMA
+snapshot continuation. Tracking access parity does not yet advance PPU/APU on
+each individual CPU bus access.
 Pulse channels implement all four duty patterns, CPU/2 timer clocks, and half-frame
 sweeps with channel-specific negate and target-overflow muting. Tests check output
 frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains

@@ -47,13 +47,13 @@ export class Nes implements CpuBus {
     return this.cartridge.readCpu(address);
   }
 
-  write(address: number, value: number, consecutive = false): void {
+  write(address: number, value: number, consecutive = false, oddCycle = !!(this.cpu.cycles & 1)): void {
     address &= 0xffff;
     value &= 255;
     if (address < 0x2000) this.ram[address & 0x7ff] = value;
     else if (address < 0x4000) this.ppu.writeRegister(address, value);
     else if (address === 0x4014) {
-      this.oamDma.start(value, !!(this.cpu.cycles & 1));
+      this.oamDma.start(value, oddCycle);
     } else if ((address >= 0x4000 && address <= 0x4015) || address === 0x4017) this.apu.write(address, value);
     else if (address === 0x4016) {
       this.controller1.write(value);
