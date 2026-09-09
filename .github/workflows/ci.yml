@@ -14,3 +14,4 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build:wasm
+      - run: node --input-type=module -e "import {readFile} from 'node:fs/promises'; const m=await WebAssembly.instantiate(await readFile('dist-wasm/lib-jsnes.wasm'),{env:{abort(){throw Error('wasm abort')}}}); const e=m.instance.exports; e.reset(); e.step(64); if(e.cycleCount()!==64||e.frameLength()!==61440) process.exit(1)"
