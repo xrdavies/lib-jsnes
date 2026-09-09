@@ -51,6 +51,14 @@ test('SHA and TAS use the high-byte mask and page-crossing address corruption', 
   }
 });
 
+test('XAA uses the common NMOS mask approximation while retaining diagnostics', () => {
+  const ram = new Uint8Array(65536);
+  const cpu = new Cpu6502({ read: address => ram[address], write() {} });
+  cpu.pc = 0x8000; cpu.a = 0x10; cpu.x = 0x0f; cpu.p = 0x65; ram.set([0x8b, 0x3f], 0x8000);
+  assert.equal(cpu.step(), 2);
+  assert.deepEqual([cpu.a, cpu.p, cpu.pc, cpu.unknownOpcodes], [0x0e, 0x65, 0x8002, 1]);
+});
+
 test('indirect and absolute-Y RMW combinations preserve dummy writes and fixed cycles', () => {
   const operations = [
     [[0x03, 0x13, 0x1b], 0x02, 0x57, 0x65], // SLO: ASL then ORA.

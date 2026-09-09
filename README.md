@@ -520,6 +520,9 @@ SLO, RLA, SRE, RRA, DCP, and ISC encodings against the TypeScript CPU
 These checks establish CPU parity, not complete hardware compatibility; board
 conflicts and unstable undocumented opcodes remain incomplete.
 `core.exports.unknownOpcodeCount()` reports encounters with unimplemented opcodes.
+XAA/ANE (`$8B`) uses the common `$EE` mask approximation in non-strict mode,
+consumes its immediate operand, and still increments that diagnostic because the
+real instruction is chip-dependent; strict CPU mode rejects it.
 
 Taken branches now perform their discarded opcode fetch, and page-crossing
 branches also read the provisional address using the old page and target low
@@ -787,6 +790,7 @@ in both cores:
 | --- | --- |
 | `instr_test-v5/official_only.nes` | All 16 subtests pass |
 | `instr_test-v5/all_instrs.nes` | All 16 subtests pass, including its unofficial instructions |
+| `instr_timing/instr_timing.nes` | Both instruction and branch timing tests pass |
 | `apu_test/rom_singles/` | All 8 tests pass |
 | `ppu_vbl_nmi/rom_singles/` | All 10 tests pass |
 | `ppu_open_bus/ppu_open_bus.nes` | Passes, including decay and partial-refresh checks |

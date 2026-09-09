@@ -366,6 +366,11 @@ export class Cpu6502 {
                 this.lastUnknownOpcode = op;
                 this.unknownOpcodeCounts[op]++;
                 if (this.strict) throw new Error(`Unsupported opcode: $${op.toString(16).padStart(2, '0')}`);
+                if (op === 0x8b) {
+                    // XAA/ANE is electrically unstable; this is the common
+                    // NMOS approximation, while diagnostics remain visible.
+                    this.a = (this.a | 0xee) & this.x & this.imm(); this.nz(this.a); used = 2; break;
+                }
                 used = 2;
                 break;
         }
