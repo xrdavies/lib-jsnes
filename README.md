@@ -177,6 +177,9 @@ the signed 32-bit ABI from silently truncating them. Split longer runs into
 multiple calls; the cumulative cycle count remains a JavaScript number rather
 than a 32-bit counter. Raw callers of `exports.step` must enforce this bound
 before crossing the ABI, where the original JavaScript value is no longer available.
+`Nes.step()` applies the same cumulative safe-integer guard: a budget that would
+make its CPU cycle counter exceed `Number.MAX_SAFE_INTEGER` is rejected before
+any CPU, PPU, APU, DMA or audio state changes.
 
 ## Cartridge support
 

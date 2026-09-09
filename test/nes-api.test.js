@@ -19,3 +19,12 @@ test('runFrame rejects invalid cycle budgets through the step guard', () => {
   assert.throws(() => nes().runFrame(0), /cycles must be a positive integer/);
   assert.throws(() => nes().runFrame(1.5), /cycles must be a positive integer/);
 });
+
+test('Nes rejects a budget that would make the cumulative cycle count unsafe', () => {
+  const value = nes();
+  value.cpu.cycles = Number.MAX_SAFE_INTEGER - 1;
+  assert.throws(() => value.step(2), /safe integer range/);
+  assert.equal(value.cpu.cycles, Number.MAX_SAFE_INTEGER - 1);
+  assert.throws(() => value.runFrame(2), /safe integer range/);
+  assert.equal(value.cpu.cycles, Number.MAX_SAFE_INTEGER - 1);
+});
