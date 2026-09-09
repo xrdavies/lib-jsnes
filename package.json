@@ -20,6 +20,7 @@
     "build": "tsc",
     "test": "npm run build && npm run build:wasm && node --test test/*.test.js",
     "build:wasm": "node scripts/build-wasm.mjs",
+    "prepare": "npm run build && npm run build:wasm",
     "prepublishOnly": "npm run build && npm run build:wasm"
   },
   "devDependencies": {
