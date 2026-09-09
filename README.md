@@ -677,8 +677,8 @@ diagonal scan after secondary OAM fills, so overflow timing follows the examined
 primary-OAM byte. Tests cover fetch addresses/order, X/Y wrapping, timed v/t copies,
 mid-line bank changes and snapshots between fetch phases. The 256-byte background
 line buffer is replaced by 12 bytes of shift/fetch state; the sprite line buffer
-and existing timing tail remain. Sprite slot snapshots add 45 bytes for secondary
-OAM, original IDs, count, the low-plane latch and the evaluation cursor; old
+and existing timing tail remain. Sprite slot snapshots add 49 bytes for secondary
+OAM, original IDs, count, the low-plane latch and the evaluation cursors; old
 PPU/system snapshots are rejected. The net PPU snapshot is 199 bytes smaller than the previous combined
 background/sprite layout. Hosts should display
 the completed frame after their frame step.

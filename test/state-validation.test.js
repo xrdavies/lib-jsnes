@@ -13,7 +13,7 @@ function machine() {
 }
 
 test('invalid snapshot sections leave all live state and pending PCM intact', () => {
-  for (const field of ['cpu', 'cart', 'ppuAddress', 'ppuLine', 'ppuDot', 'ppuLatch', 'ppuNmi', 'ppuHit', 'ppuOverflow', 'ppuDecay0', 'ppuDecay1', 'ppuDecay2', 'ppuTiming', 'ppuReadDelay', 'backgroundLine', 'spriteLine', 'lineOverflow', 'nmi', 'apu', 'controller1', 'controller2', 'dma']) {
+  for (const field of ['cpu', 'cart', 'ppuAddress', 'ppuLine', 'ppuDot', 'ppuLatch', 'ppuNmi', 'ppuHit', 'ppuOverflow', 'ppuDecay0', 'ppuDecay1', 'ppuDecay2', 'ppuTiming', 'ppuReadDelay', 'ppuOverflowEval', 'backgroundLine', 'spriteLine', 'lineOverflow', 'nmi', 'apu', 'controller1', 'controller2', 'dma']) {
     const nes = machine(), reference = machine();
     const invalid = nes.saveState();
     const ppu = Cpu6502.STATE_SIZE + nes.cartridge.stateSize;
@@ -24,7 +24,7 @@ test('invalid snapshot sections leave all live state and pending PCM intact', ()
       ppuHit: ppu + 0x412f, ppuOverflow: ppu + 0x4130, apu: apu + 59,
       ppuDecay0: ppu + ppuSize - 9, ppuDecay1: ppu + ppuSize - 7, ppuDecay2: ppu + ppuSize - 5,
       ppuTiming: ppu + ppuSize - 11, nmi: 15,
-      ppuReadDelay: ppu + ppuSize - 12,
+      ppuReadDelay: ppu + ppuSize - 12, ppuOverflowEval: ppu + ppuSize - 330,
       backgroundLine: ppu + ppuSize - 272, spriteLine: ppu + ppuSize - 269, lineOverflow: ppu + ppuSize - 13,
       controller1: controllers + 2, controller2: controllers + 7 };
     if (field === 'cpu') new DataView(invalid.buffer).setFloat64(7, NaN, true);
