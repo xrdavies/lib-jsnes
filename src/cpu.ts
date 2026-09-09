@@ -16,8 +16,9 @@ export class Cpu6502 {
     lastUnknownOpcode = -1;
     readonly unknownOpcodeCounts = new Uint32Array(256);
     private pageCycles = 0;
+    private instructionIrqMasked = true;
     constructor(private readonly bus: CpuBus, private readonly strict = false) { }
-    reset(): void { this.sp = 0xfd; this.p = U | I; this.pc = this.read16(0xfffc); this.cycles = 0; this.unknownOpcodes = 0; this.lastUnknownOpcode = -1; this.unknownOpcodeCounts.fill(0); }
+    reset(): void { this.instructionIrqMasked = true; this.sp = 0xfd; this.p = U | I; this.pc = this.read16(0xfffc); this.cycles = 0; this.unknownOpcodes = 0; this.lastUnknownOpcode = -1; this.unknownOpcodeCounts.fill(0); }
     save(): number[] {
         if (!Number.isSafeInteger(this.cycles) || this.cycles < 0) throw new RangeError('Invalid CPU cycle count');
         const bytes = new Uint8Array(Cpu6502.STATE_SIZE);
@@ -36,13 +37,21 @@ export class Cpu6502 {
     load(v: number[]): void {
         Cpu6502.validateState(v);
         [this.a, this.x, this.y, this.sp, this.p] = v;
+        this.instructionIrqMasked = !!(this.p & I);
         this.pc = v[5] | (v[6] << 8);
         this.cycles = new DataView(Uint8Array.from(v).buffer).getFloat64(7, true);
     }
     irq(): boolean { if (this.p & I) return false; this.interrupt(0xfffe); return true; }
+    /** Poll a pending IRQ immediately after step(), using the instruction's I-bit timing. */
+    irqAfterInstruction(): boolean {
+        if (this.instructionIrqMasked) return false;
+        this.interrupt(0xfffe);
+        return true;
+    }
     nmi(): boolean { this.interrupt(0xfffa); return true; }
     step(): number {
         this.pageCycles = 0;
+        this.instructionIrqMasked = !!(this.p & I);
         const op = this.fetch();
         let used = 2;
         switch (op) {
@@ -307,6 +316,9 @@ export class Cpu6502 {
                 used = 2;
                 break;
         }
+        // CLI/SEI/PLP update I after the instruction's interrupt poll. RTI
+        // restores flags earlier and therefore uses its newly restored I bit.
+        if (op !== 0x58 && op !== 0x78 && op !== 0x28) this.instructionIrqMasked = !!(this.p & I);
         used += this.pageCycles;
         this.cycles += used;
         return used;
@@ -336,7 +348,7 @@ export class Cpu6502 {
     private indX() { const a = this.zpx(); return this.bus.read(a) | (this.bus.read((a + 1) & 255) << 8); }
     private indY(penalty = false) { const a = this.fetch(), base = this.bus.read(a) | (this.bus.read((a + 1) & 255) << 8); return this.indexed(base, this.y, penalty); }
     private read16(a: number) { return this.bus.read(a) | (this.bus.read((a + 1) & 0xffff) << 8); }
-    private interrupt(vector: number) { this.bus.read(this.pc); this.bus.read(this.pc); this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p & ~B | U); this.p |= I; this.pc = this.read16(vector); }
+    private interrupt(vector: number) { this.instructionIrqMasked = true; this.bus.read(this.pc); this.bus.read(this.pc); this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p & ~B | U); this.p |= I; this.pc = this.read16(vector); }
     private push(v: number) { this.bus.write(0x100 | this.sp, v); this.sp = (this.sp - 1) & 255; }
     private preparePull(): void { this.bus.read(this.pc); this.bus.read(0x100 | this.sp); }
     private pop() { this.sp = (this.sp + 1) & 255; return this.bus.read(0x100 | this.sp); }

@@ -84,7 +84,7 @@ export class Nes implements CpuBus {
         this.cpu.nmi();
         this.cpu.cycles += 7;
         this.clockDevices(7);
-      } else if ((this.apu.irqPending || this.cartridge.irqPending) && this.cpu.irq()) {
+      } else if ((this.apu.irqPending || this.cartridge.irqPending) && this.cpu.irqAfterInstruction()) {
         this.cpu.cycles += 7;
         this.clockDevices(7);
       }

@@ -383,6 +383,17 @@ order, stack/address wrap and status flags, including JSR stack overlap in WASM.
 The system still advances devices at instruction boundaries, so interrupt polling
 and bus-cycle alignment remain approximate.
 
+System IRQ polling now uses the I flag from before CLI, SEI or PLP, so CLI/PLP
+unmasking takes effect after the following instruction and SEI/PLP cannot suppress
+an IRQ polled during their own execution. RTI uses the flags it has restored.
+The status pushed by interrupt entry still reflects the completed instruction.
+Custom CPU hosts can use `irqAfterInstruction()` to poll a pending line immediately
+after `step()`; `irq()` retains its direct, current-I-bit behavior. The system
+finishes this poll before returning to its host, and the next instruction replaces
+the temporary sampled mask, so snapshot layout is unchanged. Tests cover both
+I-bit values, CLI snapshot continuation and an APU IRQ arising during SEI/PLP in
+TypeScript and WASM. IRQ source timing within each instruction remains approximate.
+
 Two-cycle implied and accumulator instructions also perform the discarded read
 at the next PC before changing registers or flags, without advancing PC again.
 This includes the one-byte unofficial NOPs. Tests check all 28 implemented opcodes,
