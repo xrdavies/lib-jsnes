@@ -211,8 +211,7 @@ export class Apu {
   readStatus():number { const value=(this.pulse[0].length?1:0)|(this.pulse[1].length?2:0)|(this.triangle.length?4:0)|(this.noise.length?8:0)|(this.frameIrq?0x40:0); this.frameIrq=false; return value; }
   step(cycles:number):void {for(let i=0;i<cycles;i++){if(this.frame&1)for(const p of this.pulse)p.step();this.triangle.step();this.noise.step();this.clockFrame();this.frac+=SAMPLE_HZ;if(this.frac>=CPU_HZ){this.frac-=CPU_HZ;if(this.samples.length>=SAMPLE_HZ*2)this.samples.splice(0,1024); this.samples.push((this.pulse[0].sample()+this.pulse[1].sample()+this.triangle.sample()+this.noise.sample())*320-4096);}}}
   private clockFrame(): void {
-    // NTSC four-step sequence, in CPU cycles. $4017 mode switching and frame IRQ are pending.
-    // Its even cycle count also preserves the pulse CPU/2 clock phase across wraps and snapshots.
+    // NTSC sequencer in CPU cycles. Both sequence lengths are even.
     this.frame++;
     const end = this.mode5 ? 37281 : 29829;
     if (this.frame === 7457 || this.frame === 14913 || this.frame === 22371 || this.frame === end) {
@@ -223,8 +222,10 @@ export class Apu {
       for (const pulse of this.pulse) { pulse.clockLength(); pulse.clockSweep(); }
       this.triangle.clockLength();
       this.noise.clockLength();
-      if (!this.mode5 && !this.irqInhibit) this.frameIrq = true;
     }
+    // IRQ assertion is separate from half-frame clocks. A status read can clear
+    // the latch between these terminal cycles, so each cycle asserts it again.
+    if (!this.mode5 && !this.irqInhibit && this.frame >= 29828) this.frameIrq = true;
     if (this.frame === end + 1) this.frame = 0;
   }
   drainSamples():Int16Array {const out=Int16Array.from(this.samples);this.samples=[];return out;}
