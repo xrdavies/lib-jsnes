@@ -36,13 +36,22 @@ export class WasmCore {
   private constructor(readonly exports: WasmExports) {}
 
   static async from(source: ArrayBuffer | Uint8Array | Response | WebAssembly.Module): Promise<WasmCore> {
+    const imports = { env: { abort() { throw new Error('WASM abort'); } } };
+    let result: WebAssembly.WebAssemblyInstantiatedSource | WebAssembly.Instance | undefined;
     if (typeof Response !== 'undefined' && source instanceof Response) {
       if (!source.ok) throw new Error(`WASM request failed: ${source.status}`);
-      source = await source.arrayBuffer();
+      const fallback = source.clone();
+      try {
+        result = await WebAssembly.instantiateStreaming(source, imports);
+      } catch {
+        source = await fallback.arrayBuffer();
+      }
     }
-    const input = source;
-    const bytes = input instanceof Uint8Array ? input : input instanceof WebAssembly.Module ? input : new Uint8Array(input as ArrayBuffer);
-    const result = await WebAssembly.instantiate(bytes, { env: { abort() { throw new Error('WASM abort'); } } });
+    if (!result) {
+      const input = source;
+      const bytes = input instanceof Uint8Array ? input : input instanceof WebAssembly.Module ? input : new Uint8Array(input as ArrayBuffer);
+      result = await WebAssembly.instantiate(bytes, imports);
+    }
     const instance = ('instance' in result ? result.instance : result) as WebAssembly.Instance;
     const exports = instance.exports as unknown as Record<string, unknown>;
     const required = ['romAllocate', 'romWrite', 'loadRom', 'reset', 'setController', 'step', 'runFrame',

@@ -11,6 +11,13 @@ test('WasmCore accepts a fetch Response and exposes the shared frame view', asyn
   assert.equal(core.frame()[0], 0xff000000);
 });
 
+test('WasmCore falls back when streaming compilation rejects the response MIME type', async () => {
+  const bytes = await readFile('dist-wasm/lib-jsnes.wasm');
+  const response = new Response(bytes, { headers: { 'content-type': 'application/octet-stream' } });
+  const core = await WasmCore.from(response);
+  core.reset(); assert.equal(core.frame().length, 256 * 240);
+});
+
 test('WasmCore.loadRom accepts an ArrayBuffer like the JavaScript core', async () => {
   const core = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
   const rom = new Uint8Array(16 + 0x4000);
