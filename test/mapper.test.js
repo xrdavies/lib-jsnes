@@ -191,3 +191,7 @@ test('PPU palette reads refresh the buffered data port', () => {
 test('save/load restores PPU frame and scroll state', () => {
   const nes=new Nes(image(0,1,1)); nes.ppu.writeRegister(1,8); nes.runFrame(); const before=nes.frame[100]; const state=nes.saveState(); nes.ppu.writeRegister(5,17); nes.runFrame(); nes.loadState(state); assert.equal(nes.frame[100],before);
 });
+
+test('save/load restores APU oscillator state without stale samples', () => {
+  const nes=new Nes(image(0,1,1)); nes.write(0x4000,0x4f); nes.write(0x4002,0x20); nes.write(0x4003,0x08); nes.write(0x4015,1); nes.step(10000); const state=nes.saveState(); nes.step(1000); nes.loadState(state); const a=nes.audioSamples(); nes.step(1000); const b=nes.audioSamples(); assert.equal(a.length,0); assert.ok(b.length>0);
+});
