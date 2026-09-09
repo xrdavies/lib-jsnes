@@ -6,6 +6,8 @@ import { Cartridge } from './cartridge.js';
 import { Apu } from './apu.js';
 export interface Frame { readonly pixels: Uint32Array; readonly width: 256; readonly height: 240; }
 export const NTSC_FRAME_RATE = 60;
+export const FRAME_WIDTH = 256;
+export const FRAME_HEIGHT = 240;
 export class Nes implements CpuBus {
   readonly controller1 = new Controller();
   readonly controller2 = new Controller();
@@ -16,7 +18,7 @@ export class Nes implements CpuBus {
   readonly apu = new Apu();
   private readonly ram = new Uint8Array(0x800);
   private cycles = 0;
-  private dmaStall = 0; private readonly rgba = new Uint8ClampedArray(256*240*4);
+  private dmaStall = 0; private readonly rgba = new Uint8ClampedArray(FRAME_WIDTH*FRAME_HEIGHT*4);
 
   get frame(): Uint32Array { return this.ppu.frame; }
   setController(player: 1|2, mask: number): void { if(player===1)this.controller1.setButtons(mask); else if(player===2)this.controller2.setButtons(mask); else throw new RangeError('player must be 1 or 2'); }
