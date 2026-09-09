@@ -325,6 +325,18 @@ reads, preserving the stored colors for later color output. Tests cover all 64
 palette codes, background/sprite output, and WASM parity. Color emphasis and
 analog video output remain approximations.
 
+Both builds now retain a PPU I/O bus latch. Writes to every PPU register, including
+the read-only status port and register mirrors, refresh it. Reads of write-only
+ports return the retained value; PPUSTATUS combines its status flags with the
+latched low five bits, then clears VBlank as before. OAMDATA and buffered PPUDATA
+reads refresh the latch. Palette PPUDATA reads drive only the low six bits (with
+grayscale applied), preserving the latch's high two bits and refreshing the read
+buffer from the underlying nametable. Rendering does not update this CPU-facing
+latch. Analog decay and DMA bus details remain unmodeled; reset initializes it
+to zero. CPU-driven tests cover every written byte, mirrored ports, read-buffer
+interactions and status acknowledgement in both builds. TypeScript PPU snapshots
+append one latch byte; older PPU and full-system snapshots without it are rejected.
+
 Obtain a fresh view from `core.frame()` after stepping, since WASM memory growth
 can invalidate an older view.
 
