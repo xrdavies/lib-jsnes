@@ -104,13 +104,13 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   private selectSprites(): void {
     this.secondaryOam.fill(255); this.spriteIds.fill(255); this.spriteCount = 0;
     this.spriteLine.fill(0); this.lineOverflow = false;
-    if (this.scanline === 261) return; // No sprite evaluation for scanline zero.
+    const targetLine = this.scanline === 261 ? 0 : this.scanline + 1;
     const height = this.ctrl & 32 ? 16 : 8;
     // ponytail: select at dot 257; cycle-by-cycle secondary OAM evaluation and
     // the overflow diagonal-scan bug remain to be implemented.
     for (let i = 0; i < 64; i++) {
       const y: number = this.oam[i * 4];
-      const row = this.scanline - y;
+      const row = targetLine - y - 1;
       if (row < 0 || row >= height) continue;
       if (this.spriteCount === 8) { this.lineOverflow = true; break; }
       const slot = this.spriteCount++;
@@ -124,7 +124,8 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     const tile: number = this.secondaryOam[slot * 4 + 1];
     const attr: number = this.secondaryOam[slot * 4 + 2];
     const y: number = this.secondaryOam[slot * 4];
-    const row = (this.scanline - y) & (height - 1);
+    const targetLine = this.scanline === 261 ? 0 : this.scanline + 1;
+    const row = (targetLine - y - 1) & (height - 1);
     const sy = attr & 0x80 ? height - 1 - row : row;
     return height === 16 ? (tile & 1) * 0x1000 + ((tile & 0xfe) + (sy >>> 3)) * 16 + (sy & 7)
       : (this.ctrl & 8 ? 0x1000 : 0) + tile * 16 + sy;
@@ -137,7 +138,7 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     if (phase === 4) { this.spriteLow = this.readMemory(this.spriteAddress(slot)); return; }
     if (phase !== 6) return;
     const hi = this.readMemory(this.spriteAddress(slot) + 8);
-    if (slot >= this.spriteCount || this.scanline === 261) return;
+    if (slot >= this.spriteCount) return;
     const x: number = this.secondaryOam[slot * 4 + 3], attr: number = this.secondaryOam[slot * 4 + 2];
     for (let px = 0; px < 8 && x + px < 256; px++) {
       const dx = x + px; if (this.spriteLine[dx]) continue;
