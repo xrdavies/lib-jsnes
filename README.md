@@ -630,7 +630,7 @@ Synthetic ROMs compare complete frames between the two builds and assert known
 background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.
 WASM uses the same pixel output path as TypeScript. Background and sprite pattern
 fetches run in their PPU slots; secondary-OAM evaluation scans one primary-OAM byte
-per PPU dot from dots 65–256.
+every two PPU dots from dots 65–256.
 Frame views
 use packed `0xAARRGGBB` pixels; they are not RGBA byte views for `ImageData`.
 PPUADDR (`$2006`) uses a temporary address: its first write replaces the high
