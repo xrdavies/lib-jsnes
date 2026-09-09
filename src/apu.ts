@@ -92,13 +92,12 @@ class Triangle {
     if (i === 3) this.linearReload = true;
     if (i === 3) {
       if (this.enabled) this.length = LENGTH[value >>> 3];
-      this.timer = (value & 7) << 8;
+      this.timer = this.period;
     }
   }
   step(): void {
-    if (this.linear === 0) return;
     if (this.timer-- <= 0) {
-      this.timer = this.period + 1;
+      this.timer = this.period;
       if (this.length > 0 && this.linear > 0) this.phase = (this.phase + 1) & 31;
     }
   }

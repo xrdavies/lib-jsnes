@@ -70,6 +70,11 @@ frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains
 incomplete: DMC, exact frame edge timing, and the nonlinear mixer are not
 implemented.
 
+The triangle timer runs every CPU cycle and advances its 32-step sequencer once
+per programmed period plus one, gated by the length and linear counters. Tests
+check timer boundaries and emitted PCM frequency in both builds. Output DAC
+behavior while gated and other analog audio details remain approximate.
+
 The CPU advances the APU after each instruction, DMA stall, and interrupt entry.
 Audio register changes and status reads therefore take effect within a host
 `step()` call. Timing within individual CPU instructions is still approximate.

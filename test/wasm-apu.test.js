@@ -90,3 +90,16 @@ test('WASM preserves all eleven timer bits for pulse and triangle periods', asyn
     assert.deepEqual(core.audioSamples(), expected, `channel ${mask}, timer high ${high}`);
   }
 });
+
+test('WASM triangle PCM has the programmed period+1 frequency', async () => {
+  const core = await WasmCore.from(binary); core.loadRom(rom(4)); core.reset();
+  core.step(20000); core.audioSamples(); // Finish register setup and linear reload.
+  core.step(32 * (0x39 + 1) * 1000);
+  const pcm = core.audioSamples(); let peaks = 0, direction = 0;
+  for (let i = 1; i < pcm.length; i++) {
+    const next = Math.sign(pcm[i] - pcm[i - 1]);
+    if (next < 0 && direction > 0) peaks++;
+    if (next) direction = next;
+  }
+  assert.ok(Math.abs(peaks - 1000) <= 1, `expected 1000 periods, got ${peaks}`);
+});
