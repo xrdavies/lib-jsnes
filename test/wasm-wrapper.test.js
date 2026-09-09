@@ -10,3 +10,9 @@ test('WasmCore accepts a fetch Response and exposes the shared frame view', asyn
   assert.equal(core.frame().length, 256 * 240);
   assert.equal(core.frame()[0], 0xff000000);
 });
+
+test('WasmCore rejects failed responses and oversized ROMs', async () => {
+  await assert.rejects(WasmCore.from(new Response('', { status: 404 })), /request failed/);
+  const core = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
+  assert.throws(() => core.loadRom(new Uint8Array(WasmCore.MAX_ROM_SIZE + 1)), /capacity/);
+});

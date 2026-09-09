@@ -12,10 +12,15 @@ export interface WasmExports {
 
 /** Thin browser/Node wrapper around the optional AssemblyScript build. */
 export class WasmCore {
+  static readonly MAX_ROM_SIZE = 0x80000;
   private constructor(readonly exports: WasmExports) {}
 
   static async from(source: ArrayBuffer | Uint8Array | Response): Promise<WasmCore> {
-    const input = typeof Response !== 'undefined' && source instanceof Response ? await source.arrayBuffer() : source;
+    if (typeof Response !== 'undefined' && source instanceof Response) {
+      if (!source.ok) throw new Error(`WASM request failed: ${source.status}`);
+      source = await source.arrayBuffer();
+    }
+    const input = source;
     const bytes = input instanceof Uint8Array ? input : new Uint8Array(input as ArrayBuffer);
     const result = await WebAssembly.instantiate(bytes, { env: { abort() { throw new Error('WASM abort'); } } });
     const instance = ('instance' in result ? result.instance : result) as WebAssembly.Instance;
@@ -23,6 +28,7 @@ export class WasmCore {
   }
 
   loadRom(rom: Uint8Array): void {
+    if (rom.length > WasmCore.MAX_ROM_SIZE) throw new RangeError('ROM exceeds WASM capacity');
     for (let i = 0; i < rom.length; i++) this.exports.romWrite(i, rom[i]);
     this.exports.loadRom(rom.length);
   }
