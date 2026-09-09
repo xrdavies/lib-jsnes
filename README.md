@@ -38,6 +38,10 @@ frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains
 incomplete: DMC, five-step frame sequencing, frame IRQs, and the nonlinear mixer
 are not implemented.
 
+The CPU advances the APU after each instruction, DMA stall, and interrupt entry.
+Audio register changes and status reads therefore take effect within a host
+`step()` call. Timing within individual CPU instructions is still approximate.
+
 ## Cartridge support
 
 The current mapper layer supports NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 bank switching (4), AxROM (7), and GxROM (66). MMC3 scanline IRQ counting is available; advanced mapper variants and exact edge timing remain in progress.
