@@ -375,6 +375,12 @@ order, stack/address wrap and status flags, including JSR stack overlap in WASM.
 The system still advances devices at instruction boundaries, so interrupt polling
 and bus-cycle alignment remain approximate.
 
+Two-cycle implied and accumulator instructions also perform the discarded read
+at the next PC before changing registers or flags, without advancing PC again.
+This includes the one-byte unofficial NOPs. Tests check all 28 implemented opcodes,
+PC wrap and discarded-data independence; a CPU program executing through the PPU
+I/O latch verifies the PPUSTATUS side effect in TypeScript and WASM.
+
 The shared CPU also implements ALR (`$4B`), ARR (`$6B`) and AXS (`$CB`) immediate
 instructions, in addition to ANC (`$0B/$2B`) and the SBC alias (`$EB`). They consume
 the operand and take two cycles. ARR sets carry from result bit 6 and overflow

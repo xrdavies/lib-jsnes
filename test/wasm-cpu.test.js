@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { Cpu6502, WasmCore } from '../dist/index.js';
+import { Cpu6502, Nes, WasmCore } from '../dist/index.js';
 
 const binary = await readFile(new URL('../dist-wasm/lib-jsnes.wasm', import.meta.url));
 const official = `00 01 05 06 08 09 0a 0d 0e 10 11 15 16 18 19 1d 1e
@@ -115,4 +115,21 @@ test('WASM JSR observes target bytes changed by overlapping stack writes', async
   assert.equal(core.exports.ramRead(0x1fd), 1);
   assert.equal(core.exports.ramRead(0x1fc), 0xfd);
   assert.equal(core.exports.cpuRegister(3), 0xfb);
+});
+
+test('implied opcode dummy reads acknowledge PPUSTATUS on the WASM CPU bus', async () => {
+  const rom = image([0x4c, 0, 0x80]);
+  // Execute SEC via a write-only PPU register's I/O latch. Its discarded read
+  // of $2002 clears VBlank, making the following status-port opcode CLC, not TYA.
+  rom.set([0xa9, 0x38, 0x8d, 2, 0x20, 0x4c, 1, 0x20], 16 + 256);
+  const js = new Nes(rom), core = await WasmCore.from(binary);
+  js.reset(); core.loadRom(rom); core.reset();
+  js.step(28002); core.step(28002);
+  js.rom.prgRom[2] = 0x81; core.exports.romWrite(18, 0x81);
+  js.step(12); core.step(12); assert.equal(core.programCounter, 0x2001);
+  js.step(1); core.step(1); assert.equal(core.exports.cpuRegister(4) & 1, 1);
+  js.step(1); core.step(1); assert.equal(core.exports.cpuRegister(4) & 1, 0);
+  assert.equal(core.programCounter, 0x2003);
+  assert.equal(core.exports.cpuRegister(4), js.cpu.p);
+  assert.equal(core.cycleCount, js.cycleCount);
 });
