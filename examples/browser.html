@@ -7,24 +7,35 @@
   canvas { width: 512px; height: 480px; image-rendering: pixelated; background: #000; }
 </style>
 <h1>lib-jsnes</h1>
-<p><label>NES ROM <input id="rom" type="file" accept=".nes"></label></p>
+<p><label>NES ROM <input id="rom" type="file" accept=".nes"></label>
+<button id="pause" type="button" disabled>Pause</button></p>
 <canvas id="screen" width="256" height="240"></canvas>
 <p id="status" role="status">Choose a ROM.</p>
 <script type="module">
   import { Nes } from '../dist/index.js';
-  const input = document.querySelector('#rom'), canvas = document.querySelector('#screen');
+  const input = document.querySelector('#rom'), pause = document.querySelector('#pause'), canvas = document.querySelector('#screen');
   const context = canvas.getContext('2d'), status = document.querySelector('#status');
+  let loop = 0, paused = false, last = 0, elapsed = 0, nes;
+  const image = context.createImageData(256, 240);
   input.addEventListener('change', async () => {
     const file = input.files[0]; if (!file) return;
+    const generation = ++loop; paused = false; pause.disabled = true; status.textContent = 'Loading…';
     try {
-      const nes = new Nes(new Uint8Array(await file.arrayBuffer())); nes.reset();
-      const image = context.createImageData(256, 240);
-      const frame = () => {
-        nes.runFrame(); image.data.set(nes.frameRgba()); context.putImageData(image, 0, 0);
-        status.textContent = `${nes.cycleCount} CPU cycles`;
-        requestAnimationFrame(frame);
-      };
-      frame();
-    } catch (error) { status.textContent = `Failed: ${error.message}`; }
+      const candidate = new Nes(new Uint8Array(await file.arrayBuffer())); candidate.reset();
+      if (generation !== loop) return;
+      nes = candidate; pause.disabled = false; last = performance.now(); elapsed = 0;
+      requestAnimationFrame(frame);
+    } catch (error) { if (generation === loop) status.textContent = `Failed: ${error.message}`; }
   });
+  pause.addEventListener('click', () => { paused = !paused; pause.textContent = paused ? 'Resume' : 'Pause'; if (!paused) { last = performance.now(); requestAnimationFrame(frame); } });
+  document.addEventListener('visibilitychange', () => { last = performance.now(); elapsed = 0; });
+  function frame(now) {
+    if (!nes || paused) return;
+    elapsed = Math.min(elapsed + Math.max(0, now - last), 100); last = now;
+    // Run at NTSC speed even on 120/144 Hz displays; cap catch-up after stalls.
+    while (elapsed >= 1000 / 60) { nes.runFrame(); elapsed -= 1000 / 60; }
+    image.data.set(nes.frameRgba()); context.putImageData(image, 0, 0);
+    status.textContent = `${nes.cycleCount} CPU cycles`;
+    requestAnimationFrame(frame);
+  }
 </script>
