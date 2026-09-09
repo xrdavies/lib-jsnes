@@ -195,3 +195,5 @@ test('save/load restores PPU frame and scroll state', () => {
 test('save/load restores APU oscillator state without stale samples', () => {
   const nes=new Nes(image(0,1,1)); nes.write(0x4000,0x4f); nes.write(0x4002,0x20); nes.write(0x4003,0x08); nes.write(0x4015,1); nes.step(10000); const state=nes.saveState(); nes.step(1000); nes.loadState(state); const a=nes.audioSamples(); nes.step(1000); const b=nes.audioSamples(); assert.equal(a.length,0); assert.ok(b.length>0);
 });
+
+test('save/load restores selected mapper bank', () => { const nes=new Nes(image(2,8,1)); nes.write(0x8000,4); const state=nes.saveState(); nes.write(0x8000,1); nes.loadState(state); assert.equal(nes.read(0x8000),4); });

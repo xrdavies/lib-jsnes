@@ -34,7 +34,7 @@ export class Cartridge {
   }
 
   /** Reset mapping without discarding cartridge RAM. */
-  saveState(): Uint8Array { const out=new Uint8Array(23+0x2000); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg]); out.set(this.prgRam,23); return out; }
+  saveState(): Uint8Array { const out=new Uint8Array(23+0x2000); out.set([this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror,...this.mmc3Regs,this.mmc3Latch,this.mmc3Counter,this.mmc3Irq?1:0]); out.set(this.prgRam,23); return out; }
   loadState(state: Uint8Array): void { if(state.length!==23+0x2000) throw new RangeError('Invalid cartridge state'); [this.shift,this.control,this.chr0,this.chr1,this.prg,this.chrBank,this.axBank,this.gxBank,this.gxChr,this.mmc3Select,this.mmc3Mirror]=state; this.mmc3Regs.set(state.subarray(11,19)); this.mmc3Latch=state[19]; this.mmc3Counter=state[20]; this.mmc3Irq=!!state[21]; this.prgRam.set(state.subarray(23)); }
 
   reset(): void {
