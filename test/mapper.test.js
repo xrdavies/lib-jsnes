@@ -203,6 +203,16 @@ test('mapper 113 switches PRG/CHR banks and selects mirroring at $4100', () => {
   assert.equal(nes.cartridge.mirroring, 'vertical');
 });
 
+test('mapper 140 switches 32KB PRG and 8KB CHR banks from $6000', () => {
+  const nes = new Nes(image(140, 8, 16));
+  nes.write(0x6000, 0x21);
+  assert.deepEqual(prgPair(nes), [4, 5]);
+  assert.deepEqual(chrPair(nes), [0x42, 0x43]);
+  const state = nes.saveState(); nes.write(0x6000, 0); nes.loadState(state);
+  assert.deepEqual(prgPair(nes), [4, 5]);
+  assert.deepEqual(chrPair(nes), [0x42, 0x43]);
+});
+
 test('MMC3 selects 8KB PRG slots and 1KB CHR banks', () => {
   const nes = new Nes(image(4, 8, 4)); nes.write(0x8000, 6); nes.write(0x8001, 3); assert.equal(nes.read(0x8000), 1); nes.write(0x8000, 0); nes.write(0x8001, 5); assert.equal(nes.cartridge.readChr(0), 0x41); nes.write(0x8000, 0x46); nes.write(0x8001, 2); assert.equal(nes.read(0x8000), 7);
 });
