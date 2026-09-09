@@ -70,3 +70,47 @@ test('PPUSTATUS retains the previous high bits on the bus after acknowledging VB
   assert.deepEqual(nes.saveState(), before);
   nes.reset(); assert.equal(nes.read(0x2000), 0);
 });
+
+test('I/O decay refreshes only driven groups and snapshots preserve their separate deadlines', () => {
+  for (const source of ['write', 'status', 'palette', 'vram', 'oam', 'write-only']) {
+    const nes = new Nes(image()), ppu = nes.ppu; nes.reset();
+    ppu.oam[0] = 0xa5; ppu.vram[0x2000] = 0xa5; ppu.palette[0] = 0x3f;
+    ppu.writeRegister(6, source === 'palette' ? 0x3f : 0x20); ppu.writeRegister(6, 0);
+    if (source === 'vram') ppu.readRegister(7); // Prime the buffered read.
+    ppu.writeRegister(2, 0xff);
+    ppu.step((3 * 262 - 1) * 341);
+    if (source === 'write') ppu.writeRegister(2, 0xa5);
+    else ppu.readRegister({ status: 2, palette: 7, vram: 7, oam: 4, 'write-only': 0 }[source]);
+    const saved = nes.saveState();
+    ppu.step(341);
+    const expected = { write: 0xa5, status: 0x80, palette: 0x3f, vram: 0xa5, oam: 0xa5, 'write-only': 0 }[source];
+    assert.equal(ppu.readRegister(0), expected, source);
+    const after = nes.saveState();
+    nes.loadState(saved);
+    for (let dot = 0; dot < 341; dot++) ppu.step(1);
+    assert.equal(ppu.readRegister(0), expected);
+    assert.deepEqual(nes.saveState(), after, 'restore and single-dot stepping preserve deadlines');
+    const state = ppu.saveState();
+    for (let group = 0; group < 3; group++) {
+      const invalid = state.slice(); invalid[state.length - 9 + group * 2] = 0xff;
+      assert.throws(() => ppu.loadState(invalid), /Invalid PPU I\/O decay state/);
+      assert.deepEqual(ppu.saveState(), state);
+    }
+    assert.throws(() => ppu.loadState(state.subarray(0, state.length - 6)), /Invalid PPU state/);
+    ppu.step((3 * 262 - 1) * 341);
+    assert.equal(ppu.readRegister(0), 0, 'repeated write-only reads cannot retain charge');
+    ppu.reset(); assert.equal(ppu.readRegister(0), 0);
+  }
+});
+
+test('CPU polling a write-only PPU register observes decay in JS and WASM', async () => {
+  const bytes = image([0xa9, 0xff, 0x8d, 2, 0x20,
+    0xad, 0, 0x20, 0xd0, 0xfb, 0xa9, 1, 0x85, 0, 0x02]);
+  const js = new Nes(bytes), wasm = await WasmCore.from(binary);
+  js.reset(); wasm.loadRom(bytes); wasm.reset();
+  js.step(88000); wasm.step(88000);
+  assert.equal(js.read(0), 0); assert.equal(wasm.exports.ramRead(0), 0);
+  js.step(2000); wasm.step(2000);
+  assert.equal(js.read(0), 1); assert.equal(wasm.exports.ramRead(0), 1);
+  assert.equal(wasm.cycleCount, js.cycleCount); assert.equal(wasm.programCounter, js.cpu.pc);
+});
