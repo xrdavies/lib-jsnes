@@ -22,6 +22,8 @@ function mapping(nes, swapped = false) {
   }
 }
 function address(nes, value) {
+  nes.ppu.step(6); // Allow the preceding PPUDATA read to recover.
+
   nes.read(0x2002); nes.write(0x2006, value >>> 8); nes.write(0x2006, value & 255);
 }
 function fill(nes, data) {
@@ -30,7 +32,7 @@ function fill(nes, data) {
 }
 function read(nes) {
   address(nes, 0); nes.read(0x2007);
-  return Uint8Array.from({ length: 8192 }, () => nes.read(0x2007));
+  return Uint8Array.from({ length: 8192 }, () => { nes.ppu.step(6); return nes.read(0x2007); });
 }
 
 for (const mapper of [0, 1, 2, 4, 7]) test(`mapper ${mapper} snapshots restore all CHR RAM through PPU reads`, () => {

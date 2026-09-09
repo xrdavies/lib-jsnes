@@ -17,13 +17,15 @@ function serial(nes, address, value) {
   for (let bit = 0; bit < 5; bit++) nes.write(address, (value >> bit) & 1);
 }
 function address(nes, at) {
+  nes.ppu.step(6); // Allow the preceding PPUDATA read to recover.
+
   nes.read(0x2002);
   nes.write(0x2006, at >> 8);
   nes.write(0x2006, at & 255);
 }
 function ppuRead(nes, at) {
   address(nes, at);
-  if (at < 0x3f00) nes.read(0x2007);
+  if (at < 0x3f00) { nes.read(0x2007); nes.ppu.step(6); }
   return nes.read(0x2007);
 }
 function ppuWrite(nes, at, value) {

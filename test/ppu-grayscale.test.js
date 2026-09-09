@@ -6,6 +6,8 @@ function scene() {
   const nes = new Nes(rom); nes.reset(); return nes;
 }
 function address(nes, value) {
+  nes.ppu.step(6); // Allow the preceding PPUDATA read to recover.
+
   nes.read(0x2002); nes.write(0x2006, value >>> 8); nes.write(0x2006, value & 255);
 }
 

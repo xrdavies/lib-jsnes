@@ -674,6 +674,17 @@ and polling until decay in both builds. PPU snapshots add three little-endian
 Older PPU/full-system snapshots lacking these six bytes are rejected, as are
 out-of-range countdowns; failed restoration leaves live state and queued PCM intact.
 
+An accepted PPUDATA read starts a six-PPU-dot recovery window. Reads during
+that window return the current I/O latch without refilling the data buffer,
+incrementing the address, refreshing the latch or extending the deadline. This
+also applies to register mirrors and DMA/dummy reads. Host code calling the
+untimed `Nes.read()` or `Ppu.readRegister()` directly must advance `ppu.step(6)`
+between independent data-port reads; normal CPU accesses already advance clocks.
+Writes still take effect during recovery. The fixed window represents one
+deterministic CPU/PPU alignment; chip-dependent buffer corruption is not modeled.
+PPU snapshots add one recovery-countdown byte before the timing flags. Previous
+PPU/system layouts are rejected, and restoring preserves a partially elapsed window.
+
 Obtain a fresh view from `core.frame()` after stepping, since WASM memory growth
 can invalidate an older view.
 
@@ -733,10 +744,9 @@ also pass with deferred fetching, shared preparation clocks and read-cycle prior
 The older `dmc_dma_during_read4` ROMs report through the screen and serial output,
 not `$6000`. A runner timeout therefore does not establish an emulation failure.
 After 600 frames, `dma_2007_write`, `dma_4016_read` and `read_write_2007` print
-`Passed`. `dma_2007_read` prints checksum `5E3DF9C4`, one of the two accepted
-CPU/PPU alignments in its source. `double_2007_read` prints `D84F6815`, outside
-its documented accepted checksums: consecutive PPUDATA reads still lack the
-hardware's read-inhibition behavior. These observations use the test's ASCII
+`Passed`. `dma_2007_read` prints checksum `159A7A8F`, one of the two accepted
+CPU/PPU alignments in its source. `double_2007_read` now prints the accepted
+checksum `F018C287` after implementing consecutive-read recovery. These observations use the test's ASCII
 nametable output, with matching final pixels, CPU state and PCM in both cores;
 they are separate from the automated `$6000` result checks.
 

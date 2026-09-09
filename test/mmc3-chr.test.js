@@ -12,10 +12,12 @@ function select(nes, register, bank, mode = 0) {
   nes.write(0x8000, mode | register); nes.write(0x8001, bank);
 }
 function address(nes, value) {
+  nes.ppu.step(6); // Allow the preceding PPUDATA read to recover.
+
   nes.read(0x2002); nes.write(0x2006, value >>> 8); nes.write(0x2006, value & 255);
 }
 function read(nes, value) {
-  address(nes, value); nes.read(0x2007); return nes.read(0x2007);
+  address(nes, value); nes.read(0x2007); nes.ppu.step(6); return nes.read(0x2007);
 }
 
 test('MMC3 maps every 1KB CHR slot in both inversion modes, including odd 2KB selectors', () => {
