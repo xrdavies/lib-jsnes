@@ -56,6 +56,13 @@ These browser output checks play no sound and are excluded from timing. Results
 include the number of checked bytes/samples and maximum audio error. They verify
 format integration, not real-time audio scheduling or device playback latency.
 
+For a minimal game screen, open `examples/browser.html` from the same server and
+choose a local `.nes` file. It loads the ESM TypeScript entry point, renders
+`frameRgba()` into a 256×240 Canvas, and runs one frame per animation callback.
+The example has no gamepad or audio policy; applications should wire
+`setController()` and schedule `audioSamples()` according to their own input and
+Web Audio pipeline.
+
 The benchmark has changed as the renderer and runtime have evolved. Run
 `node scripts/benchmark.mjs` on the current checkout for reproducible numbers;
 it reports exact binary size and per-round medians instead of embedding

@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>lib-jsnes browser example</title>
+<style>
+  body { font: 16px system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; }
+  canvas { width: 512px; height: 480px; image-rendering: pixelated; background: #000; }
+</style>
+<h1>lib-jsnes</h1>
+<p><label>NES ROM <input id="rom" type="file" accept=".nes"></label></p>
+<canvas id="screen" width="256" height="240"></canvas>
+<p id="status" role="status">Choose a ROM.</p>
+<script type="module">
+  import { Nes } from '../dist/index.js';
+  const input = document.querySelector('#rom'), canvas = document.querySelector('#screen');
+  const context = canvas.getContext('2d'), status = document.querySelector('#status');
+  input.addEventListener('change', async () => {
+    const file = input.files[0]; if (!file) return;
+    try {
+      const nes = new Nes(new Uint8Array(await file.arrayBuffer())); nes.reset();
+      const image = context.createImageData(256, 240);
+      const frame = () => {
+        nes.runFrame(); image.data.set(nes.frameRgba()); context.putImageData(image, 0, 0);
+        status.textContent = `${nes.cycleCount} CPU cycles`;
+        requestAnimationFrame(frame);
+      };
+      frame();
+    } catch (error) { status.textContent = `Failed: ${error.message}`; }
+  });
+</script>
