@@ -55,7 +55,9 @@ The TypeScript core supports the broader mapper list above.
 
 AxROM and GxROM tests cover every bank-register value, both PRG halves, the full CHR window,
 smaller ROM mirroring, CHR RAM, reset, and rendered pixels. CNROM and GxROM reset
-both PRG and CHR selectors. Bus conflicts and board-specific variants remain
+both PRG and CHR selectors. AxROM reset selects PRG bank zero and the lower
+single-screen nametable while retaining CHR RAM and nametable contents.
+Bus conflicts and board-specific variants remain
 outside the current WASM mapper model.
 
 WASM builds compile the execution methods from `src/cpu.ts`, `src/ppu.ts`, `src/apu.ts`, and `src/controller.ts`, using the installed

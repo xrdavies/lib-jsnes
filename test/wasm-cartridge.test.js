@@ -232,10 +232,76 @@ test('GxROM CHR selection changes rendered pixels and matches the TypeScript fra
   }
 });
 
-test('WASM AxROM switches 32KB PRG and single-screen nametable selection', async () => {
-  const { bytes, start } = rom(7, 4, 0); const core = await WasmCore.from(binary);
-  for (const value of [0, 1, 2, 3, 0x10, 0x11]) {
-    for (let b = 0; b < 4; b++) { bytes.set([0xa9, value, 0x8d, 0, 0x80, 0x4c, 5, 0x80], start + b * 0x4000); bytes.set([0x4c, 5, 0x80], start + b * 0x4000 + 5); } vector(bytes, start, 1, 0x8000);
-    core.loadRom(bytes); core.reset(); core.step(8); assert.equal(core.exports.unknownOpcodeCount(), 0); assert.ok(core.cycleCount >= 8);
+
+function axrom(program, banks = 8) {
+  const { bytes, start } = rom(7, banks);
+  // AxROM boots the first 32KB pair. Each pair has code and its own vector.
+  for (let bank = 0; bank < banks; bank += 2) {
+    bytes.set(program, start + bank * 0x4000);
+    vector(bytes, start, Math.min(bank + 2, banks), 0x8000);
+  }
+  return bytes;
+}
+
+test('AxROM executes bank switching for every register value and mirrors small PRG images', async () => {
+  const core = await WasmCore.from(binary);
+  for (const banks of [1, 2, 8]) for (let value = 0; value < 256; value++) {
+    const bytes = axrom([0xa9, value, 0x8d, 0xff, 0xff,
+      0xad, 0, 0x90, 0x85, 0, 0xad, 0, 0xd0, 0x85, 1], banks);
+    const js = new Nes(bytes); js.reset(); core.loadRom(bytes); core.reset();
+    assert.equal(core.programCounter, 0x8000);
+    js.step(20); core.step(20);
+    const expected = [0x30 + ((value & 15) * 2) % banks, 0x30 + ((value & 15) * 2 + 1) % banks];
+    assert.deepEqual([core.exports.ramRead(0), core.exports.ramRead(1)], expected);
+    assert.deepEqual([js.read(0), js.read(1)], expected);
+    assert.equal(core.programCounter, 0x800f);
+    assert.equal(core.cycleCount, 20);
+    assert.equal(core.exports.unknownOpcodeCount(), 0);
+  }
+});
+
+test('AxROM single-screen pages remain independent and reset selects the lower page', async () => {
+  const code = [], write = (a, v) => code.push(0xa9, v, 0x8d, a & 255, a >>> 8);
+  const address = a => { write(0x2006, a >>> 8); write(0x2006, a & 255); };
+  const read = destination => code.push(0xad, 7, 0x20, 0xad, 7, 0x20, 0x85, destination);
+  address(0x2000); read(0); // 23 cycles; inspect reset page selection before changing it.
+  write(0x8000, 0); address(0x2000); write(0x2007, 0x11);
+  write(0x8000, 0x11); address(0x2400); write(0x2007, 0x22);
+  for (const [selection, first] of [[0, 1], [0x11, 5]]) {
+    write(0xffff, selection);
+    for (let i = 0; i < 4; i++) { address(0x2000 + i * 0x400); read(first + i); }
+  }
+  const loop = 0x8000 + code.length; code.push(0x4c, loop & 255, loop >>> 8);
+  const bytes = axrom(code), core = await WasmCore.from(binary), js = new Nes(bytes);
+  js.reset(); core.loadRom(bytes); core.reset(); js.step(1000); core.step(1000);
+  const expected = [0, 0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22];
+  assert.deepEqual(Array.from({ length: 9 }, (_, i) => core.exports.ramRead(i)), expected);
+  assert.deepEqual(Array.from({ length: 9 }, (_, i) => js.read(i)), expected);
+  js.reset(); core.reset(); js.step(23); core.step(23);
+  assert.equal(core.exports.ramRead(0), 0x11);
+  assert.equal(js.read(0), 0x11);
+});
+
+test('AxROM screen selection changes pixels without replacing CHR RAM', async () => {
+  const core = await WasmCore.from(binary);
+  for (const selection of [0, 0x13]) {
+    const code = [], write = (a, v) => code.push(0xa9, v, 0x8d, a & 255, a >>> 8);
+    const ppuWrite = (a, values) => {
+      write(0x2006, a >>> 8); write(0x2006, a & 255);
+      for (const v of values) write(0x2007, v);
+    };
+    ppuWrite(0, [...Array(8).fill(255), ...Array(16).fill(0), ...Array(8).fill(255)]);
+    ppuWrite(0x3f00, [0x0f, 0x2a, 0x16]);
+    write(0x8000, 0); ppuWrite(0x2000, [0]);
+    write(0xffff, 0x13); ppuWrite(0x2000, [1]);
+    write(0x8000, selection); write(0x2001, 0x0a);
+    const loop = 0x8000 + code.length; code.push(0x4c, loop & 255, loop >>> 8);
+    const bytes = axrom(code), js = new Nes(bytes);
+    js.reset(); core.loadRom(bytes); core.reset(); js.step(60000); core.step(60000);
+    assert.equal(core.frame()[0], selection ? 0xffb53120 : 0xff5eea6f);
+    assert.deepEqual(core.frame(), js.frame);
+    assert.equal(core.programCounter, js.cpu.pc);
+    assert.equal(core.cycleCount, js.cycleCount);
+    assert.deepEqual(core.audioSamples(), js.audioSamples());
   }
 });
