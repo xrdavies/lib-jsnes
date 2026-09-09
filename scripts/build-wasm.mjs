@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, writeFileSync, unlinkSync, rmdirSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 import ts from 'typescript';
 
 const debug = process.argv.includes('--debug');
@@ -67,6 +68,11 @@ function compileSource(name) {
 }
 mkdirSync('dist-wasm', { recursive: true });
 const generated = [];
+const lock = 'dist-wasm/.build.lock';
+while (true) {
+  try { mkdirSync(lock); break; }
+  catch (error) { if (error.code !== 'EEXIST') throw error; await delay(25); }
+}
 try {
   for (const name of sources) {
     const path = `dist-wasm/${name}.generated.ts`;
@@ -79,4 +85,5 @@ try {
   process.exitCode = build.status ?? 1;
 } finally {
   for (const path of generated) unlinkSync(path);
+  rmdirSync(lock);
 }
