@@ -1,6 +1,6 @@
 # lib-jsnes
 
-A new TypeScript NES emulator core for browsers and Node.js. The implementation is independent from the C/C++ reference project while following the same NES hardware contracts.
+A new TypeScript NES emulator core for browsers and Node.js. The package ships an ESM entry point for modern bundlers and Node.js. The implementation is independent from the C/C++ reference project while following the same NES hardware contracts.
 
 ## Development
 

@@ -45,5 +45,6 @@
   "homepage": "https://github.com/xrdavies/lib-jsnes#readme",
   "engines": {
     "node": ">=18"
-  }
+  },
+  "module": "./dist/index.js"
 }
