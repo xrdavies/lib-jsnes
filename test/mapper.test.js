@@ -186,3 +186,7 @@ test('PPU mask clips the first eight background columns', () => {
 test('PPU enables an immediate NMI when NMI output is turned on during VBlank', () => {
   const nes=new Nes(image(0,1,1)); nes.ppu.step(241*341); assert.equal(nes.ppu.consumeNmi(),false); nes.ppu.writeRegister(0,0x80); assert.equal(nes.ppu.consumeNmi(),true);
 });
+
+test('PPU status reads preserve sprite hit and overflow bits', () => {
+  const nes=new Nes(image(0,1,1)); nes.ppu.writeRegister(1,8); nes.ppu.step(262*341); nes.ppu.oam[0]=0; nes.ppu.oam[1]=0; nes.ppu.oam[2]=0; nes.ppu.oam[3]=0; nes.ppu.step(1); const first=nes.ppu.readRegister(2); const second=nes.ppu.readRegister(2); assert.equal(first&0x60,second&0x60);
+});
