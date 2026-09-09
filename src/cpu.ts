@@ -19,9 +19,8 @@ export class Cpu6502 {
     reset(): void { this.sp = 0xfd; this.p = U | I; this.pc = this.read16(0xfffc); this.cycles = 0; this.unknownOpcodes = 0; this.lastUnknownOpcode = -1; this.unknownOpcodeCounts.fill(0); }
     save(): number[] { return [this.a, this.x, this.y, this.sp, this.p, this.pc & 255, this.pc >>> 8, this.cycles & 255, (this.cycles >>> 8) & 255, (this.cycles >>> 16) & 255, (this.cycles >>> 24) & 255]; }
     load(v: number[]): void { [this.a, this.x, this.y, this.sp, this.p] = v; this.pc = v[5] | (v[6] << 8); this.cycles = v[7] | (v[8] << 8) | (v[9] << 16) | (v[10] << 24); }
-    irq(): void { if (!(this.p & I))
-        this.interrupt(0xfffe); }
-    nmi(): void { this.interrupt(0xfffa); }
+    irq(): boolean { if (this.p & I) return false; this.interrupt(0xfffe); return true; }
+    nmi(): boolean { this.interrupt(0xfffa); return true; }
     step(): number {
         this.pageCycles = 0;
         const op = this.fetch();

@@ -74,3 +74,7 @@ test('Nes executes the NMI handler once per frame and RTI returns to the main lo
   assert.equal(nes.read(0x10), 2);
   assert.equal(nes.cpu.sp, 0xfd);
 });
+
+test('masked IRQ does not consume interrupt cycles', () => {
+  const nes=consoleWithNmiHandler(); nes.cpu.p|=4; nes.write(0xc000,1); nes.write(0xe001,0); const before=nes.cpu.cycles; nes.cartridge.clockScanline(); nes.cartridge.clockScanline(); assert.equal(nes.cpu.irq(),false); assert.equal(nes.cpu.cycles,before);
+});
