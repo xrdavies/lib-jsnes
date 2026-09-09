@@ -17,3 +17,12 @@ test('WasmCore rejects failed responses and oversized ROMs', async () => {
   assert.throws(() => core.loadRom(new Uint8Array(WasmCore.MAX_ROM_SIZE + 1)), /capacity/);
   assert.throws(() => core.loadRom(new Uint8Array(16)), /header/);
 });
+
+test('WasmCore rejects invalid cycle budgets like the JavaScript core', async () => {
+  const core = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
+  for (const cycles of [0, -1, 1.5, NaN, Infinity]) {
+    assert.throws(() => core.step(cycles), /cycles must be a positive integer/);
+  }
+  const rom = new Uint8Array(16 + 0x4000); rom.set([78,69,83,26,1,0]); rom.set([0xea], 16); rom[16 + 0x3ffc] = 0; rom[16 + 0x3ffd] = 0x80;
+  core.loadRom(rom); core.reset(); core.step(1); assert.equal(core.cycleCount, 2);
+});
