@@ -26,7 +26,7 @@ const sampleRate = nes.apu.sampleRate; // 44.1 kHz
 // NTSC_FRAME_RATE is exported for the host render loop
 ```
 
-Controllers use `nes.setController(1, Button.A | Button.Start)` with the exported `Button` constants. `saveState()` and `loadState()` preserve CPU, mapper, PPU, audio, controller, and RAM state.
+Controllers use `nes.setController(1, Button.A | Button.Start)` with the exported `Button` constants. `saveState()` and `loadState()` preserve CPU, mapper, PPU, audio, controller, and RAM state. Use `saveBatteryRam()` and `loadBatteryRam()` to persist cartridge battery RAM in browser storage or Node.
 
 ## Cartridge support
 

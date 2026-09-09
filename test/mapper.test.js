@@ -201,3 +201,5 @@ test('save/load restores selected mapper bank', () => { const nes=new Nes(image(
 test('APU sample queue remains bounded when the host does not drain it', () => {
   const nes=new Nes(image(0,1,1)); nes.write(0x4000,0x4f); nes.write(0x4002,0x20); nes.write(0x4003,0x08); nes.write(0x4015,1); nes.step(1789773*3); assert.equal(nes.apu['samples'].length, 88200); assert.equal(nes.audioSamples().length, 88200);
 });
+
+test('battery RAM can be persisted with strict length validation', () => { const nes=new Nes(image(1,1,1)); nes.write(0x6000,0x5a); const ram=nes.saveBatteryRam(); assert.equal(ram[0],0x5a); nes.write(0x6000,0); nes.loadBatteryRam(ram); assert.equal(nes.read(0x6000),0x5a); assert.throws(()=>nes.loadBatteryRam(new Uint8Array(1)),/8192/); });
