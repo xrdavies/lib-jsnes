@@ -119,7 +119,8 @@ class Noise {
   }
   step(): void {
     if (this.timer-- <= 0) {
-      this.timer = NOISE_PERIOD[this.regs[2] & 15];
+      // Table entries are CPU-cycle intervals, including this expiration cycle.
+      this.timer = NOISE_PERIOD[this.regs[2] & 15] - 1;
       const tap = this.regs[2] & 0x80 ? 6 : 1;
       this.shift = (this.shift >>> 1) | (((this.shift ^ (this.shift >>> tap)) & 1) << 14);
     }

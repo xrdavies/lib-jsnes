@@ -4,13 +4,13 @@ import { readFile } from 'node:fs/promises';
 import { Nes, WasmCore } from '../dist/index.js';
 
 const binary = await readFile(new URL('../dist-wasm/lib-jsnes.wasm', import.meta.url));
-function rom(mask, mode = 0, interrupts = false, timerHigh = 0) {
+function rom(mask, mode = 0, interrupts = false, timerHigh = 0, noisePeriod = 0x83) {
   const code = [], write = (address, value) => code.push(0xa9, value, 0x8d, address & 255, address >>> 8);
   write(0x4015, mask);
   for (const base of [0x4000, 0x4004, 0x4008, 0x400c]) {
     write(base, base === 0x4008 ? 0x82 : 0x62);
     if (base < 0x4008) write(base + 1, 0x89); // Negative sweep; distinct negate on pulse 1/2.
-    write(base + 2, base === 0x400c ? 0x83 : 0x39);
+    write(base + 2, base === 0x400c ? noisePeriod : 0x39);
     write(base + 3, 0x08 | timerHigh);
   }
   write(0x4017, mode);
@@ -102,4 +102,18 @@ test('WASM triangle PCM has the programmed period+1 frequency', async () => {
     if (next) direction = next;
   }
   assert.ok(Math.abs(peaks - 1000) <= 1, `expected 1000 periods, got ${peaks}`);
+});
+
+
+test('WASM noise PCM matches all sixteen periods and both feedback taps', async () => {
+  const core = await WasmCore.from(binary);
+  for (const mode of [0, 0x80]) for (let period = 0; period < 16; period++) {
+    const image = rom(8, 0, false, 0, mode | period), js = new Nes(image);
+    js.reset(); core.loadRom(image); core.reset();
+    js.step(160000); core.step(160000);
+    const expected = js.audioSamples();
+    assert.ok(new Set(expected).size > 1, 'exercise audible noise');
+    assert.deepEqual(core.audioSamples(), expected, `mode ${mode}, period ${period}`);
+    assert.equal(core.cycleCount, js.cycleCount);
+  }
 });

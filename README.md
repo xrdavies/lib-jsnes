@@ -75,6 +75,11 @@ per programmed period plus one, gated by the length and linear counters. Tests
 check timer boundaries and emitted PCM frequency in both builds. Output DAC
 behavior while gated and other analog audio details remain approximate.
 
+Noise timer table entries are CPU-cycle intervals. The LFSR keeps running while
+the channel is disabled, and period/mode writes preserve the current countdown
+and shift register. Tests check all 16 NTSC periods with both feedback taps,
+snapshot continuation, and matching PCM from the TypeScript and WASM builds.
+
 The CPU advances the APU after each instruction, DMA stall, and interrupt entry.
 Audio register changes and status reads therefore take effect within a host
 `step()` call. Timing within individual CPU instructions is still approximate.
