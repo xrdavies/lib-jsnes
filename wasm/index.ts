@@ -1,10 +1,13 @@
 import { Cpu6502, CpuBus } from '../dist-wasm/cpu.generated';
 import { Ppu } from '../dist-wasm/ppu.generated';
+import { Apu } from '../dist-wasm/apu.generated';
 import { Controller } from '../dist-wasm/controller.generated';
 import { Cartridge } from './cartridge';
 const RAM = new Uint8Array(0x800);
 const cartridge = new Cartridge();
 const ppu = new Ppu(cartridge);
+const apu = new Apu();
+let audio = new Int16Array(0);
 const controller1 = new Controller(), controller2 = new Controller();
 let dmaStall: i32 = 0;
 class Bus implements CpuBus {
@@ -16,6 +19,7 @@ function read(address: i32): i32 {
   address &= 0xffff;
   if (address < 0x2000) return RAM[address & 0x7ff];
   if (address < 0x4000) return ppu.readRegister(address);
+  if (address == 0x4015) return apu.readStatus();
   if (address == 0x4016) return controller1.read();
   if (address == 0x4017) return controller2.read();
   return cartridge.readCpu(address);
@@ -29,6 +33,8 @@ function write(address: i32, value: i32): void {
     const bytes = new Uint8Array(256);
     for (let i = 0; i < 256; i++) bytes[i] = read((value << 8) + i);
     ppu.dma(bytes);
+  } else if ((address >= 0x4000 && address <= 0x4015) || address == 0x4017) {
+    apu.write(address, value);
   } else if (address == 0x4016) {
     controller1.write(value); controller2.write(value);
   } else cartridge.writeCpu(address, value);
@@ -46,7 +52,7 @@ export function loadRom(length: i32): void {
   ppu.vram.fill(0); ppu.palette.fill(0); ppu.oam.fill(0);
 }
 export function reset(): void {
-  RAM.fill(0); cartridge.reset(); ppu.reset(); dmaStall = 0;
+  RAM.fill(0); cartridge.reset(); ppu.reset(); apu.reset(); audio = new Int16Array(0); dmaStall = 0;
   cpu.a = cpu.x = cpu.y = 0;
   cpu.reset();
 }
@@ -57,14 +63,19 @@ export function step(count: i32): void {
     if (dmaStall > 0) {
       const used = min(dmaStall, remaining);
       dmaStall -= used; remaining -= used; cpu.cycles += used;
-      ppu.step(used * 3);
+      clockDevices(used);
       continue;
     }
-    const used = cpu.step(); remaining -= used; ppu.step(used * 3);
+    const used = cpu.step(); remaining -= used; clockDevices(used);
+    if (apu.irqPending && cpu.irq()) { cpu.cycles += 7; remaining -= 7; clockDevices(7); }
     ppu.consumeScanlines();
-    if (ppu.consumeNmi()) { cpu.nmi(); cpu.cycles += 7; remaining -= 7; ppu.step(21); }
+    if (ppu.consumeNmi()) { cpu.nmi(); cpu.cycles += 7; remaining -= 7; clockDevices(7); }
   }
 }
+function clockDevices(cycles: i32): void { ppu.step(cycles * 3); apu.step(cycles); }
+export function sampleRate(): i32 { return apu.sampleRate; }
+export function audioDrain(): i32 { audio = apu.drainSamples(); return audio.length; }
+export function audioPointer(): usize { return changetype<usize>(audio.buffer) + audio.byteOffset; }
 export function cycleCount(): f64 { return cpu.cycles; }
 export function programCounter(): i32 { return cpu.pc; }
 export function cpuRegister(index: i32): i32 {

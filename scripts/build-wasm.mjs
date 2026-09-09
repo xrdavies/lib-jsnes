@@ -2,9 +2,9 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import ts from 'typescript';
 
-// Compile the shared CPU/PPU/controller code, adding AssemblyScript's required
+// Compile the shared CPU/PPU/APU/controller code, adding AssemblyScript's required
 // integer annotations. JS snapshot marshaling stays in the TypeScript API.
-const sources = ['cpu', 'ppu', 'controller'];
+const sources = ['cpu', 'ppu', 'apu', 'controller'];
 const program = ts.createProgram(sources.map(name => `src/${name}.ts`), { target: ts.ScriptTarget.ES2020 });
 const checker = program.getTypeChecker();
 function compileSource(name) {
@@ -13,6 +13,10 @@ function compileSource(name) {
     const f = context.factory;
     const typeAt = node => {
       const type = checker.getTypeAtLocation(node);
+      if (checker.isArrayType(type)) {
+        const element = checker.getTypeArguments(type)[0];
+        return f.createArrayTypeNode(f.createTypeReferenceNode(element.flags & ts.TypeFlags.NumberLike ? 'i32' : element.symbol.getName()));
+      }
       if (type.flags & ts.TypeFlags.Object) return f.createTypeReferenceNode(type.symbol.getName());
       if (type.flags & ts.TypeFlags.BooleanLike) return f.createTypeReferenceNode('boolean');
       if (type.flags & ts.TypeFlags.NumberLike) return f.createTypeReferenceNode('i32');

@@ -6,6 +6,9 @@ export interface WasmExports {
   loadRom(length: number): void;
   reset(): void;
   setController(player: number, mask: number): void;
+  sampleRate(): number;
+  audioDrain(): number;
+  audioPointer(): number;
   step(cycles: number): void;
   cycleCount(): number;
   programCounter(): number;
@@ -45,6 +48,11 @@ export class WasmCore {
   }
 
   reset(): void { this.exports.reset(); }
+  get sampleRate(): number { return this.exports.sampleRate(); }
+  audioSamples(): Int16Array {
+    const length = this.exports.audioDrain();
+    return new Int16Array(this.exports.memory.buffer, this.exports.audioPointer(), length).slice();
+  }
   setController(player: 1 | 2, mask: number): void {
     if (player !== 1 && player !== 2) throw new RangeError('player must be 1 or 2');
     this.exports.setController(player, mask);

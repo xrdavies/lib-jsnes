@@ -10,7 +10,7 @@ npm test
 npm run build:wasm
 ```
 
-`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. Audio and the broader TypeScript mapper set are still missing from WASM.
+`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise APU as mono PCM, including frame IRQs. The broader TypeScript mapper set is still missing from WASM.
 
 ## API
 
@@ -53,7 +53,7 @@ Its cartridge path accepts iNES 1.0 NROM and UxROM (mapper 0 and 2), including
 NES 2.0 and other mappers are rejected by this experimental WASM core.
 The TypeScript core supports the broader mapper list above.
 
-WASM builds compile the execution methods from `src/cpu.ts`, `src/ppu.ts`, and `src/controller.ts`, using the installed
+WASM builds compile the execution methods from `src/cpu.ts`, `src/ppu.ts`, `src/apu.ts`, and `src/controller.ts`, using the installed
 TypeScript compiler to supply AssemblyScript integer annotations. The generated
 source is temporary and is not shipped. There is no separately maintained WASM
 opcode switch or renderer. Tests compare all 151 official opcodes and the 52 stable LAX, SAX,
@@ -95,12 +95,26 @@ core.setController(1, Button.Start); // Replace player 1's held buttons.
 core.step(29780);
 core.setController(1, 0); // Release all buttons.
 const pixels = core.frame();
+const pcm = core.audioSamples(); // Owned Int16Array; drains the queued mono samples.
+const sampleRate = core.sampleRate; // 44100 Hz.
 ```
 
 `setController(player, mask)` accepts player 1 or 2 and the same `Button` masks
 as `Nes`. The CPU reads the shared serial controller implementation at `$4016`
 and `$4017`; writing `$4016` latches both controllers. Host button changes affect
 the next latch, or live A-button reads while strobe is high.
+
+`audioSamples()` copies the queued PCM into a host-owned array, so later steps,
+drains, or WASM memory growth do not overwrite it. Reset discards queued samples.
+Drain regularly; the queue retains at most two seconds when the host falls behind.
+For Web Audio, divide each sample by 32768 when filling a mono `AudioBuffer`.
+Raw ABI consumers call `audioDrain()` to obtain the sample count, then use
+`audioPointer()` and exported `memory` to read signed 16-bit samples; copy that
+view before the next drain, reset, or memory growth. `sampleRate()` returns Hz.
+
+Audio tests compare both frame modes, each implemented channel, full-width timer
+periods, mixed PCM, and DMA/NMI/IRQ timing between builds. The shared APU still
+lacks DMC and a nonlinear mixer, and its frame-edge timing remains approximate.
 
 
 ## Publishing
