@@ -122,7 +122,7 @@ export class Nes implements CpuBus {
     const cartSize = this.cartridge.stateSize, ppuSize = PPU_STATE_SIZE, apuSize = Apu.STATE_SIZE;
     const size = Cpu6502.STATE_SIZE + cartSize + ppuSize + apuSize + 8 + this.ram.length + 8;
     if (state.length !== size) throw new RangeError('Invalid state size');
-    state = state.slice(); // Validate and apply the same bytes, including shared-memory inputs.
+    state = new Uint8Array(state); // Validate and apply the same bytes, including shared-memory inputs.
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
     const dmaStall = view.getFloat64(size - 8, true);
     if (!Number.isSafeInteger(dmaStall) || dmaStall < 0) throw new RangeError('Invalid DMA state');

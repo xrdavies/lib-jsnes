@@ -3,7 +3,7 @@ export interface RomImage { readonly mapper: number; readonly format: 'ines' | '
 
 /** Parse iNES or NES 2.0 ROM sizes and mapper bits with bounds checks. */
 export function parseRom(input: ArrayBuffer | Uint8Array): RomImage {
-  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  const bytes = input instanceof Uint8Array ? new Uint8Array(input.buffer, input.byteOffset, input.byteLength) : new Uint8Array(input);
   if (bytes.length < 16 || bytes[0] !== 0x4e || bytes[1] !== 0x45 || bytes[2] !== 0x53 || bytes[3] !== 0x1a) throw new Error('Invalid iNES ROM header');
   const flags6 = bytes[6], flags7 = bytes[7];
   const nes2 = (flags7 & 0x0c) === 0x08;

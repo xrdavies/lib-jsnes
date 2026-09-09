@@ -118,6 +118,14 @@ flags; controller restoration rejects invalid serial indices and strobe flags.
 The same validators are used by direct component restores. These checks do not
 change snapshot sizes or identify which ROM produced a snapshot; hosts must still
 associate saves with the correct cartridge.
+
+Node `Buffer` inputs are supported, including subviews with nonzero offsets.
+`parseRom()` returns independently owned trainer/PRG/CHR arrays, so changing or
+reusing the input buffer does not change a running cartridge. Full-system and
+direct PPU snapshot restores copy the intended bytes rather than the Buffer's
+entire backing allocation. WASM loading also copies Buffer views backed by its
+own linear memory before allocating replacement ROM storage. No Node-specific
+dependency is required by the browser build.
 The CPU snapshot is now `Cpu6502.STATE_SIZE` (15 bytes): seven bytes for registers
 and PC followed by an eight-byte little-endian Float64 cycle count. This preserves
 nonnegative safe-integer counts beyond 2³², where the former four-byte encoding

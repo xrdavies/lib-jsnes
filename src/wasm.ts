@@ -65,7 +65,7 @@ export class WasmCore {
     const chrUnit = image.mapper === 4 ? 0x400 : image.mapper === 1 ? 0x1000 : 0x2000;
     if (image.chrRom.length % chrUnit !== 0) throw new Error('Unsupported CHR bank size');
     // Allocation may grow memory or reclaim its former ROM buffer.
-    if (rom.buffer === this.exports.memory.buffer) rom = rom.slice();
+    if (rom.buffer === this.exports.memory.buffer) rom = new Uint8Array(rom);
     const pointer = this.exports.romAllocate(rom.length);
     new Uint8Array(this.exports.memory.buffer, pointer, rom.length).set(rom);
     this.exports.loadRom(rom.length);
