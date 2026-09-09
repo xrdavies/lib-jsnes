@@ -336,7 +336,9 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
       }
       this.mapperAddress = 0;
       if (mapperLine) { this.clockBackground(); this.clockSprites(); }
-      if (mapperLine && this.dot >= 65 && this.dot <= 256) this.clockSpriteEvaluation();
+      // Sprite evaluation advances one OAM byte every two PPU dots during
+      // the 192-dot evaluation window.
+      if (mapperLine && this.dot >= 65 && this.dot <= 256 && (this.dot & 1)) this.clockSpriteEvaluation();
       if (this.dot === 256 && (this.scanline < 240 || this.scanline === 261)) {
         this.spriteLine.fill(0);
         if (!mapperLine) this.spriteCount = 0;

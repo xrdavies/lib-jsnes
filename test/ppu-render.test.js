@@ -61,7 +61,7 @@ test('sprite overflow becomes visible when the ninth Y byte is evaluated', () =>
   const nes = scene();
   nes.write(0x2001, 0x1e);
   for (let i = 0; i < 9; i++) sprite(nes, i, 20, 20, 0);
-  nes.ppu.step(19 * 341 + 96);
+  nes.ppu.step(19 * 341 + 128);
   assert.equal(nes.read(0x2002) & 0x20, 0);
   nes.ppu.step(1);
   assert.equal(nes.read(0x2002) & 0x20, 0x20);
@@ -73,7 +73,7 @@ test('sprite overflow follows the hardware diagonal scan after eight sprites', (
   for (let i = 0; i < 8; i++) sprite(nes, i, 20, 20, 0);
   sprite(nes, 8, 20, 255, 0);
   sprite(nes, 9, 20, 255, 20);
-  nes.ppu.step(19 * 341 + 97);
+  nes.ppu.step(19 * 341 + 130);
   assert.equal(nes.read(0x2002) & 0x20, 0);
   nes.ppu.step(1);
   assert.equal(nes.read(0x2002) & 0x20, 0x20);
