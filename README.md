@@ -160,6 +160,13 @@ sweeps with channel-specific negate and target-overflow muting. Tests check outp
 frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains
 incomplete: exact frame edge timing and analog output filters are not implemented.
 
+The pulse CPU/2 divider runs independently of the frame sequencer. Writes to
+`$4017` restart frame sequencing without shifting the pulse timer clock phase.
+Reset initializes the divider; snapshot byte 78 preserves it independently of
+the frame counter. Tests cover both clock parities, both frame modes and repeated
+CPU-driven `$4017` writes in both builds. Frame-counter write delays within an
+instruction remain approximate.
+
 The triangle timer runs every CPU cycle and advances its 32-step sequencer once
 per programmed period plus one, gated by the length and linear counters. Tests
 check timer boundaries and emitted PCM frequency in both builds. Output DAC
@@ -196,8 +203,9 @@ connect this bus automatically. Reading `$4015` clears only the frame IRQ;
 writing `$4015` or disabling IRQ in `$4010` acknowledges DMC IRQ. Stopping the
 reader leaves buffered output and the current DAC level intact.
 
-The APU snapshot is now 78 bytes and includes the DMC reader, prefetch byte,
-shift register, timer, DAC, and IRQ. Previous 62-byte APU snapshots are rejected.
+The APU snapshot is now 79 bytes and includes the DMC reader, prefetch byte,
+shift register, timer, DAC, IRQ and independent pulse-clock phase. Previous
+62-byte and 78-byte APU snapshots are rejected.
 DMC tests cover all rates, maximum length, mapper wrap, output limits, CPU IRQs,
 continued output after stopping, and snapshot replay in TypeScript, with PCM and
 CPU parity checks in WASM.
