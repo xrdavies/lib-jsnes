@@ -10,7 +10,7 @@ npm test
 npm run build:wasm
 ```
 
-`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM currently implements CPU execution and cartridge memory; its frame buffer is a blank placeholder, with no PPU or APU emulation. It cannot yet run games.
+`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. Audio, controllers, and the broader TypeScript mapper set are still missing from WASM.
 
 ## API
 
@@ -53,15 +53,23 @@ Its cartridge path accepts iNES 1.0 NROM and UxROM (mapper 0 and 2), including
 NES 2.0 and other mappers are rejected by this experimental WASM core.
 The TypeScript core supports the broader mapper list above.
 
-WASM builds compile the execution methods from `src/cpu.ts`, using the installed
+WASM builds compile the execution methods from `src/cpu.ts` and `src/ppu.ts`, using the installed
 TypeScript compiler to supply AssemblyScript integer annotations. The generated
 source is temporary and is not shipped. There is no separately maintained WASM
-opcode switch. Tests compare all 151 official opcodes and the 52 stable LAX, SAX,
+opcode switch or renderer. Tests compare all 151 official opcodes and the 52 stable LAX, SAX,
 SLO, RLA, SRE, RRA, DCP, and ISC encodings against the TypeScript CPU
 (registers, RAM, and cycles) and independently check every ADC/SBC operand pair.
 These checks establish CPU parity, not complete hardware compatibility; CPU bus
 access timing remains approximate and undocumented opcode coverage is partial.
 `core.exports.unknownOpcodeCount()` reports encounters with unimplemented opcodes.
+
+Synthetic ROMs compare complete frames between the two builds and assert known
+background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.
+WASM uses the same frame-batched renderer as TypeScript: raster effects, exact
+sprite evaluation, and per-bus-cycle PPU timing remain incomplete. Frame views
+use packed `0xAARRGGBB` pixels; they are not RGBA byte views for `ImageData`.
+Obtain a fresh view from `core.frame()` after stepping, since WASM memory growth
+can invalidate an older view.
 
 To check both CPU builds against a local NROM reference trace (such as `nestest`),
 build with `npm test`, then run:

@@ -2,49 +2,70 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import ts from 'typescript';
 
-// Compile the existing CPU execution code, adding AssemblyScript's required
+// Compile the shared CPU/PPU execution code, adding AssemblyScript's required
 // integer annotations. JS snapshot marshaling stays in the TypeScript API.
-const program = ts.createProgram(['src/cpu.ts'], { target: ts.ScriptTarget.ES2020 });
+const program = ts.createProgram(['src/cpu.ts', 'src/ppu.ts'], { target: ts.ScriptTarget.ES2020 });
 const checker = program.getTypeChecker();
-const source = program.getSourceFile('src/cpu.ts');
-const result = ts.transform(source, [context => {
-  const f = context.factory;
-  const typeAt = node => {
-    const type = checker.getTypeAtLocation(node);
-    if (type.flags & ts.TypeFlags.Object) return f.createTypeReferenceNode(type.symbol.getName());
-    if (type.flags & ts.TypeFlags.BooleanLike) return f.createTypeReferenceNode('boolean');
-    if (type.flags & ts.TypeFlags.NumberLike) return f.createTypeReferenceNode('i32');
-    throw new Error(`Unsupported CPU type: ${checker.typeToString(type)}`);
-  };
-  const visit = node => {
-    if (ts.isMethodDeclaration(node) && ['save', 'load'].includes(node.name.getText(source))) return undefined;
-    if (node.kind === ts.SyntaxKind.NumberKeyword) return f.createTypeReferenceNode('i32');
-    if (ts.isPropertyDeclaration(node) && !node.type && node.initializer) {
-      // Preserve JavaScript's long-running cycle count rather than wrapping at 2^31.
-      const type = node.name.getText(source) === 'cycles' ? f.createTypeReferenceNode('f64') : typeAt(node);
-      node = f.updatePropertyDeclaration(node, node.modifiers, node.name, node.questionToken, type, node.initializer);
-    }
-    if (ts.isParameter(node) && !node.type && node.initializer) {
-      node = f.updateParameterDeclaration(node, node.modifiers, node.dotDotDotToken, node.name, node.questionToken, typeAt(node), node.initializer);
-    }
-    if (ts.isMethodDeclaration(node) && !node.type) {
-      const signature = checker.getSignatureFromDeclaration(node);
-      const result = checker.getReturnTypeOfSignature(signature);
-      const name = result.flags & ts.TypeFlags.Void ? 'void' : result.flags & ts.TypeFlags.BooleanLike ? 'boolean' : 'i32';
-      node = f.updateMethodDeclaration(node, node.modifiers, node.asteriskToken, node.name, node.questionToken, node.typeParameters, node.parameters, f.createTypeReferenceNode(name), node.body);
-    }
-    return ts.visitEachChild(node, visit, context);
-  };
-  return root => ts.visitNode(root, visit);
-}]);
+function compileSource(name) {
+  const source = program.getSourceFile(`src/${name}.ts`);
+  const result = ts.transform(source, [context => {
+    const f = context.factory;
+    const typeAt = node => {
+      const type = checker.getTypeAtLocation(node);
+      if (type.flags & ts.TypeFlags.Object) return f.createTypeReferenceNode(type.symbol.getName());
+      if (type.flags & ts.TypeFlags.BooleanLike) return f.createTypeReferenceNode('boolean');
+      if (type.flags & ts.TypeFlags.NumberLike) return f.createTypeReferenceNode('i32');
+      throw new Error(`Unsupported shared-core type: ${checker.typeToString(type)}`);
+    };
+    const visit = node => {
+      // The palette is a fixed numeric table. AssemblyScript typed-array
+      // constructors accept lengths only; a StaticArray preserves indexed reads.
+      if (ts.isNewExpression(node) && node.expression.getText(source) === 'Uint32Array' && node.arguments?.length === 1 && ts.isArrayLiteralExpression(node.arguments[0])) {
+        return f.createAsExpression(node.arguments[0], f.createTypeReferenceNode('StaticArray', [f.createTypeReferenceNode('u32')]));
+      }
+      if (ts.isCallExpression(node) && node.expression.getText(source) === 'Math.min') {
+        return f.createCallExpression(f.createIdentifier('min'), undefined, node.arguments.map(arg => ts.visitNode(arg, visit)));
+      }
+      if (ts.isCallExpression(node) && node.expression.getText(source) === 'Math.floor') {
+        return f.createAsExpression(node, f.createTypeReferenceNode('i32'));
+      }
+      if (ts.isMethodDeclaration(node) && ['save', 'load', 'saveState', 'loadState'].includes(node.name.getText(source))) return undefined;
+      if (ts.isImportDeclaration(node) && node.moduleSpecifier.text === './cartridge.js') {
+        return f.updateImportDeclaration(node, node.modifiers, f.updateImportClause(node.importClause, false, node.importClause.name, node.importClause.namedBindings), f.createStringLiteral('../wasm/cartridge'), node.attributes);
+      }
+      if (node.kind === ts.SyntaxKind.NumberKeyword) return f.createTypeReferenceNode('i32');
+      if (ts.isPropertyDeclaration(node) && !node.type && node.initializer) {
+        // Preserve JavaScript's long-running cycle count rather than wrapping at 2^31.
+        const type = node.name.getText(source) === 'cycles' ? f.createTypeReferenceNode('f64') : typeAt(node);
+        node = f.updatePropertyDeclaration(node, node.modifiers, node.name, node.questionToken, type, node.initializer);
+      }
+      if (ts.isParameter(node) && !node.type && node.initializer) {
+        node = f.updateParameterDeclaration(node, node.modifiers, node.dotDotDotToken, node.name, node.questionToken, typeAt(node), node.initializer);
+      }
+      if (ts.isMethodDeclaration(node) && !node.type) {
+        const signature = checker.getSignatureFromDeclaration(node);
+        const result = checker.getReturnTypeOfSignature(signature);
+        const name = result.flags & ts.TypeFlags.Void ? 'void' : result.flags & ts.TypeFlags.BooleanLike ? 'boolean' : 'i32';
+        node = f.updateMethodDeclaration(node, node.modifiers, node.asteriskToken, node.name, node.questionToken, node.typeParameters, node.parameters, f.createTypeReferenceNode(name), node.body);
+      }
+      return ts.visitEachChild(node, visit, context);
+    };
+    return root => ts.visitNode(root, visit);
+  }]);
+  try { return ts.createPrinter().printFile(result.transformed[0]); }
+  finally { result.dispose(); }
+}
 mkdirSync('dist-wasm', { recursive: true });
-const generated = 'dist-wasm/cpu.generated.ts';
+const generated = [];
 try {
-  writeFileSync(generated, ts.createPrinter().printFile(result.transformed[0]));
+  for (const name of ['cpu', 'ppu']) {
+    const path = `dist-wasm/${name}.generated.ts`;
+    writeFileSync(path, compileSource(name));
+    generated.push(path);
+  }
   const build = spawnSync('asc', ['wasm/index.ts', '--outFile', 'dist-wasm/lib-jsnes.wasm', '--exportRuntime', '--exportTable'], { stdio: 'inherit' });
   if (build.error) throw build.error;
   process.exitCode = build.status ?? 1;
 } finally {
-  result.dispose();
-  unlinkSync(generated);
+  for (const path of generated) unlinkSync(path);
 }

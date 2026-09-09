@@ -51,13 +51,14 @@ test('WASM and TypeScript execute official and stable undocumented opcodes with 
 
 test('WASM ADC/SBC implement carry and signed overflow for every operand pair', async () => {
   const core = await WasmCore.from(binary);
-  core.loadRom(image([0x18, 0xa9, 0, 0x69, 0]));
+  core.loadRom(image([0x18, 0xa9, 0, 0x69, 0, 0x4c, 0, 0x80]));
+  core.reset();
   for (const opcode of [0x69, 0xe9]) {
     core.exports.romWrite(19, opcode);
     for (let a = 0; a < 256; a++) for (let b = 0; b < 256; b++) for (let carry = 0; carry <= 1; carry++) {
       core.exports.romWrite(16, carry ? 0x38 : 0x18);
       core.exports.romWrite(18, a); core.exports.romWrite(20, b);
-      core.reset(); core.step(6);
+      core.step(9);
       const value = opcode === 0x69 ? a + b + carry : a - b - 1 + carry;
       const signedA = a < 128 ? a : a - 256, signedB = b < 128 ? b : b - 256;
       const signed = opcode === 0x69 ? signedA + signedB + carry : signedA - signedB - 1 + carry;
