@@ -22,6 +22,7 @@ function sprite(nes, id, x, y, tile = 1, attr = 0) {
 function render(nes, mask = 0x1e) {
   nes.ppu.writeRegister(1, mask);
   // Inspect the completed visible frame during VBlank, before pre-render clears flags.
+  if (nes.ppu.scanline < 240) nes.ppu.step(241 * 341 + 1 - (nes.ppu.scanline * 341 + nes.ppu.dot));
   const position = nes.ppu.scanline * 341 + nes.ppu.dot;
   const untilVblank = (241 * 341 + 1 - position + 262 * 341) % (262 * 341);
   nes.ppu.step(untilVblank || 262 * 341);
@@ -192,8 +193,9 @@ test('background tile-row reuse preserves fine scrolling, clipping, and nametabl
   nes.cartridge.readChr = a => { reads++; return readChr(a); };
   for (const scroll of [0, 1, 2, 3, 4, 5, 6, 7, 252, 255]) for (const clip of [false, true]) {
     nes.ppu.writeRegister(5, scroll); nes.ppu.writeRegister(5, 239);
+    if (nes.ppu.scanline < 240) nes.ppu.step(241 * 341 + 1);
     reads = 0; render(nes, clip ? 8 : 10);
-    assert.ok(reads <= 2 * 33 * 240, 'pattern data should be fetched once per tile row');
+    assert.ok(reads <= 2 * 34 * 241, '34 fetch groups on each visible/pre-render line');
     for (let y = 0; y < 240; y++) for (let x = 0; x < 256; x++) {
       const wx = x + scroll, wy = y + 239, nt = (wx >= 256 ? 1 : 0) + (wy >= 240 ? 2 : 0);
       const color = clip && x < 8 ? 0 : (nt + ((wy % 240) % 8) + (wx % 8)) % 4;

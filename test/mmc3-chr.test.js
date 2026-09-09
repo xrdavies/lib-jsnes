@@ -80,10 +80,11 @@ test('MMC3 inversion changes rendered tile data and preserves CHR ROM', () => {
   select(nes, 0, 0); select(nes, 2, 4);
   nes.ppu.palette.set([0x0f, 0x2a, 0x16]); nes.ppu.writeRegister(1, 10);
   nes.ppu.vram.fill(64, 0x2000, 0x23c0); // Tile 64 starts at $0400 (R0 odd half).
-  nes.ppu.step(262 * 341);
+  nes.ppu.step(262 * 341 * 2);
   assert.equal(nes.frame[8], (0xff000000 | NES_PALETTE[0x2a]) >>> 0);
   nes.ppu.vram.fill(0, 0x2000, 0x23c0); nes.write(0x8000, 0x80);
-  address(nes, 8); nes.write(0x2007, 0); // Must not modify CHR ROM.
-  nes.ppu.step(262 * 341);
+  nes.ppu.writeRegister(1, 0); address(nes, 8); nes.write(0x2007, 0);
+  nes.ppu.readRegister(2); nes.ppu.writeRegister(5, 0); nes.ppu.writeRegister(5, 0); nes.ppu.writeRegister(1, 10); // Must not modify CHR ROM.
+  nes.ppu.step(262 * 341 * 2);
   assert.equal(nes.frame[8], (0xff000000 | NES_PALETTE[0x16]) >>> 0);
 });

@@ -113,7 +113,7 @@ test('discrete mapper CHR RAM, mirroring changes and reset reach PPU reads in bo
     for (let i = 0; i < 4; i++) readPpu(0x2000 + i * 0x400, i);
     // Draw tile zero from retained CHR RAM after switching the mapper register.
     for (let i = 0; i < 4; i++) { addr(0x2000 + i * 0x400); write(0x2007, 0); }
-    addr(0x3f01); write(0x2007, 0x2a); write(0x2001, 0x0a);
+    addr(0x3f01); write(0x2007, 0x2a); write(0x2000, 0); write(0x2005, 0); write(0x2005, 0); write(0x2001, 0x0a);
     const bytes = image(mapper, code, 8, 0, vertical ? 1 : 0), js = new Nes(bytes);
     js.reset(); wasm.loadRom(bytes); wasm.reset(); js.step(60000); wasm.step(60000);
     const expected = vertical ? [3, 4, 3, 4] : [2, 2, 4, 4];

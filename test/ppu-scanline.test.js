@@ -21,12 +21,12 @@ function scene() {
   return nes;
 }
 
-test('palette, scroll, mask and CHR changes affect subsequent lines without repainting earlier lines', () => {
+test('palette/mask changes apply immediately while coarse scroll and CHR preserve prefetched pixels', () => {
   for (const change of ['palette', 'scroll', 'mask', 'bank']) {
     const nes = scene();
     for (let row = 0; row < 30; row++) nes.ppu.vram[0x2000 + row * 32 + 1] = 1;
     nes.ppu.step(120 * 341);
-    assert.equal(nes.frame[0], rgb(0x16));
+    assert.equal(nes.frame[32], rgb(0x16));
     assert.equal(nes.frame[120 * 256], 0xff000000, 'future line has not been rendered');
     const completed = nes.frame.slice(0, 120 * 256);
     if (change === 'palette') nes.ppu.palette[1] = 0x30;
@@ -37,7 +37,8 @@ test('palette, scroll, mask and CHR changes affect subsequent lines without repa
     nes.ppu.step(120 * 341);
     const expected = rgb({ palette: 0x30, scroll: 0x2a, mask: 0x0f, bank: 0x21 }[change]);
     assert.deepEqual(nes.frame.subarray(0, 120 * 256), completed);
-    assert.equal(nes.frame[120 * 256], expected);
+    assert.equal(nes.frame[120 * 256], change === 'scroll' || change === 'bank' ? rgb(0x16) : expected);
+    assert.equal(nes.frame[121 * 256], expected);
     assert.equal(nes.frame[239 * 256], expected);
     const frame = nes.frame.slice();
     nes.reset(); nes.loadState(state); nes.ppu.step(120 * 341);
@@ -69,8 +70,8 @@ test('pixels commit at x+1 and palette/mask writes affect only subsequent pixels
   nes.ppu.step(20);
   assert.deepEqual(nes.frame.subarray(20 * 256, 20 * 256 + 100), prefix);
   assert.ok(nes.frame.subarray(20 * 256 + 100, 20 * 256 + 120).every(v => v === rgb(0x30)));
-  // PPUDATA left the address at $3F02, selected as the forced-blank color.
-  nes.write(0x2001, 0); nes.ppu.step(136);
+  // Disable output, then select a forced-blank palette entry explicitly.
+  nes.write(0x2001, 0); nes.write(0x2006, 0x3f); nes.write(0x2006, 2); nes.ppu.step(136);
   assert.ok(nes.frame.subarray(20 * 256 + 120, 21 * 256).every(v => v === rgb(0x2a)));
   nes.loadState(saved); nes.step(52); wasm.step(52);
   assert.deepEqual(wasm.frame(), nes.frame);
@@ -103,7 +104,7 @@ test('CPU PPUMASK writes split a visible row at the actual bus access in both co
   assert.deepEqual(wasm.frame(), nes.frame); assert.deepEqual(wasm.saveState(), nes.saveState());
 });
 
-test('mid-line snapshots retain prepared pattern indices even when CHR memory has changed', async () => {
+test('mid-line snapshots retain fetched pattern bytes while later fetches see CHR changes', async () => {
   const bytes = new Uint8Array(16 + 16384); bytes.set([78, 69, 83, 26, 1, 0]);
   bytes.set([0x4c, 0, 0x80], 16); bytes.set([0, 0x80], 16 + 0x3ffc);
   const nes = new Nes(bytes); nes.reset(); nes.ppu.oam.fill(255);
@@ -114,8 +115,8 @@ test('mid-line snapshots retain prepared pattern indices even when CHR memory ha
   const state = nes.saveState(), wasm = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
   wasm.loadRom(bytes); wasm.loadState(state); nes.loadState(state);
   nes.step(180); wasm.step(180);
-  assert.ok(nes.frame.subarray(20 * 256, 21 * 256).every(v => v === rgb(0x16)));
-  assert.ok(nes.frame.subarray(21 * 256, 22 * 256).every(v => v === rgb(0x0f)));
+  assert.ok(nes.frame.subarray(20 * 256, 20 * 256 + 112).every(v => v === rgb(0x16)));
+  assert.ok(nes.frame.subarray(20 * 256 + 112, 22 * 256).every(v => v === rgb(0x0f)));
   assert.deepEqual(wasm.saveState(), nes.saveState());
 });
 

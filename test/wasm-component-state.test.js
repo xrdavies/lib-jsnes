@@ -222,7 +222,7 @@ export function apuSample(i: i32): i32 { return stateAudio[i]; }
       }
     }
     const ppuBefore = ppu.saveState();
-    for (const [offset, value] of [[0x4125, 0x40], [0x4126, 2], [0x4129, 2], [0x412b, 2],
+    for (const [offset, value] of [[0x4125, 0x80], [0x4126, 2], [0x4129, 2], [0x412b, 2],
       [0x412c, 2], [0x412f, 2], [0x4130, 2], [PPU_STATE_SIZE - 12, 7], [PPU_STATE_SIZE - 11, 4],
       [PPU_STATE_SIZE - 9, 4], [PPU_STATE_SIZE - 7, 4], [PPU_STATE_SIZE - 5, 4],
       [PPU_STATE_SIZE - 3, 128], [PPU_STATE_SIZE - 1, 2]]) {

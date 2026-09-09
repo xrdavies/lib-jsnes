@@ -14,11 +14,11 @@ function address(nes, value) {
 test('PPUMASK grayscale selects the palette column for all 64 backdrop colors', () => {
   const nes = scene();
   for (let color = 0; color < 64; color++) {
-    nes.ppu.palette[0] = color; nes.write(0x2001, 1); nes.ppu.step(341 * 262);
+    nes.ppu.palette[0] = color; nes.write(0x2001, 1); nes.ppu.step(341 * 262 * 2);
     assert.equal(nes.frame[0], (0xff000000 | NES_PALETTE[color & 0x30]) >>> 0, `palette ${color}`);
     assert.equal(nes.ppu.palette[0], color, 'grayscale must not rewrite palette memory');
   }
-  nes.write(0x2001, 0); nes.ppu.step(341 * 262);
+  nes.write(0x2001, 0); nes.ppu.step(341 * 262 * 2);
   assert.equal(nes.frame[0], (0xff000000 | NES_PALETTE[63]) >>> 0);
 });
 
@@ -39,7 +39,7 @@ test('grayscale applies to both background and sprite colors and survives snapsh
   nes.ppu.palette[1] = 0x2a; nes.ppu.palette[17] = 0x16;
   nes.ppu.oam.set([19, 0, 0, 20]); nes.write(0x2001, 0x1f);
   const state = nes.saveState();
-  nes.write(0x2001, 0x1e); nes.loadState(state); nes.ppu.step(341 * 262);
+  nes.write(0x2001, 0x1e); nes.loadState(state); nes.ppu.step(341 * 262 * 2);
   assert.equal(nes.frame[8], 0xffffffff);
   assert.equal(nes.frame[20 * 256 + 20], 0xffaaaaaa);
 });
@@ -58,15 +58,15 @@ test('frame colors refresh after palette edits, mask changes, snapshots and rese
     const mask = 0x1e | (flags & 1) | ((flags >>> 1) << 5);
     nes.ppu.palette[1] = flags + 0x10; nes.ppu.palette[17] = flags + 0x20;
     nes.write(0x2001, mask);
-    nes.ppu.step(341 * 262);
+    nes.ppu.step(341 * 262 * 2);
     assert.equal(nes.frame[8], expected(flags + 0x10, mask));
     assert.equal(nes.frame[20 * 256 + 20], expected(flags + 0x20, mask));
     const saved = nes.saveState();
-    nes.ppu.palette.fill(0x0f); nes.write(0x2001, 0); nes.ppu.step(341 * 262);
-    nes.loadState(saved); nes.ppu.step(341 * 262);
+    nes.ppu.palette.fill(0x0f); nes.write(0x2001, 0); nes.ppu.step(341 * 262 * 2);
+    nes.loadState(saved); nes.ppu.step(341 * 262 * 2);
     assert.equal(nes.frame[8], expected(flags + 0x10, mask));
     assert.equal(nes.frame[20 * 256 + 20], expected(flags + 0x20, mask));
   }
-  nes.reset(); nes.ppu.palette[0] = 0x2a; nes.ppu.step(341 * 262);
+  nes.reset(); nes.ppu.palette[0] = 0x2a; nes.ppu.step(341 * 262 * 2);
   assert.equal(nes.frame[8], expected(0x2a, 0));
 });

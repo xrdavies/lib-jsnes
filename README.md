@@ -83,8 +83,9 @@ Boundary tests compare batch advances against individual dots, including VBlank,
 NMI, scanline counts and multiple frame wraps. This optimization preserves the
 event ordering; visible pixels are committed individually as described below.
 
-The renderer prepares background and sprite palette indices once per scanline,
-then resolves the palette and display mask at each visible dot. The APU dispatches
+The renderer fetches background tiles on their PPU dots and shifts the fetched
+pattern and attribute bits per pixel. Sprite indices are still prepared per line.
+The palette and display mask are resolved at each visible dot. The APU dispatches
 frame-sequencer events only at their scheduled cycles while clocking oscillators
 every CPU cycle. Tests cover palette/mask changes, reset and snapshot continuation.
 
@@ -624,9 +625,8 @@ interrupt rejection, reset, snapshot replay and JS/WASM device-clock parity.
 
 Synthetic ROMs compare complete frames between the two builds and assert known
 background/sprite pixels, nametable mirroring, OAM wrapping, and NMI counts.
-WASM uses the same pixel output path as TypeScript. Pattern fetches and sprite
-evaluation remain scanline approximations; the hardware fetch/scroll pipeline
-is not yet implemented. Frame views
+WASM uses the same pixel output path as TypeScript. Background fetches and scroll updates run per dot; sprite evaluation and
+sprite pattern fetches still use a line-level approximation. Frame views
 use packed `0xAARRGGBB` pixels; they are not RGBA byte views for `ImageData`.
 PPUADDR (`$2006`) uses a temporary address: its first write replaces the high
 six bits without changing the active PPUDATA address, and its second write
@@ -636,9 +636,10 @@ write toggle cleared by reading PPUSTATUS. PPUDATA increments the active address
 without overwriting the temporary one. Tests cover half-written addresses,
 interleaved register writes, mirrors and snapshot replay in both builds.
 PPU snapshots include temporary-address, read-recovery, decay and parity bytes;
-older PPU/system snapshots are rejected. The renderer still uses its
-scanline scroll model; timed v/t copies and the full per-dot scroll pipeline
-remain unimplemented.
+older PPU/system snapshots are rejected. The active VRAM address is now 15 bits:
+its fine-Y bits are retained even though CPU memory accesses mask to 14 bits.
+During rendering, PPUDATA increments both scroll axes; while blanked it uses the
+PPUCTRL increment of 1 or 32.
 
 Visible pixels are committed at dot x + 1. Palette, grayscale, emphasis, clipping
 and display-mask changes affect subsequent pixels, leaving the already emitted
@@ -647,16 +648,28 @@ Sprite/background priority and sprite-zero hit use the same prepared color indic
 hit excludes x=255 and clears at pre-render dot 1. Overflow still uses a ninth
 in-range sprite approximation and is reported at dot 256.
 
-Background and sprite pattern indices are currently prepared at dot 1 for the
-whole line. CHR, scroll and OAM changes within that line therefore affect the next
-line; individual fetches, shift registers and v/t scroll copies remain to be
-implemented. Per-pixel output is one stage of that work, not a claim of full
-raster accuracy. Tests cover CPU-driven within-line mask writes, palette and
-clipping changes, progressive output and JS/WASM snapshot continuation.
-Snapshots now store two 256-byte line buffers and an overflow flag before the
-previous timing tail. This adds 513 bytes; older PPU/system snapshots are rejected.
-The buffers preserve already prepared data when memory changes before a snapshot.
-Hosts should display the completed frame after their frame step.
+Background fetches run at dots 1/3/5/7 of each eight-dot group: nametable,
+attribute, pattern low and pattern high. Dot 8 loads the fetched bytes into four
+16-bit shifters and increments coarse X. Visible dots 1–256 and prefetch dots
+321–336 run this pipeline; dots 337/339 perform dummy nametable reads. Dot 256
+increments fine/coarse Y, dot 257 copies horizontal scroll from t to v, and
+pre-render dots 280–304 copy vertical scroll. Fine X selects the output bit.
+Previously fetched bytes remain visible after a bank switch until new fetches
+reach the output; independent low/high reads can observe a switch between them.
+The reset contract starts at scanline 0 without prefetched data, so the initial
+pixels remain empty until the pipeline fills; the first pre-render prepares the
+next frame normally. Hosts writing palette/VRAM must set scroll afterward, as
+PPUADDR and PPUSCROLL share t. Tests that inspect a static frame allow a pre-render
+pass rather than assuming scroll writes take effect immediately.
+
+Sprite patterns still use a line buffer built at dot 1; secondary OAM evaluation,
+sprite fetch slots, delayed PPUADDR commits and MMC3 qualified A12 edges remain
+incomplete. Tests cover fetch addresses/order, X/Y wrapping, timed v/t copies,
+mid-line bank changes and snapshots between fetch phases. The 256-byte background
+line buffer is replaced by 12 bytes of shift/fetch state; the sprite line buffer
+and existing timing tail remain. PPU snapshots are 244 bytes smaller than the
+previous layout, and old PPU/system snapshots are rejected. Hosts should display
+the completed frame after their frame step.
 
 The NTSC PPU skips the final pre-render dot on odd frames when either background
 or sprite rendering is enabled on entering dot 339. The rendering gate changes
