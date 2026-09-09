@@ -9,6 +9,9 @@ export interface WasmExports {
   cycleCount(): number;
   programCounter(): number;
   ramRead(index: number): number;
+  /** A, X, Y, SP, P, PC at indices 0 through 5. */
+  cpuRegister(index: number): number;
+  unknownOpcodeCount(): number;
   framePointer(): number;
   frameLength(): number;
 }

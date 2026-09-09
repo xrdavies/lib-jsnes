@@ -1,8 +1,14 @@
+import { Cpu6502, CpuBus } from '../dist-wasm/cpu.generated';
 // Experimental WASM CPU core; rendering and audio are not implemented yet.
 const ROM = new Uint8Array(0x80000), RAM = new Uint8Array(0x800), FRAME = new Uint32Array(256 * 240);
 const PRG_RAM = new Uint8Array(0x2000);
 let prgStart: i32 = 0, prgBanks: i32 = 0;
-let mapper: i32 = 0, bank: i32 = 0, pc: i32 = 0, cycles: i32 = 0, a: i32 = 0, x: i32 = 0, y: i32 = 0, sp: i32 = 0xfd, p: i32 = 0x24;
+let mapper: i32 = 0, bank: i32 = 0;
+class Bus implements CpuBus {
+  read(address: i32): i32 { return read(address); }
+  write(address: i32, value: i32): void { write(address, value); }
+}
+const cpu = new Cpu6502(new Bus());
 function read(address: i32): i32 {
   address &= 0xffff;
   if (address < 0x2000) return RAM[address & 0x7ff];
@@ -19,10 +25,6 @@ function write(address: i32, value: i32): void {
   else if (address >= 0x6000 && address < 0x8000) PRG_RAM[address - 0x6000] = value & 255;
   else if (address >= 0x8000 && mapper == 2 && prgBanks > 0) bank = (value & 255) % prgBanks;
 }
-function push(value: i32): void { write(0x100 | sp, value); sp=(sp+255)&255; }
-function pop(): i32 { sp=(sp+1)&255; return read(0x100 | sp); }
-function fetch(): i32 { const v=read(pc); pc=(pc+1)&0xffff; return v; }
-function nz(v: i32): void { p=(p&0x7d)|(v==0?2:0)|(v&0x80); }
 export function romWrite(index:i32,value:i32):void{if(index>=0&&index<ROM.length)ROM[index]=value;}
 export function loadRom(length: i32): void {
   prgBanks = 0;
@@ -42,10 +44,29 @@ export function loadRom(length: i32): void {
   PRG_RAM.fill(0);
   if (start > 16) for (let i = 0; i < 512; i++) PRG_RAM[0x1000 + i] = ROM[16 + i];
 }
-export function reset():void{RAM.fill(0);FRAME.fill(0xff000000);cycles=0;a=0;x=0;y=0;sp=0xfd;p=0x24;bank=0;pc=prgBanks>0?read(0xfffc)|(read(0xfffd)<<8):0x8000;}
-export function step(count:i32):void{if(count<=0)return;const target=cycles+count;while(cycles<target){const op=fetch();let used=2,address:i32,offset:i32;switch(op){case 0xea:break;case 0xa9:a=fetch();nz(a);break;case 0xa2:x=fetch();nz(x);break;case 0xa0:y=fetch();nz(y);break;case 0x85:write(fetch(),a);used=3;break;case 0xa5:a=read(fetch());nz(a);used=3;break;case 0xe6:address=fetch();write(address,read(address)+1);nz(read(address));used=5;break;case 0x8d:address=fetch()|(fetch()<<8);write(address,a);used=4;break;case 0x8e:address=fetch()|(fetch()<<8);write(address,x);used=4;break;case 0x8c:address=fetch()|(fetch()<<8);write(address,y);used=4;break;case 0xad:address=fetch()|(fetch()<<8);a=read(address);nz(a);used=4;break;case 0xae:address=fetch()|(fetch()<<8);x=read(address);nz(x);used=4;break;case 0xac:address=fetch()|(fetch()<<8);y=read(address);nz(y);used=4;break;case 0xe8:x=(x+1)&255;nz(x);break;case 0xca:x=(x+255)&255;nz(x);break;case 0x4c:pc=fetch()|(fetch()<<8);used=3;break;case 0x20:address=fetch()|(fetch()<<8);push((pc-1)>>>8);push(pc-1);pc=address;used=6;break;case 0x60:pc=(pop()|(pop()<<8))+1;used=6;break;case 0x48:push(a);used=3;break;case 0x68:a=pop();nz(a);used=4;break;case 0x69:a=(a+fetch()+(p&1))&255;nz(a);break;case 0x29:a&=fetch();nz(a);break;case 0x09:a|=fetch();nz(a);break;case 0x49:a^=fetch();nz(a);break;case 0xd0:offset=fetch();if(!(p&2)){pc=(pc+(offset&128?offset-256:offset))&0xffff;used=3;}break;case 0xf0:offset=fetch();if(p&2){pc=(pc+(offset&128?offset-256:offset))&0xffff;used=3;}break;default:break;}cycles+=used;}}
-export function cycleCount():i32{return cycles;}
-export function programCounter():i32{return pc;}
+export function reset(): void {
+  RAM.fill(0); FRAME.fill(0xff000000); bank = 0;
+  cpu.a = cpu.x = cpu.y = 0;
+  cpu.reset();
+}
+export function step(count: i32): void {
+  if (count <= 0) return;
+  let remaining = count;
+  while (remaining > 0) remaining -= cpu.step();
+}
+export function cycleCount(): f64 { return cpu.cycles; }
+export function programCounter(): i32 { return cpu.pc; }
+export function cpuRegister(index: i32): i32 {
+  switch (index) {
+    case 0: return cpu.a;
+    case 1: return cpu.x;
+    case 2: return cpu.y;
+    case 3: return cpu.sp;
+    case 4: return cpu.p;
+    default: return cpu.pc;
+  }
+}
+export function unknownOpcodeCount(): i32 { return cpu.unknownOpcodes; }
 export function ramRead(index:i32):i32{return index>=0&&index<RAM.length?RAM[index]:0;}
 export function framePointer():usize{return changetype<usize>(FRAME.buffer)+FRAME.byteOffset;}
 export function frameLength():i32{return FRAME.length;}
