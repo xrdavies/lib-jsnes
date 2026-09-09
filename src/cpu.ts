@@ -120,11 +120,9 @@ export class Cpu6502 {
             case 0x99: this.write(this.absy(), this.a); used = 5; break;
             case 0x9c:
             case 0x9e: {
-                const base = this.abs(), address = this.indexed(base, op === 0x9c ? this.x : this.y, false);
-                // ponytail: DMA during the dummy read can change the mask; model with per-cycle CPU arbitration.
-                const value = (op === 0x9c ? this.y : this.x) & ((base >>> 8) + 1);
-                const target = (base & 0xff00) === (address & 0xff00) ? address : (value << 8) | (address & 255);
-                this.write(target, value); used = 5; break;
+                const base = this.abs();
+                this.maskedStore(base, op === 0x9c ? this.x : this.y, op === 0x9c ? this.y : this.x);
+                used = 5; break;
             }
             case 0xad: this.a = this.read(this.abs()); this.nz(this.a); used = 4; break;
             case 0xbd: this.a = this.read(this.absx(true)); this.nz(this.a); used = 4; break;
@@ -318,6 +316,8 @@ export class Cpu6502 {
             case 0xbf: this.a = this.x = this.read(this.absy(true)); this.nz(this.a); used = 4; break;
             case 0xab: this.a = this.x = this.imm(); this.nz(this.a); used = 2; break;
             case 0xbb: this.a = this.x = this.sp = this.read(this.absy(true)) & this.sp; this.nz(this.a); used = 4; break;
+            case 0x9b: { const base = this.abs(); this.sp = this.a & this.x; this.maskedStore(base, this.y, this.sp); used = 5; break; }
+            case 0x9f: { const base = this.abs(); this.maskedStore(base, this.y, this.a & this.x); used = 5; break; }
             case 0x03: { const a = this.indX(); const v = this.shift(this.readForModify(a), false); this.write(a, v); this.a |= v; this.nz(this.a); used = 8; break; }
             case 0x0b:
             case 0x2b: this.a &= this.fetch(); this.nz(this.a); this.p = (this.p & ~C) | (this.a >>> 7); used = 2; break;
@@ -340,6 +340,10 @@ export class Cpu6502 {
             case 0x54: this.read(this.zpx()); used = 4; break;
             case 0x34: this.read(this.zpx()); used = 4; break;
             case 0x83: { this.write(this.indX(), this.a & this.x); used = 6; break; }
+            case 0x93: {
+                const pointer = this.fetch(), base = this.read(pointer) | (this.read((pointer + 1) & 255) << 8);
+                this.maskedStore(base, this.y, this.a & this.x); used = 6; break;
+            }
             case 0xde: { const a = this.absx(), v = (this.readForModify(a) - 1) & 255; this.write(a, v); this.nz(v); used = 7; break; }
             case 0xda: this.read(this.pc); break;
             case 0xfa: this.read(this.pc); break;
@@ -430,6 +434,14 @@ export class Cpu6502 {
     private rra(a: number) { const v = this.rotate(this.readForModify(a), true); this.write(a, v); this.adc(v); }
     private dcp(a: number) { const v = (this.readForModify(a) - 1) & 255; this.write(a, v); this.compare(this.a, v); }
     private isc(a: number) { const v = (this.readForModify(a) + 1) & 255; this.write(a, v); this.adc(v ^ 255); }
+    private maskedStore(base: number, index: number, value: number): void {
+        const address = this.indexed(base, index, false);
+        // SHA/TAS/SHX/SHY expose the high-byte increment on the data bus;
+        // a page crossing also corrupts the written address with that byte.
+        const stored = value & ((base >>> 8) + 1);
+        const target = (base & 0xff00) === (address & 0xff00) ? address : (stored << 8) | (address & 255);
+        this.write(target, stored);
+    }
     private shift(v: number, right: boolean) { this.p = (this.p & ~C) | (right ? (v & 1) : ((v >> 7) & 1)); v = right ? v >> 1 : (v << 1) & 255; this.nz(v); return v; }
     private rotate(v: number, right: boolean) { const c = this.p & C ? 1 : 0; this.p = (this.p & ~C) | (right ? (v & 1) : ((v >> 7) & 1)); v = right ? (v >> 1) | (c << 7) : ((v << 1) & 255) | c; this.nz(v); return v; }
     private compare(reg: number, v: number) { const d = (reg - v) & 255; this.p = (this.p & ~C) | (reg >= v ? C : 0); this.nz(d); }

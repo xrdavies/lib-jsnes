@@ -37,6 +37,20 @@ test('SAX stores A AND X without altering flags, including zero-page Y wrapping'
   }
 });
 
+test('SHA and TAS use the high-byte mask and page-crossing address corruption', () => {
+  for (const [opcode, indirect, cycles, nextPc] of [[0x93, true, 6, 0x8002], [0x9b, false, 5, 0x8003], [0x9f, false, 5, 0x8003]]) {
+    const ram = new Uint8Array(65536), writes = [];
+    const cpu = new Cpu6502({ read: address => ram[address], write: (address, value) => writes.push([address, value & 255]) }, true);
+    cpu.pc = 0x8000; cpu.a = cpu.x = 1; cpu.y = 1; cpu.sp = 0xaa; cpu.p = 0x65;
+    if (indirect) {
+      ram.set([opcode, 0xff], 0x8000); ram[0xff] = 0xff; ram[0] = 0x12;
+    } else ram.set([opcode, 0xff, 0x12], 0x8000);
+    assert.equal(cpu.step(), cycles);
+    assert.deepEqual(writes, [[0x0100, 1]]);
+    assert.deepEqual([cpu.sp, cpu.p, cpu.pc], [opcode === 0x9b ? 1 : 0xaa, 0x65, nextPc]);
+  }
+});
+
 test('indirect and absolute-Y RMW combinations preserve dummy writes and fixed cycles', () => {
   const operations = [
     [[0x03, 0x13, 0x1b], 0x02, 0x57, 0x65], // SLO: ASL then ORA.

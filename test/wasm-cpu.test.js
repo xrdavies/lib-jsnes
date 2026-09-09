@@ -91,6 +91,20 @@ test('WASM unknown opcode diagnostics distinguish missing instructions from NOPs
   core.reset(); assert.equal(core.exports.unknownOpcodeCount(), 0);
 });
 
+test('WASM shares SHA and TAS masked stores with TypeScript', async () => {
+  const core = await WasmCore.from(binary);
+  for (const opcode of [0x9b, 0x9f]) {
+    const rom = image([0xa9, 1, 0xa2, 1, 0xa0, 1, opcode, 0xff, 0x12, 0x4c, 9, 0x80]);
+    const js = new Nes(rom); js.reset(); core.loadRom(rom); core.reset();
+    js.step(11); core.step(11);
+    assert.equal(core.exports.ramRead(0x100), 1);
+    assert.equal(core.exports.unknownOpcodeCount(), 0);
+    assert.deepEqual([core.programCounter, core.cycleCount], [js.cpu.pc, js.cycleCount]);
+    assert.deepEqual([0, 1, 2, 3, 4].map(i => core.exports.cpuRegister(i)),
+      [js.cpu.a, js.cpu.x, js.cpu.y, js.cpu.sp, js.cpu.p]);
+  }
+});
+
 test('WASM stack return and indirect jump preserve NMOS address wrapping', async () => {
   const core = await WasmCore.from(binary);
   core.loadRom(image([0xa9, 0xff, 0x48, 0x48, 0x60])); // Push $ffff, RTS wraps to $0000.
