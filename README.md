@@ -66,6 +66,10 @@ Audio register changes and status reads therefore take effect within a host
 
 The current mapper layer supports NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3 bank switching (4), AxROM (7), mapper 15, mapper 79, mapper 87, mapper 113, mapper 140, mapper 177, mapper 225, mapper 241, and GxROM (66). MMC3 scanline IRQ counting is available; advanced mapper variants and exact edge timing remain in progress.
 
+MMC3 CHR tests cover all eight 1 KiB windows in both inversion modes, aligned
+R0/R1 pairs, all register-byte values, CHR RAM writes, snapshot restoration,
+and rendered pixels. This covers bank mapping, not cycle-accurate MMC3 IRQs.
+
 The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning at
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
 Its cartridge path accepts iNES 1.0 NROM, UxROM, CNROM, AxROM, and GxROM (mappers 0, 2, 3, 7, and 66), including

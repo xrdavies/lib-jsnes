@@ -130,7 +130,15 @@ export class Cartridge {
     address &= 0x1fff;
     if (this.rom.mapper === 66 || this.rom.mapper === 79 || this.rom.mapper === 113 || this.rom.mapper === 140 || this.rom.mapper === 225) return (this.gxChr % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 87) return (this.chrBank % (this.chr.length / 0x2000)) * 0x2000 + address;
-    if (this.rom.mapper === 4) { const r=this.mmc3Regs, inv=!!(this.mmc3Select&0x80), bank=address>>>10; let b; if(!inv)b=bank<2?r[bank]&~1:bank<4?r[bank-2]|1:bank===4?r[4]:bank===5?r[5]:bank===6?r[0]:r[1]; else b=bank<2?r[2]:bank<4?r[3]:bank===4?r[0]:bank===5?r[1]:bank===6?r[4]:r[5]; return (b%(this.chr.length/0x400))*0x400+(address&0x3ff); }
+    if (this.rom.mapper === 4) {
+      // Inversion swaps the two 4KB halves. R0/R1 each select an aligned
+      // 2KB pair; R2-R5 independently select the remaining four 1KB slots.
+      const slot = (address >>> 10) ^ (this.mmc3Select & 0x80 ? 4 : 0);
+      const bank = slot < 4
+        ? (this.mmc3Regs[slot >>> 1] & 0xfe) | (slot & 1)
+        : this.mmc3Regs[slot - 2];
+      return (bank % (this.chr.length / 0x400)) * 0x400 + (address & 0x3ff);
+    }
     if (this.rom.mapper === 3) return (this.chrBank % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper !== 1) return address;
     const slot = address >>> 12;
