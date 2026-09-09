@@ -182,9 +182,12 @@ and rendered pixels. This covers bank mapping, not cycle-accurate MMC3 IRQs.
 The MMC3 counter continues while its IRQ output is disabled. Once asserted, the
 IRQ remains pending across CPU masking and counter reloads until `$E000` clears
 it. The cartridge snapshot stores this latch in reserved byte 25 without changing
-section length. `clockScanline()` returns the current IRQ level; the CPU polls
-`cartridge.irqPending` at instruction boundaries. Clocking is still scanline-based,
-so PPU A12 filtering and MMC3 revision-specific IRQ edge behavior remain incomplete.
+section length. The PPU clocks MMC3 at dot 280 only when background or sprite
+rendering is enabled and the line is visible or pre-render; VBlank and disabled
+rendering do not decrement the counter. `clockScanline()` remains available for
+direct mapper tests, while the CPU polls `cartridge.irqPending` at instruction
+boundaries. Qualified A12 edges and MMC3 revision-specific behavior remain
+incomplete. Tests cover rendering masks, VBlank exclusion, DMA and snapshot replay.
 
 The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning at
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.

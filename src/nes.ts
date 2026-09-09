@@ -73,8 +73,7 @@ export class Nes implements CpuBus {
         continue;
       }
       this.clockDevices(this.cpu.step());
-      const scanlines = this.ppu.consumeScanlines();
-      for (let i = 0; i < scanlines; i++) this.cartridge.clockScanline();
+      this.ppu.consumeScanlines();
       if (this.ppu.consumeNmi()) {
         this.cpu.nmi();
         this.cpu.cycles += 7;

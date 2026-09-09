@@ -122,9 +122,10 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   step(dots = 1): boolean {
     let frame = false;
     while (dots-- > 0) {
-      // The current timing model has events only at dot 1 and the line boundary.
-      // Skip idle dots while preserving the event order and partial-line position.
-      const skip = Math.min(Math.floor(dots), this.dot === 0 ? 0 : 340 - this.dot);
+      // Preserve dot 1, the coarse mapper clock, and the line boundary when skipping.
+      const mapperLine = (this.mask & 0x18) !== 0 && (this.scanline < 240 || this.scanline === 261);
+      const next = this.dot === 0 ? 1 : mapperLine && this.dot < 280 ? 280 : 341;
+      const skip = Math.min(Math.floor(dots), next - this.dot - 1);
       if (skip > 0) { this.dot += skip; dots -= skip; }
       if (++this.dot === 341) {
         this.dot = 0;
@@ -138,6 +139,9 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
           frame = true;
         }
       }
+      // ponytail: libxnes-style scanline approximation; replace with qualified A12
+      // edges when the PPU models individual pattern fetches and board revisions.
+      if (this.dot === 280 && mapperLine) this.cartridge.clockScanline();
       if (this.dot === 1) {
         if (this.scanline === 241) {
           this.status |= 0x80;

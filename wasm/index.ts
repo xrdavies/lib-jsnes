@@ -77,8 +77,7 @@ export function step(count: i32): void {
       continue;
     }
     const used = cpu.step(); remaining -= used; clockDevices(used);
-    const scanlines = ppu.consumeScanlines();
-    for (let i = 0; i < scanlines; i++) cartridge.clockScanline();
+    ppu.consumeScanlines();
     if (ppu.consumeNmi()) { cpu.nmi(); cpu.cycles += 7; remaining -= 7; clockDevices(7); }
     else if ((apu.irqPending || cartridge.irqPending) && cpu.irq()) { cpu.cycles += 7; remaining -= 7; clockDevices(7); }
   }
