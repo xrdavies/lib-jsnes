@@ -100,6 +100,7 @@ core.setController(1, Button.Start); // Replace player 1's held buttons.
 core.runFrame();
 core.setController(1, 0); // Release all buttons.
 const pixels = core.frame();
+const rgba = core.frameRgba(); // ImageData-compatible bytes
 const pcm = core.audioSamples(); // Owned Int16Array; drains the queued mono samples.
 const sampleRate = core.sampleRate; // 44100 Hz.
 ```
@@ -113,6 +114,8 @@ the next latch, or live A-button reads while strobe is high.
 drains, or WASM memory growth do not overwrite it. Reset discards queued samples.
 Drain regularly; the queue retains at most two seconds when the host falls behind.
 For Web Audio, divide each sample by 32768 when filling a mono `AudioBuffer`.
+
+`frameRgba()` returns an independent `Uint8ClampedArray` in the byte order expected by `new ImageData(rgba, 256, 240)`.
 Raw ABI consumers call `audioDrain()` to obtain the sample count, then use
 `audioPointer()` and exported `memory` to read signed 16-bit samples; copy that
 view before the next drain, reset, or memory growth. `sampleRate()` returns Hz.

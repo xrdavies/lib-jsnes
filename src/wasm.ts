@@ -69,4 +69,9 @@ export class WasmCore {
   get cycleCount(): number { return this.exports.cycleCount(); }
   get programCounter(): number { return this.exports.programCounter(); }
   frame(): Uint32Array { return new Uint32Array(this.exports.memory.buffer, this.exports.framePointer(), this.exports.frameLength()); }
+  frameRgba(): Uint8ClampedArray {
+    const pixels = this.frame(), rgba = new Uint8ClampedArray(pixels.length * 4);
+    for (let i = 0; i < pixels.length; i++) { const pixel = pixels[i]; const offset = i * 4; rgba[offset] = pixel >>> 16 & 255; rgba[offset + 1] = pixel >>> 8 & 255; rgba[offset + 2] = pixel & 255; rgba[offset + 3] = pixel >>> 24 & 255; }
+    return rgba;
+  }
 }

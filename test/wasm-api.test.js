@@ -15,3 +15,13 @@ test('WasmCore runFrame uses the shared frame budget and returns a fresh view', 
   assert.equal(frame.length, WasmCore.FRAME_WIDTH * WasmCore.FRAME_HEIGHT);
   assert.throws(() => core.runFrame(0), /cycles must be a positive integer/);
 });
+
+test('WasmCore frameRgba returns ImageData-compatible bytes in RGBA order', async () => {
+  const core = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
+  core.reset();
+  const rgba = core.frameRgba();
+  assert.equal(rgba.length, 256 * 240 * 4);
+  assert.deepEqual(Array.from(rgba.slice(0, 4)), [0, 0, 0, 255]);
+  rgba[0] = 17;
+  assert.equal(core.frame()[0], 0xff000000, 'returned bytes are independent');
+});
