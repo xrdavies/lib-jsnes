@@ -6,6 +6,6 @@ export class Controller {
   loadState(v:Uint8Array):void { if(v.length!==4)throw new RangeError('Invalid controller state'); [this.state,this.latched,this.index]=v; this.strobe=!!v[3]; }
   setButtons(mask: ButtonMask): void { this.state=mask&255; if(this.strobe)this.latch(); }
   write(value:number): void { const next=!!(value&1); if(next)this.latch(); else if(this.strobe)this.index=0; this.strobe=next; }
-  read(): number { if(this.strobe)this.latch(); const bit=this.index<8 ? (this.latched>>this.index)&1 : 1; if(!this.strobe)this.index++; return bit; }
+  read(): number { if(this.strobe)this.latch(); const bit=this.index<8 ? (this.latched>>this.index)&1 : 1; if(!this.strobe && this.index<8)this.index++; return bit; }
   private latch(){this.latched=this.state; this.index=0;}
 }

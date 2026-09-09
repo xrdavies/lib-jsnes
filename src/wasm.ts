@@ -5,6 +5,7 @@ export interface WasmExports {
   romWrite(index: number, value: number): void;
   loadRom(length: number): void;
   reset(): void;
+  setController(player: number, mask: number): void;
   step(cycles: number): void;
   cycleCount(): number;
   programCounter(): number;
@@ -44,6 +45,10 @@ export class WasmCore {
   }
 
   reset(): void { this.exports.reset(); }
+  setController(player: 1 | 2, mask: number): void {
+    if (player !== 1 && player !== 2) throw new RangeError('player must be 1 or 2');
+    this.exports.setController(player, mask);
+  }
   step(cycles: number): void { this.exports.step(cycles); }
   get cycleCount(): number { return this.exports.cycleCount(); }
   get programCounter(): number { return this.exports.programCounter(); }

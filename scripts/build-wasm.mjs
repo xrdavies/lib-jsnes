@@ -2,9 +2,10 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import ts from 'typescript';
 
-// Compile the shared CPU/PPU execution code, adding AssemblyScript's required
+// Compile the shared CPU/PPU/controller code, adding AssemblyScript's required
 // integer annotations. JS snapshot marshaling stays in the TypeScript API.
-const program = ts.createProgram(['src/cpu.ts', 'src/ppu.ts'], { target: ts.ScriptTarget.ES2020 });
+const sources = ['cpu', 'ppu', 'controller'];
+const program = ts.createProgram(sources.map(name => `src/${name}.ts`), { target: ts.ScriptTarget.ES2020 });
 const checker = program.getTypeChecker();
 function compileSource(name) {
   const source = program.getSourceFile(`src/${name}.ts`);
@@ -18,6 +19,8 @@ function compileSource(name) {
       throw new Error(`Unsupported shared-core type: ${checker.typeToString(type)}`);
     };
     const visit = node => {
+      // Button's JS object is a host convenience; Controller uses the numeric mask.
+      if (name === 'controller' && ts.isVariableStatement(node) && node.declarationList.declarations.some(d => d.name.getText(source) === 'Button')) return undefined;
       // The palette is a fixed numeric table. AssemblyScript typed-array
       // constructors accept lengths only; a StaticArray preserves indexed reads.
       if (ts.isNewExpression(node) && node.expression.getText(source) === 'Uint32Array' && node.arguments?.length === 1 && ts.isArrayLiteralExpression(node.arguments[0])) {
@@ -58,7 +61,7 @@ function compileSource(name) {
 mkdirSync('dist-wasm', { recursive: true });
 const generated = [];
 try {
-  for (const name of ['cpu', 'ppu']) {
+  for (const name of sources) {
     const path = `dist-wasm/${name}.generated.ts`;
     writeFileSync(path, compileSource(name));
     generated.push(path);

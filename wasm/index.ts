@@ -1,9 +1,11 @@
 import { Cpu6502, CpuBus } from '../dist-wasm/cpu.generated';
 import { Ppu } from '../dist-wasm/ppu.generated';
+import { Controller } from '../dist-wasm/controller.generated';
 import { Cartridge } from './cartridge';
 const RAM = new Uint8Array(0x800);
 const cartridge = new Cartridge();
 const ppu = new Ppu(cartridge);
+const controller1 = new Controller(), controller2 = new Controller();
 let dmaStall: i32 = 0;
 class Bus implements CpuBus {
   read(address: i32): i32 { return read(address); }
@@ -14,6 +16,8 @@ function read(address: i32): i32 {
   address &= 0xffff;
   if (address < 0x2000) return RAM[address & 0x7ff];
   if (address < 0x4000) return ppu.readRegister(address);
+  if (address == 0x4016) return controller1.read();
+  if (address == 0x4017) return controller2.read();
   return cartridge.readCpu(address);
 }
 function write(address: i32, value: i32): void {
@@ -25,7 +29,14 @@ function write(address: i32, value: i32): void {
     const bytes = new Uint8Array(256);
     for (let i = 0; i < 256; i++) bytes[i] = read((value << 8) + i);
     ppu.dma(bytes);
+  } else if (address == 0x4016) {
+    controller1.write(value); controller2.write(value);
   } else cartridge.writeCpu(address, value);
+}
+export function setController(player: i32, mask: i32): void {
+  if (player == 1) controller1.setButtons(mask);
+  else if (player == 2) controller2.setButtons(mask);
+  else throw new RangeError('player must be 1 or 2');
 }
 export function romWrite(index: i32, value: i32): void {
   if (index >= 0 && index < cartridge.rom.length) cartridge.rom[index] = value;
