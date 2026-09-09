@@ -101,3 +101,16 @@ test('$4017 selects five-step sequencing and clocks immediately', () => {
   assert.equal(apu.saveState()[45], 0);
   assert.equal(apu.saveState()[57], 0);
 });
+
+test('$4015 reports and clears the four-step frame IRQ, while $4017 inhibit suppresses it', () => {
+  const apu = new Apu();
+  apu.step(29829);
+  assert.equal(apu.readStatus() & 0x40, 0x40);
+  assert.equal(apu.readStatus() & 0x40, 0);
+  apu.step(29830);
+  assert.equal(apu.readStatus() & 0x40, 0x40);
+  apu.write(0x4017, 0x40);
+  assert.equal(apu.readStatus() & 0x40, 0);
+  apu.step(29830);
+  assert.equal(apu.readStatus() & 0x40, 0);
+});
