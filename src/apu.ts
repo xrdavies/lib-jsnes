@@ -119,7 +119,7 @@ class Noise {
   clockLength(): void { if (this.length > 0 && !(this.regs[0] & 0x20)) this.length--; }
   sample(): number { return this.enabled && this.length > 0 && !(this.shift & 1) ? this.envelope.volume(this.regs[0]) : 0; }
 }
-/** Pulse, triangle, and noise synthesis; five-step frame sequencing, frame IRQ, and DMC remain incomplete. */
+/** Pulse, triangle, and noise synthesis; DMC and exact frame edge timing remain incomplete. */
 export class Apu {
   static readonly STATE_SIZE = 62;
   readonly sampleRate = SAMPLE_HZ; private readonly pulse=[new Pulse(1),new Pulse(0)]; private readonly noise=new Noise(); private readonly triangle=new Triangle(); private frac=0; private frame=0; private mode5=false; private frameIrq=false; private irqInhibit=false; private samples:number[]=[];

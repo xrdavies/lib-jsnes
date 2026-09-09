@@ -35,8 +35,8 @@ PCM from the abandoned timeline and preserves the phase of newly generated audio
 Pulse channels implement all four duty patterns, CPU/2 timer clocks, and half-frame
 sweeps with channel-specific negate and target-overflow muting. Tests check output
 frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains
-incomplete: DMC, five-step frame sequencing, frame IRQs, and the nonlinear mixer
-are not implemented.
+incomplete: DMC, exact frame edge timing, and the nonlinear mixer are not
+implemented.
 
 The CPU advances the APU after each instruction, DMA stall, and interrupt entry.
 Audio register changes and status reads therefore take effect within a host
