@@ -156,11 +156,20 @@ RAM prefix. Old CHR RAM snapshots that omitted pattern memory are rejected.
 Restoring copies both RAM regions, including currently hidden CHR banks, so
 subsequent frames redraw from the saved tiles. This applies to `Nes` snapshots;
 the WASM wrapper does not yet expose a snapshot API.
-`Nes` snapshots also append an eight-byte little-endian DMA stall counter after
-CPU RAM. Restoring mid-transfer keeps the CPU halted for the remaining cycles
-while PPU and APU clocks advance. Older snapshots without this field are rejected.
-OAM bytes are still copied at the DMA request; per-cycle DMA bus transfers remain
-outside the current timing model.
+OAM DMA now alternates one CPU-bus read and one OAMDATA write per CPU cycle,
+after one or two alignment cycles (513/514 cycles total). Source bytes are read
+when their transfer cycle occurs; OAM fills progressively instead of changing
+immediately on `$4014`. The source page, byte index, read latch, alignment count
+and read/write phase are stored in a six-byte snapshot section after CPU RAM,
+followed by the existing eight-byte DMC stall counter. Earlier full-system
+snapshots lacking the new section are rejected. Tests restore every transfer
+phase, change source memory mid-transfer and check CPU-visible OAM in both builds.
+Repeated host writes before stepping replace the pending page rather than queue
+multiple transfers. The standalone `Ppu.dma(bytes)` utility remains an immediate
+copy; CPU `$4014` writes use the shared DMA state machine.
+DMC fetch stalls temporarily pause OAM DMA in this model. Exact get/put alignment,
+DMC/OAM arbitration, DMA halt-read side effects and the write's position within a
+CPU instruction still require more detailed bus timing.
 Pulse channels implement all four duty patterns, CPU/2 timer clocks, and half-frame
 sweeps with channel-specific negate and target-overflow muting. Tests check output
 frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains
@@ -399,7 +408,7 @@ single-screen nametable while retaining CHR RAM and nametable contents.
 Bus conflicts and board-specific variants remain
 outside the current WASM mapper model.
 
-WASM builds compile the execution methods from `src/cpu.ts`, `src/ppu.ts`, `src/apu.ts`, and `src/controller.ts`, using the installed
+WASM builds compile the execution methods from `src/cpu.ts`, `src/ppu.ts`, `src/apu.ts`, `src/controller.ts`, and `src/dma.ts`, using the installed
 TypeScript compiler to supply AssemblyScript integer annotations. The generated
 source is temporary and is not shipped. There is no separately maintained WASM
 opcode switch or renderer. Tests compare all 151 official opcodes and the 52 stable LAX, SAX,

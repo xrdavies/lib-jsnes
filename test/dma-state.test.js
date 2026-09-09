@@ -62,9 +62,10 @@ test('DMA snapshot metadata validates before mutation and accepts offset views',
   assert.equal(Buffer.compare(target.saveState(), state), 0);
 });
 
-test('snapshots preserve cumulative host DMA requests rather than clamping to a single transfer', () => {
-  const nes = machine(); nes.write(0x4014, 0); nes.write(0x4014, 0);
+test('a later host DMA request replaces the pending source page', () => {
+  const nes = machine(); nes.write(0x200, 0x79); nes.write(0x4014, 0); nes.write(0x4014, 2);
   const target = machine(); target.loadState(nes.saveState());
-  target.step(1026); assert.equal(target.cpu.pc, 0x8000); assert.equal(target.cycleCount, 1026);
+  target.step(513); assert.equal(target.cpu.pc, 0x8000); assert.equal(target.cycleCount, 513);
+  assert.equal(target.ppu.oam[0], 0x79);
   target.step(1); assert.equal(target.read(0x10), 1);
 });

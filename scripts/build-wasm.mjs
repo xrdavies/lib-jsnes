@@ -8,7 +8,7 @@ if (process.argv.slice(2).some(arg => arg !== '--debug')) throw new Error('Usage
 
 // Compile the shared CPU/PPU/APU/controller code, adding AssemblyScript's required
 // integer annotations. JS snapshot marshaling stays in the TypeScript API.
-const sources = ['cpu', 'ppu', 'apu', 'controller'];
+const sources = ['cpu', 'ppu', 'apu', 'controller', 'dma'];
 const program = ts.createProgram(sources.map(name => `src/${name}.ts`), { target: ts.ScriptTarget.ES2020 });
 const checker = program.getTypeChecker();
 function compileSource(name) {

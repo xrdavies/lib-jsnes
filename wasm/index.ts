@@ -2,17 +2,21 @@ import { Cpu6502, CpuBus } from '../dist-wasm/cpu.generated';
 import { Ppu } from '../dist-wasm/ppu.generated';
 import { Apu, DmcBus } from '../dist-wasm/apu.generated';
 import { Controller } from '../dist-wasm/controller.generated';
+import { OamDma, OamDmaBus } from '../dist-wasm/dma.generated';
 import { Cartridge, MAX_ROM_SIZE } from './cartridge';
 const RAM = new Uint8Array(0x800);
 const cartridge = new Cartridge();
 const ppu = new Ppu(cartridge);
 const apu = new Apu(new Bus());
+const oamDma = new OamDma(new Bus());
 let audio = new Int16Array(0);
 const controller1 = new Controller(), controller2 = new Controller();
 let dmaStall: i32 = 0;
 let collectionCycles: i32 = 0;
 let frameCompleted: boolean = false;
-class Bus implements CpuBus, DmcBus {
+class Bus implements CpuBus, DmcBus, OamDmaBus {
+  readDma(address: i32): i32 { return read(address); }
+  writeDma(value: i32): void { ppu.writeRegister(4, value); }
   readDmc(address: i32): i32 { dmaStall += 4; return read(address); }
   read(address: i32): i32 { return read(address); }
   write(address: i32, value: i32, consecutive: boolean): void { write(address, value, consecutive); }
@@ -32,10 +36,7 @@ function write(address: i32, value: i32, consecutive: boolean): void {
   if (address < 0x2000) RAM[address & 0x7ff] = value;
   else if (address < 0x4000) ppu.writeRegister(address, value);
   else if (address == 0x4014) {
-    dmaStall += 513 + (<i32>cpu.cycles & 1);
-    const bytes = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) bytes[i] = read((value << 8) + i);
-    ppu.dma(bytes);
+    oamDma.start(value, (<i32>cpu.cycles & 1) != 0);
   } else if ((address >= 0x4000 && address <= 0x4015) || address == 0x4017) {
     apu.write(address, value);
   } else if (address == 0x4016) {
@@ -62,7 +63,7 @@ export function loadRom(length: i32): void {
   ppu.vram.fill(0); ppu.palette.fill(0); ppu.oam.fill(0);
 }
 export function reset(): void {
-  RAM.fill(0); cartridge.reset(); ppu.reset(); apu.reset(); audio = new Int16Array(0); dmaStall = 0;
+  RAM.fill(0); cartridge.reset(); ppu.reset(); apu.reset(); oamDma.reset(); audio = new Int16Array(0); dmaStall = 0;
   cpu.reset();
   collectionCycles = 0;
   __collect();
@@ -81,6 +82,7 @@ export function step(count: i32): void {
       clockDevices(used);
       continue;
     }
+    if (oamDma.active) { oamDma.step(); cpu.cycles++; remaining--; clockDevices(1); continue; }
     const used = cpu.step(); remaining -= used; clockDevices(used);
     ppu.consumeScanlines();
     if (ppu.consumeNmi() && cpu.nmi()) { cpu.cycles += 7; remaining -= 7; clockDevices(7); }

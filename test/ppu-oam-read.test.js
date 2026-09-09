@@ -28,5 +28,5 @@ test('OAMDATA mask survives snapshots and OAM DMA wrapping', () => {
   nes.ppu.oam.fill(0xff); nes.write(0x2003, 0x02);
   const state = nes.saveState(); assert.equal(nes.read(0x2004), 0xe3);
   nes.write(0x2003, 0); nes.loadState(state); assert.equal(nes.read(0x2004), 0xe3);
-  nes.write(0, 2); nes.write(0x4014, 0); nes.write(0x2003, 2); assert.equal(nes.read(0x2004), 0x02);
+  nes.write(0, 2); nes.write(0x4014, 0); nes.step(513); nes.write(0x2003, 2); assert.equal(nes.read(0x2004), 0x02);
 });
