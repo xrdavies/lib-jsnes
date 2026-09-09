@@ -19,6 +19,7 @@ import { Nes } from 'lib-jsnes';
 const nes = new Nes(await fetch('/game.nes').then(r => r.arrayBuffer()));
 nes.reset();
 const frame = nes.runFrame(); // 256x240 packed pixels
+// Pass a different cycle budget to runFrame(cycles) when the host clock requires it
 const rgba = nes.frameRgba(); // stable RGBA bytes for ImageData
 const pcm = nes.audioSamples(); // signed 16-bit PCM
 const sampleRate = nes.apu.sampleRate; // 44.1 kHz
