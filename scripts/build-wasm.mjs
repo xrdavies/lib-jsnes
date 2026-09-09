@@ -39,7 +39,7 @@ function compileSource(name) {
       if (ts.isCallExpression(node) && node.expression.getText(source) === 'Math.floor') {
         return f.createAsExpression(node, f.createTypeReferenceNode('i32'));
       }
-      if (ts.isMethodDeclaration(node) && ['save', 'load', 'saveState', 'loadState'].includes(node.name.getText(source))) return undefined;
+      if (ts.isMethodDeclaration(node) && ['save', 'load', 'saveState', 'loadState', 'validateState'].includes(node.name.getText(source))) return undefined;
       if (ts.isImportDeclaration(node) && node.moduleSpecifier.text === './cartridge.js') {
         return f.updateImportDeclaration(node, node.modifiers, f.updateImportClause(node.importClause, false, node.importClause.name, node.importClause.namedBindings), f.createStringLiteral('../wasm/cartridge'), node.attributes);
       }

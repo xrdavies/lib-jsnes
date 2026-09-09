@@ -117,17 +117,29 @@ export class Nes implements CpuBus {
     const cartSize = this.cartridge.stateSize, ppuSize = PPU_STATE_SIZE, apuSize = Apu.STATE_SIZE;
     const size = 11 + cartSize + ppuSize + apuSize + 8 + this.ram.length + 8;
     if (state.length !== size) throw new RangeError('Invalid state size');
+    state = state.slice(); // Validate and apply the same bytes, including shared-memory inputs.
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
     const dmaStall = view.getFloat64(size - 8, true);
     if (!Number.isSafeInteger(dmaStall) || dmaStall < 0) throw new RangeError('Invalid DMA state');
-    let offset = 0;
-    this.cpu.load(Array.from(state.subarray(offset, offset += 11)));
+    let offset = 11;
+    const cart = state.subarray(offset, offset += cartSize);
+    const ppu = state.subarray(offset, offset += ppuSize);
+    const apu = state.subarray(offset, offset += apuSize);
+    const controller1 = state.subarray(offset, offset += 4);
+    const controller2 = state.subarray(offset, offset += 4);
+    // Reject every invalid section before changing live state or clearing queued PCM.
+    this.cartridge.validateState(cart);
+    Ppu.validateState(ppu);
+    Apu.validateState(apu);
+    Controller.validateState(controller1);
+    Controller.validateState(controller2);
+    this.cpu.load(Array.from(state.subarray(0, 11)));
     this.cycles = this.cpu.cycles;
-    this.cartridge.loadState(state.subarray(offset, offset += cartSize));
-    this.ppu.loadState(state.subarray(offset, offset += ppuSize));
-    this.apu.loadState(state.subarray(offset, offset += apuSize));
-    this.controller1.loadState(state.subarray(offset, offset += 4));
-    this.controller2.loadState(state.subarray(offset, offset += 4));
+    this.cartridge.loadState(cart);
+    this.ppu.loadState(ppu);
+    this.apu.loadState(apu);
+    this.controller1.loadState(controller1);
+    this.controller2.loadState(controller2);
     this.ram.set(state.subarray(offset, offset + this.ram.length));
     this.dmaStall = dmaStall;
   }

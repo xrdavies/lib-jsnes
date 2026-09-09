@@ -104,6 +104,13 @@ Snapshot bytes are an evolving development format. The current APU snapshot stor
 all implemented oscillator registers, timers, lengths, and sampling/frame phases;
 older snapshots with previous APU sections are rejected. Restoring discards queued
 PCM from the abandoned timeline and preserves the phase of newly generated audio.
+`Nes.loadState()` copies and validates all sections before modifying live state.
+An invalid snapshot leaves CPU/device state, RAM, pending DMA and queued PCM
+intact. PPU restoration rejects out-of-range addresses, scanlines, dots and boolean
+flags; controller restoration rejects invalid serial indices and strobe flags.
+The same validators are used by direct component restores. These checks do not
+change snapshot sizes or identify which ROM produced a snapshot; hosts must still
+associate saves with the correct cartridge.
 CHR RAM cartridges append their 8 KiB of pattern memory to the cartridge section;
 CHR ROM cartridges do not append pattern memory. `cartridge.stateSize` gives
 the actual section length, while `Cartridge.STATE_SIZE` is the fixed register/PRG

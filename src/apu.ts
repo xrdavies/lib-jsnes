@@ -239,7 +239,7 @@ export class Apu {
     return out;
   }
 
-  loadState(state: Uint8Array): void {
+  static validateState(state: Uint8Array): void {
     if (state.length !== Apu.STATE_SIZE) throw new RangeError('Invalid APU state size');
     const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
     const frac = view.getUint32(41, true), frame = view.getUint16(57, true);
@@ -255,6 +255,12 @@ export class Apu {
     if (state[66] > 127 || state[67] > 3 || state[68] < 1 || state[68] > 8
       || view.getUint16(70, true) > 256 || view.getUint16(72, true) < 0x8000
       || view.getUint16(74, true) > 4081 || view.getUint16(76, true) > 427) throw new RangeError('Invalid DMC state');
+  }
+
+  loadState(state: Uint8Array): void {
+    Apu.validateState(state);
+    const view = new DataView(state.buffer, state.byteOffset, state.byteLength);
+    const frac = view.getUint32(41, true), frame = view.getUint16(57, true);
     this.dmc.regs.set(state.subarray(62, 66)); this.dmc.output = state[66];
     this.dmc.silence = !!(state[67] & 1); this.dmc.irq = !!(state[67] & 2);
     this.dmc.bits = state[68]; this.dmc.shift = state[69];
