@@ -66,6 +66,7 @@ user-gesture requirement is satisfied. The example schedules each drained mono
 PCM buffer with `AudioBufferSourceNode`; it does not persist an audio device or
 implement latency recovery. Arrow keys, Z/X, Enter and Shift control player 1.
 Losing window focus releases all keys.
+Leaving the page cancels the loop and suspends Web Audio.
 It has no gamepad policy; applications should wire `setController()` and schedule
 `audioSamples()` according to their own input and Web Audio pipeline.
 

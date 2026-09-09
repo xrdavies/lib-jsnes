@@ -81,6 +81,7 @@
     if (paused) { stop(); status.textContent = 'Paused.'; } else start();
   });
   document.addEventListener('visibilitychange', () => { stop(); start(); });
+  addEventListener('pagehide', () => { stop(); if (audioContext) audioContext.suspend(); });
   function frame(now) {
     animation = null;
     if (!nes || paused || document.hidden) return;
