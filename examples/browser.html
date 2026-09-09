@@ -10,14 +10,16 @@
 <h1>lib-jsnes</h1>
 <p><label>NES ROM <input id="rom" type="file" accept=".nes"></label>
 <label><input id="wasm" type="checkbox" checked> Use WASM for next ROM</label>
-<button id="pause" type="button" disabled>Pause</button></p>
+<button id="pause" type="button" disabled>Pause</button>
+<button id="audio" type="button">Enable audio</button></p>
 <canvas id="screen" width="256" height="240" aria-label="NES game screen"></canvas>
 <p id="status" role="status">Choose a ROM. Keyboard: arrows, Z, X, Enter, Shift.</p>
 <script type="module">
   import { Nes, WasmCore, NTSC_FRAME_RATE, Button } from '../dist/index.js';
-  const input = document.querySelector('#rom'), wasmInput = document.querySelector('#wasm'), pause = document.querySelector('#pause'), canvas = document.querySelector('#screen');
+  const input = document.querySelector('#rom'), wasmInput = document.querySelector('#wasm'), pause = document.querySelector('#pause'), audioButton = document.querySelector('#audio'), canvas = document.querySelector('#screen');
   const context = canvas.getContext('2d'), status = document.querySelector('#status');
   let generation = 0, animation = null, paused = false, last = 0, elapsed = 0, nes;
+  let audioContext, audioGain, audioAt = 0;
   const image = context?.createImageData(256, 240);
   const keys = new Map([
     ['ArrowUp', Button.Up], ['ArrowDown', Button.Down], ['ArrowLeft', Button.Left], ['ArrowRight', Button.Right],
@@ -28,6 +30,8 @@
   function stop() {
     if (animation !== null) cancelAnimationFrame(animation);
     animation = null; elapsed = 0;
+    audioAt = 0;
+    if (audioGain) { audioGain.disconnect(); audioGain = audioContext.createGain(); audioGain.connect(audioContext.destination); }
   }
   function start() {
     if (!nes || paused || document.hidden || animation !== null) return;
@@ -49,9 +53,15 @@
         candidate.loadRom(bytes);
       } else candidate = new Nes(bytes);
       candidate.reset();
-      nes = candidate; pause.disabled = false; status.textContent = 'Ready. Audio is muted.';
+      nes = candidate; pause.disabled = false; status.textContent = audioContext ? 'Ready.' : 'Ready. Audio is muted.';
       start();
     } catch (error) { if (load === generation) status.textContent = `Failed: ${error.message}`; }
+  });
+  audioButton.addEventListener('click', async () => {
+    if (!audioContext) {
+      audioContext = new AudioContext(); audioGain = audioContext.createGain(); audioGain.connect(audioContext.destination);
+    }
+    await audioContext.resume(); audioButton.textContent = 'Audio enabled'; audioButton.disabled = true;
   });
   addEventListener('keydown', event => {
     const bit = keys.get(event.code); if (bit === undefined) return;
@@ -74,7 +84,7 @@
       // ponytail: cap catch-up at 100 ms; sustained slow hosts need adaptive presentation.
       elapsed = Math.min(elapsed + Math.max(0, now - last), 100); last = now;
       while (elapsed >= 1000 / NTSC_FRAME_RATE) {
-        nes.runFrame(); nes.audioSamples(); // Muted example: drain rather than accumulate PCM.
+        nes.runFrame(); scheduleAudio(nes.audioSamples());
         elapsed -= 1000 / NTSC_FRAME_RATE;
       }
       image.data.set(nes.frameRgba()); context.putImageData(image, 0, 0);
@@ -83,6 +93,15 @@
     } catch (error) {
       stop(); nes = null; pause.disabled = true; status.textContent = `Failed: ${error.message}`;
     }
+  }
+  function scheduleAudio(samples) {
+    if (!audioContext || !samples.length) return;
+    const buffer = audioContext.createBuffer(1, samples.length, nes.sampleRate ?? nes.apu.sampleRate);
+    const channel = buffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
+    audioAt = Math.max(audioAt, audioContext.currentTime + 0.02);
+    const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioGain); source.start(audioAt);
+    audioAt += buffer.duration;
   }
 </script>
 </html>
