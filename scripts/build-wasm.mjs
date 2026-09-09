@@ -73,7 +73,7 @@ try {
     writeFileSync(path, compileSource(name));
     generated.push(path);
   }
-  const build = spawnSync('asc', ['wasm/index.ts', '--outFile', 'dist-wasm/lib-jsnes.wasm', '--exportRuntime', '--exportTable',
+  const build = spawnSync('asc', ['wasm/index.ts', '--outFile', 'dist-wasm/lib-jsnes.wasm', '--exportRuntime', '--exportTable', '--runtime', 'minimal',
     ...(debug ? ['--debug'] : ['--optimizeLevel', '3'])], { stdio: 'inherit' });
   if (build.error) throw build.error;
   process.exitCode = build.status ?? 1;

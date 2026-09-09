@@ -10,6 +10,7 @@ const apu = new Apu(new Bus());
 let audio = new Int16Array(0);
 const controller1 = new Controller(), controller2 = new Controller();
 let dmaStall: i32 = 0;
+let collectionCycles: i32 = 0;
 class Bus implements CpuBus, DmcBus {
   readDmc(address: i32): i32 { dmaStall += 4; return read(address); }
   read(address: i32): i32 { return read(address); }
@@ -56,6 +57,8 @@ export function reset(): void {
   RAM.fill(0); cartridge.reset(); ppu.reset(); apu.reset(); audio = new Int16Array(0); dmaStall = 0;
   cpu.a = cpu.x = cpu.y = 0;
   cpu.reset();
+  collectionCycles = 0;
+  __collect();
 }
 export function step(count: i32): void {
   if (count <= 0) return;
@@ -74,9 +77,18 @@ export function step(count: i32): void {
     else if ((apu.irqPending || cartridge.irqPending) && cpu.irq()) { cpu.cycles += 7; remaining -= 7; clockDevices(7); }
   }
 }
-function clockDevices(cycles: i32): void { ppu.step(cycles * 3); apu.step(cycles); }
+function clockDevices(cycles: i32): void {
+  ppu.step(cycles * 3); apu.step(cycles);
+  collectionCycles += cycles;
+  if (collectionCycles >= 29780) {
+    collectionCycles = 0;
+    // Minimal runtime collection is safe here: execution temporaries have returned,
+    // and all live emulator state is reachable through module globals.
+    __collect();
+  }
+}
 export function sampleRate(): i32 { return apu.sampleRate; }
-export function audioDrain(): i32 { audio = apu.drainSamples(); return audio.length; }
+export function audioDrain(): i32 { audio = apu.drainSamples(); __collect(); return audio.length; }
 export function audioPointer(): usize { return changetype<usize>(audio.buffer) + audio.byteOffset; }
 export function cycleCount(): f64 { return cpu.cycles; }
 export function programCounter(): i32 { return cpu.pc; }

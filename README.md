@@ -45,8 +45,8 @@ This measures core execution; it does not measure canvas or Web Audio performanc
 On the development macOS arm64 machine (Node 24.15.0), tile-row fetch reuse reduced
 the synthetic median from about 1.99 to 0.87 ms/frame in TypeScript and from 4.55
 to 2.30 ms/frame in WASM. The optimized binary is about 50.6 kB versus 62.6 kB.
-WASM remains slower than TypeScript in this measurement. Browser performance
-must be measured separately; faster WASM execution is not yet established.
+WASM was slower than TypeScript at this stage. These historical measurements
+used the incremental runtime; see the current runtime results below.
 
 The PPU now skips idle dots between the events implemented by its current timing
 model. On the same Node/macOS arm64 setup, a before/after synthetic run measured
@@ -62,8 +62,27 @@ to clock oscillators every CPU cycle. Recent synthetic Node runs on this machine
 changed from roughly 0.85 to 0.67 ms/frame in TypeScript and 2.29 to 1.90 ms/frame
 in WASM. Both derived caches are rebuilt after their inputs change or snapshots
 are restored; snapshot sizes are unchanged. Tests cover palette/mask changes,
-reset and restoration around each sequencer boundary. These remain Node results,
-and WASM remains slower in this workload.
+reset and restoration around each sequencer boundary. These measurements also used the incremental runtime.
+
+The current build uses AssemblyScript's `minimal` runtime, with explicit garbage
+collection after roughly 29,780 emulated CPU cycles, after audio drains and after
+reset. Collection runs after device execution returns, when all live core objects
+are reachable from module globals. It also runs inside large `step()` calls;
+hosts do not need to call `__collect()`. Runtime assertions and bounds checks remain
+enabled. Hosts using the raw allocation exports must pin managed objects they
+retain, since collection traces globals and pinned objects, not host pointers or
+WASM stack locals. Frame, battery RAM and current audio buffers are rooted by the
+core; previously documented view lifetimes still apply.
+
+With explicit collection, the synthetic Node median changed from about 1.90 to
+0.55 ms/frame in WASM, versus about 0.67 ms/frame in TypeScript (about 1.21× WASM
+speedup). The optimized binary shrank from 56,484 to 40,116 bytes. These are Node
+24.15.0 results on macOS arm64, not browser measurements or a universal speedup.
+In both debug and optimized builds, a stress test runs one large step spanning
+3,000 frames without audio drains after a 300-frame warmup, checks CPU/pixel/PCM
+parity and verifies that linear memory does not keep growing. The optimized run
+plateaued at 2.5 MiB. Another test repeatedly resets and drains a stopped core,
+checking reclamation and the lifetime of host-owned PCM copies.
 
 ## API
 
