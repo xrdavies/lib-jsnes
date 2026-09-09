@@ -73,11 +73,11 @@ test('APU snapshots accept offset views and reject invalid field values atomical
   const restored = new Apu(); restored.loadState(storage.subarray(3, 3 + snapshot.length));
   assert.deepEqual(restored.saveState(), snapshot);
   for (const corrupt of [
-    bytes => { bytes[43] = 2; },
+    bytes => { bytes[43] = 255; },
     bytes => { bytes[12] = 8; },
     bytes => { bytes[36] = 2; },
     bytes => { new DataView(bytes.buffer).setUint32(37, 1789773, true); },
-    bytes => { new DataView(bytes.buffer).setUint16(41, 7457, true); },
+    bytes => { new DataView(bytes.buffer).setUint16(41, 29830, true); },
     bytes => { new DataView(bytes.buffer).setUint16(30, 65535, true); },
   ]) {
     const bytes = snapshot.slice(); corrupt(bytes);
