@@ -118,7 +118,9 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
     const address = this.spriteEvalOam * 4 + this.spriteEvalByte;
     const value = this.oam[address];
     const target = this.scanline === 261 ? 0 : this.scanline + 1;
-    const inRange = (<number>value) <= target && target < (<number>value) + height;
+    // The final visible line is 239; evaluation on line 239 prepares the
+    // off-screen line 240 and must not count Y=240 sprites.
+    const inRange = target < 240 && (<number>value) <= target && target < (<number>value) + height;
     if (this.spriteEvalCopying || this.spriteCount < 8) {
       if (this.spriteEvalByte === 0 && inRange) {
         const slot = this.spriteCount++;

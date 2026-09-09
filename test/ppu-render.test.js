@@ -79,6 +79,14 @@ test('sprite overflow follows the hardware diagonal scan after eight sprites', (
   assert.equal(nes.read(0x2002) & 0x20, 0x20);
 });
 
+test('sprites starting at Y=240 stay outside the visible range', () => {
+  const nes = scene();
+  nes.write(0x2001, 0x1e);
+  for (let i = 0; i < 9; i++) sprite(nes, i, 20, 240, 0);
+  nes.ppu.step(241 * 341 + 1);
+  assert.equal(nes.read(0x2002) & 0x20, 0);
+});
+
 test('sprite zero hit excludes x=255 and respects each left-column mask', () => {
   const nes = scene();
   for (let y = 0; y < 8; y++) nes.cartridge.writeChr(y, 255);
