@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, unlinkSync, rmdirSync } from 'node:fs';
-import { setTimeout as delay } from 'node:timers/promises';
+import { mkdirSync, mkdtempSync, writeFileSync, copyFileSync, renameSync, rmSync } from 'node:fs';
+import { resolve, join } from 'node:path';
 import ts from 'typescript';
 
 const debug = process.argv.includes('--debug');
@@ -67,23 +67,21 @@ function compileSource(name) {
   finally { result.dispose(); }
 }
 mkdirSync('dist-wasm', { recursive: true });
-const generated = [];
-const lock = 'dist-wasm/.build.lock';
-while (true) {
-  try { mkdirSync(lock); break; }
-  catch (error) { if (error.code !== 'EEXIST') throw error; await delay(25); }
-}
+// Stage beside the output to permit an atomic rename on the same filesystem.
+// Each compiler sees the same relative paths, keeping output reproducible.
+const staging = mkdtempSync(resolve('.wasm-build-'));
 try {
+  mkdirSync(join(staging, 'dist-wasm'));
+  mkdirSync(join(staging, 'wasm'));
+  for (const name of ['index', 'cartridge']) copyFileSync(`wasm/${name}.ts`, join(staging, `wasm/${name}.ts`));
   for (const name of sources) {
-    const path = `dist-wasm/${name}.generated.ts`;
-    writeFileSync(path, compileSource(name));
-    generated.push(path);
+    writeFileSync(join(staging, `dist-wasm/${name}.generated.ts`), compileSource(name));
   }
-  const build = spawnSync('asc', ['wasm/index.ts', '--outFile', 'dist-wasm/lib-jsnes.wasm', '--exportRuntime', '--exportTable', '--runtime', 'minimal',
+  const build = spawnSync('asc', ['wasm/index.ts', '--baseDir', staging, '--outFile', 'dist-wasm/lib-jsnes.wasm', '--exportRuntime', '--exportTable', '--runtime', 'minimal',
     ...(debug ? ['--debug'] : ['--optimizeLevel', '3'])], { stdio: 'inherit' });
   if (build.error) throw build.error;
   process.exitCode = build.status ?? 1;
+  if (build.status === 0) renameSync(join(staging, 'dist-wasm/lib-jsnes.wasm'), 'dist-wasm/lib-jsnes.wasm');
 } finally {
-  for (const path of generated) unlinkSync(path);
-  rmdirSync(lock);
+  rmSync(staging, { recursive: true, force: true });
 }

@@ -10,7 +10,15 @@ npm test
 npm run build:wasm
 ```
 
-`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise/DMC APU as mono PCM, including frame and DMC IRQs. Both builds support the same 15 mapper IDs listed below. The build takes a short directory lock so concurrent test, publish and manual builds do not delete each other's generated source files.
+`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise/DMC APU as mono PCM, including frame and DMC IRQs. Both builds support the same 15 mapper IDs listed below. Each WASM build uses an isolated temporary directory and atomically replaces the output only after successful compilation.
+
+Concurrent WASM builds do not share generated sources or wait on a directory lock.
+A failed build preserves the previous binary. If a process is forcibly terminated,
+its ignored `.wasm-build-*` directory may remain, but it cannot block later builds
+or enter the npm package. Tests exercise concurrent builds, stale directories,
+compiler failure, retry, and byte-identical output from independent staging paths.
+When builds target the same output, the last successful completion wins; run the
+optimized build after debug experiments before packaging.
 
 ## Performance
 
