@@ -81,6 +81,12 @@ The current mapper layer supports NROM (0), MMC1 (1), UxROM (2), CNROM (3), MMC3
 MMC3 CHR tests cover all eight 1 KiB windows in both inversion modes, aligned
 R0/R1 pairs, all register-byte values, CHR RAM writes, snapshot restoration,
 and rendered pixels. This covers bank mapping, not cycle-accurate MMC3 IRQs.
+The MMC3 counter continues while its IRQ output is disabled. Once asserted, the
+IRQ remains pending across CPU masking and counter reloads until `$E000` clears
+it. The cartridge snapshot stores this latch in reserved byte 25 without changing
+section length. `clockScanline()` returns the current IRQ level; the CPU polls
+`cartridge.irqPending` at instruction boundaries. Clocking is still scanline-based,
+so PPU A12 filtering and MMC3 revision-specific IRQ edge behavior remain incomplete.
 
 The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning at
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
