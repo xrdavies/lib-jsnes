@@ -99,12 +99,13 @@ for (const mapper of [79, 113]) test(`mapper ${mapper} selects only its wired ba
 
 test('discrete mapper CHR RAM, mirroring changes and reset reach PPU reads in both cores', async () => {
   const wasm = await WasmCore.from(binary);
-  for (const mapper of [79, 87, 113, 140, 177, 241]) for (const vertical of [false, true]) {
+  for (const mapper of [79, 87, 113, 140, 177, 225, 241]) for (const vertical of [false, true]) {
     const code = [], write = (a, v) => code.push(0xa9, v, 0x8d, a & 255, a >>> 8);
     const addr = a => { write(0x2006, a >>> 8); write(0x2006, a & 255); };
     const readPpu = (a, target) => { addr(a); code.push(0xad, 7, 0x20, 0xad, 7, 0x20, 0x85, target); };
     addr(0); write(0x2007, 0x5a);
-    const register = mapper === 79 || mapper === 113 ? 0x5fff : mapper === 87 || mapper === 140 ? 0x7fff : 0xffff;
+    const register = mapper === 225 ? (vertical ? 0xdfff : 0xffff)
+      : mapper === 79 || mapper === 113 ? 0x5fff : mapper === 87 || mapper === 140 ? 0x7fff : 0xffff;
     const value = mapper === 113 ? (vertical ? 0xff : 0x7f) : vertical ? 0xdf : 0xff;
     write(register, value);
     readPpu(0, 4);

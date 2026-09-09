@@ -10,7 +10,7 @@ npm test
 npm run build:wasm
 ```
 
-`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise/DMC APU as mono PCM, including frame and DMC IRQs. Mapper 225 remains TypeScript-only.
+`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise/DMC APU as mono PCM, including frame and DMC IRQs. Both builds support the same 15 mapper IDs listed below.
 
 ## Performance
 
@@ -105,7 +105,7 @@ all implemented oscillator registers, timers, lengths, and sampling/frame phases
 older snapshots with previous APU sections are rejected. Restoring discards queued
 PCM from the abandoned timeline and preserves the phase of newly generated audio.
 CHR RAM cartridges append their 8 KiB of pattern memory to the cartridge section;
-CHR ROM cartridges retain the existing section size. `cartridge.stateSize` gives
+CHR ROM cartridges do not append pattern memory. `cartridge.stateSize` gives
 the actual section length, while `Cartridge.STATE_SIZE` is the fixed register/PRG
 RAM prefix. Old CHR RAM snapshots that omitted pattern memory are rejected.
 Restoring copies both RAM regions, including currently hidden CHR banks, so
@@ -172,7 +172,7 @@ so PPU A12 filtering and MMC3 revision-specific IRQ edge behavior remain incompl
 
 The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning at
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
-Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, mapper 15, GxROM, and mappers 79, 87, 113, 140, 177 and 241 (mappers 0, 1, 2, 3, 4, 7, 15, 66, 79, 87, 113, 140, 177 and 241), including
+Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, mapper 15, GxROM, and mappers 79, 87, 113, 140, 177, 225 and 241 (mappers 0, 1, 2, 3, 4, 7, 15, 66, 79, 87, 113, 140, 177, 225 and 241), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
 NES 2.0 linear-size headers are accepted; exponent-size encodings and other unsupported mappers are rejected by this experimental WASM core.
 `WasmCore.loadRom()` now allocates ROM storage to fit the input and copies it in
@@ -198,7 +198,7 @@ PRG/CHR exponent encoding when it equals 15. Other values extend the linear bank
 count. The parser preserves the 12-bit mapper number; WASM validates these high
 bits before accepting a cartridge. Parsing a layout does not imply support for
 its board, submapper, or extended RAM configuration.
-The TypeScript core supports the broader mapper list above.
+Both cores support the same mapper IDs; board variants and accepted ROM layouts can still differ.
 
 Mapper 15 now uses all four address-selected PRG modes in both cores: a
 sequential 32 KiB window, a switchable 16 KiB window with a fixed upper bank
@@ -215,6 +215,21 @@ wrapping, nametable mirroring and CHR protection in both builds. TypeScript
 snapshots now store the raw data latch in cartridge byte 22 and mode (0–3) in
 byte 23. Previous mapper-15 snapshots containing a bank shift (13/14) are
 rejected; other mapper snapshot layouts are unchanged.
+
+Mapper 225 now uses aligned even/odd 16 KiB bank pairs in 32 KiB mode and
+repeats the selected 16 KiB bank in both windows in mirrored mode. Address bit 14
+extends both PRG and CHR selection, bit 13 selects mirroring, and bit 12 selects
+the PRG mode. Write data does not affect these selectors. Reset selects PRG banks
+0/1, CHR bank zero and vertical mirroring while retaining RAM. Both cores also
+implement four 4-bit registers mirrored across `$5800–$5FFF`, addressed by the low
+two address bits, as described by the
+[FCEUX mapper 225 implementation](https://github.com/TASEmulators/fceux/blob/master/src/boards/225.cpp).
+Unmapped expansion reads still return zero rather than CPU open-bus data.
+Tests sweep every selector address through the CPU, including outer banks and
+small-ROM wrapping, and check nibble-register aliases, reset and PPU output.
+TypeScript mapper-225 snapshots append four register bytes after any CHR RAM;
+older snapshots lacking these bytes are rejected. Other mapper section sizes
+are unchanged. Matching mapper IDs does not establish complete game compatibility.
 
 Both cores distinguish mapper 79 (NINA-03/06) from mapper 113: mapper 79 uses
 bit 3 for its 32 KiB PRG selector and bits 0–2 for its 8 KiB CHR selector,
