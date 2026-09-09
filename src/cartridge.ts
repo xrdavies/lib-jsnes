@@ -14,7 +14,7 @@ export class Cartridge {
   private prg = 0; private chrBank = 0; private axBank=0; private gxBank=0; private gxChr=0; private m15Bank=0; private m15Shift=14; private m15Mirror=0; private mmc3Select=0; private mmc3Regs=new Uint8Array(8); private mmc3Mirror=0; private mmc3Latch=0; private mmc3Counter=0; private mmc3Irq=false;
 
   constructor(readonly rom: RomImage) {
-    if (![0, 1, 2, 3, 4, 7, 15, 66, 79].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
+    if (![0, 1, 2, 3, 4, 7, 15, 66, 79, 87].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
     if (rom.mapper === 1 && (rom.prgRom.length > 0x40000 || rom.chrRom.length > 0x20000)) {
       throw new Error('Extended MMC1 boards are not supported yet');
     }
@@ -78,6 +78,7 @@ export class Cartridge {
     address &= 0xffff;
     value &= 255;
     if (this.rom.mapper === 79 && (address & 0xe100) === 0x4100) { this.gxChr = ((value & 0x40) >>> 3) | (value & 7); this.gxBank = (value >>> 3) & 7; return; }
+    if (this.rom.mapper === 87 && address >= 0x6000 && address < 0x8000) { this.chrBank = ((value & 1) << 1) | ((value & 2) >>> 1); return; }
     if (address < 0x6000) return;
     if (address < 0x8000) {
       if (this.ramEnabled) this.prgRam[address - 0x6000] = value;
@@ -121,6 +122,7 @@ export class Cartridge {
   private chrAddress(address: number): number {
     address &= 0x1fff;
     if (this.rom.mapper === 66 || this.rom.mapper === 79) return (this.gxChr % (this.chr.length / 0x2000)) * 0x2000 + address;
+    if (this.rom.mapper === 87) return (this.chrBank % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 4) { const r=this.mmc3Regs, inv=!!(this.mmc3Select&0x80), bank=address>>>10; let b; if(!inv)b=bank<2?r[bank]&~1:bank<4?r[bank-2]|1:bank===4?r[4]:bank===5?r[5]:bank===6?r[0]:r[1]; else b=bank<2?r[2]:bank<4?r[3]:bank===4?r[0]:bank===5?r[1]:bank===6?r[4]:r[5]; return (b%(this.chr.length/0x400))*0x400+(address&0x3ff); }
     if (this.rom.mapper === 3) return (this.chrBank % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper !== 1) return address;

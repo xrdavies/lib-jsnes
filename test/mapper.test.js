@@ -182,6 +182,16 @@ test('mapper 79 switches 32KB PRG and 8KB CHR banks from $4100', () => {
   assert.deepEqual(chrPair(nes), [0x42, 0x43]);
 });
 
+test('mapper 87 switches 8KB CHR banks from the $6000 register', () => {
+  const nes = new Nes(image(87, 2, 8));
+  assert.deepEqual(prgPair(nes), [0, 1]);
+  nes.write(0x6000, 1); // Mapper swaps bits 0 and 1.
+  assert.deepEqual(prgPair(nes), [0, 1]);
+  assert.deepEqual(chrPair(nes), [0x44, 0x45]);
+  const state = nes.saveState(); nes.write(0x6000, 0); nes.loadState(state);
+  assert.deepEqual(chrPair(nes), [0x44, 0x45]);
+});
+
 test('MMC3 selects 8KB PRG slots and 1KB CHR banks', () => {
   const nes = new Nes(image(4, 8, 4)); nes.write(0x8000, 6); nes.write(0x8001, 3); assert.equal(nes.read(0x8000), 1); nes.write(0x8000, 0); nes.write(0x8001, 5); assert.equal(nes.cartridge.readChr(0), 0x41); nes.write(0x8000, 0x46); nes.write(0x8001, 2); assert.equal(nes.read(0x8000), 7);
 });
