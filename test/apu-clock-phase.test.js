@@ -28,7 +28,7 @@ test('$4017 writes never rephase pulse timers, for either CPU parity or frame mo
 test('APU snapshots retain the pulse phase independently of frame phase and reject invalid phase', () => {
   const source = new Apu(); configure(source); source.step(1); source.write(0x4017, 0);
   const saved = source.saveState(), restored = new Apu(); restored.loadState(saved);
-  assert.equal(saved[78], 1); assert.equal(new DataView(saved.buffer).getUint16(57, true), 0);
+  assert.equal(saved[78], 1); assert.equal(new DataView(saved.buffer).getUint16(57, true), 1);
   source.step(10000); restored.step(10000);
   assert.deepEqual(restored.drainSamples(), source.drainSamples());
   assert.deepEqual(restored.saveState(), source.saveState());

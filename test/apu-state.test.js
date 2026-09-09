@@ -16,7 +16,7 @@ test('APU restores the next sequencer event at every boundary in both frame mode
     const end = mode ? 37281 : 29829;
     for (const event of [7457, 14913, 22371, end, end + 1]) for (const delta of [-1, 0, 1]) {
       const source = new Apu(); configure(source, 15); source.write(0x4017, mode);
-      source.step(event + delta); source.drainSamples();
+      source.step(3); source.step(event + delta); source.drainSamples();
       const restored = new Apu();
       restored.write(0x4017, mode ^ 0x80); restored.step(22000);
       restored.loadState(source.saveState());
@@ -24,7 +24,7 @@ test('APU restores the next sequencer event at every boundary in both frame mode
       assert.deepEqual(restored.saveState(), source.saveState(), `${mode}:${event}:${delta}`);
       assert.deepEqual(restored.drainSamples(), source.drainSamples());
       // A frame-counter write must discard the previously scheduled deadline.
-      restored.write(0x4017, 0); restored.write(0x4003, 8);
+      restored.write(0x4017, 0); restored.step(restored.saveState()[127]); restored.write(0x4003, 8);
       restored.step(7456);
       assert.equal(restored.saveState()[48], 1, 'envelope restart waits for the quarter frame');
       restored.step(1);

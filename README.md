@@ -164,8 +164,14 @@ The pulse CPU/2 divider runs independently of the frame sequencer. Writes to
 `$4017` restart frame sequencing without shifting the pulse timer clock phase.
 Reset initializes the divider; snapshot byte 78 preserves it independently of
 the frame counter. Tests cover both clock parities, both frame modes and repeated
-CPU-driven `$4017` writes in both builds. Frame-counter write delays within an
-instruction remain approximate.
+CPU-driven `$4017` writes in both builds. `$4017` writes apply the new mode and restart the sequence after three APU CPU
+clocks at even phase or four at odd phase. IRQ inhibition and acknowledgement
+are immediate. Five-step mode clocks quarter/half units on delayed completion,
+unless a normal frame clock just occurred. Repeated writes replace the pending
+reset, and snapshots preserve the pending delay. Tests cover both phases, modes,
+clock collisions and restoration during the delay. The system still delivers
+register writes at instruction granularity, so the write's position within a CPU
+instruction remains approximate.
 
 The triangle timer runs every CPU cycle and advances its 32-step sequencer once
 per programmed period plus one, gated by the length and linear counters. Tests
@@ -209,11 +215,11 @@ connect this bus automatically. Reading `$4015` clears only the frame IRQ;
 writing `$4015` or disabling IRQ in `$4010` acknowledges DMC IRQ. Stopping the
 reader leaves buffered output and the current DAC level intact.
 
-The APU snapshot is now 127 bytes and includes the DMC reader, prefetch byte,
+The APU snapshot is now 130 bytes and includes the DMC reader, prefetch byte,
 shift register, timer, DAC, IRQ, independent pulse-clock phase and filter history.
 The three previous-input/output pairs are little-endian Float64 values at
-offsets 79/87, 95/103 and 111/119. Earlier APU snapshots without the full filter
-history are rejected.
+offsets 79/87, 95/103 and 111/119. Bytes 127–129 store the pending frame-write delay, pending mode and clock
+suppression state. Earlier APU snapshots without these fields are rejected.
 DMC tests cover all rates, maximum length, mapper wrap, output limits, CPU IRQs,
 continued output after stopping, and snapshot replay in TypeScript, with PCM and
 CPU parity checks in WASM.

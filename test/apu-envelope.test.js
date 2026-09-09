@@ -100,15 +100,18 @@ test('triangle linear counter gates waveform and reload flag controls its lifeti
   apu.write(0x4008, 0x82); apu.write(0x400b, 0x08); apu.step(7457); assert.ok(apu.saveState()[46] > 0);
 });
 
-test('$4017 selects five-step sequencing and clocks immediately', () => {
+test('$4017 selects five-step sequencing and clocks after the write delay', () => {
   const apu = new Apu();
   apu.write(0x4015, 1); apu.write(0x4000, 0x00); apu.write(0x4003, 0x08);
   apu.write(0x4017, 0x80);
+  assert.equal(apu.saveState()[45], 0);
+  apu.step(3);
   assert.equal(apu.saveState()[45], 1);
   const before = apu.saveState()[20];
   apu.step(14913); // The five-step half-frame clocks at this point.
   assert.ok(apu.saveState()[20] < before);
   apu.write(0x4017, 0);
+  apu.step(apu.saveState()[127]);
   assert.equal(apu.saveState()[45], 0);
   assert.equal(apu.saveState()[57], 0);
 });
