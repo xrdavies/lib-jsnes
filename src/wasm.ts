@@ -14,8 +14,9 @@ export interface WasmExports {
 export class WasmCore {
   private constructor(readonly exports: WasmExports) {}
 
-  static async from(source: ArrayBuffer | Uint8Array): Promise<WasmCore> {
-    const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
+  static async from(source: ArrayBuffer | Uint8Array | Response): Promise<WasmCore> {
+    const input = typeof Response !== 'undefined' && source instanceof Response ? await source.arrayBuffer() : source;
+    const bytes = input instanceof Uint8Array ? input : new Uint8Array(input as ArrayBuffer);
     const result = await WebAssembly.instantiate(bytes, { env: { abort() { throw new Error('WASM abort'); } } });
     const instance = ('instance' in result ? result.instance : result) as WebAssembly.Instance;
     return new WasmCore(instance.exports as unknown as WasmExports);
