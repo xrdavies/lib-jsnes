@@ -12,22 +12,18 @@ function machine() {
   return nes;
 }
 
-test('four-step IRQ is absent at earlier frame clocks and asserted on all three terminal cycles', () => {
+test('four-step IRQ is absent at earlier clocks and asserted once at the sequence endpoint', () => {
   const apu = new Apu();
   let cycles = 0;
   for (const target of [7457, 14913, 22371, 29827]) {
     apu.step(target - cycles); cycles = target;
     assert.equal(apu.irqPending, false, `unexpected IRQ at cycle ${target}`);
   }
-  for (const target of [29828, 29829, 29830]) {
-    apu.step(1);
-    assert.equal(apu.irqPending, true, `missing IRQ at cycle ${target}`);
-    assert.equal(apu.readStatus() & 0x40, 0x40);
-    assert.equal(apu.irqPending, false);
-    assert.equal(apu.readStatus() & 0x40, 0);
-  }
-  apu.step(1);
-  assert.equal(apu.irqPending, false, 'the next sequence starts without another assertion');
+  apu.step(1); assert.equal(apu.irqPending, false, 'IRQ must not precede the endpoint');
+  apu.step(1); assert.equal(apu.irqPending, true, 'missing IRQ at the endpoint');
+  assert.equal(apu.readStatus() & 0x40, 0x40);
+  assert.equal(apu.irqPending, false);
+  apu.step(1); assert.equal(apu.irqPending, false, 'acknowledged IRQ must not reassert in the same sequence');
 });
 
 test('IRQ latch persists until acknowledged, including across snapshots and mode changes', () => {

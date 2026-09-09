@@ -223,9 +223,8 @@ export class Apu {
       this.triangle.clockLength();
       this.noise.clockLength();
     }
-    // IRQ assertion is separate from half-frame clocks. A status read can clear
-    // the latch between these terminal cycles, so each cycle asserts it again.
-    if (!this.mode5 && !this.irqInhibit && this.frame >= 29828) this.frameIrq = true;
+    // The four-step IRQ is a level latch asserted once at the sequence endpoint.
+    if (!this.mode5 && !this.irqInhibit && this.frame === end) this.frameIrq = true;
     if (this.frame === end + 1) this.frame = 0;
   }
   drainSamples():Int16Array {const out=Int16Array.from(this.samples);this.samples=[];return out;}
