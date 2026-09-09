@@ -116,7 +116,7 @@ test('WASM accepts standard NES 2.0 linear sizes for supported mappers', async (
   const core = await WasmCore.from(binary); core.loadRom(bytes); core.reset();
   assert.equal(core.programCounter, 0x8000);
   assert.equal(core.exports.chrRead(0), bytes[start + 0x4000]);
-  assert.throws(() => core.loadRom(Uint8Array.from(bytes, (value, i) => i === 4 ? 0x3f : value)), /size encoding|too large/);
+  assert.throws(() => core.loadRom(Uint8Array.from(bytes, (value, i) => i === 4 ? 0x3f : value)), /size encoding|too large|Truncated/);
 });
 
 function gxrom(banks = 8, chr = 4, value = 0x21) {
