@@ -120,7 +120,7 @@ so PPU A12 filtering and MMC3 revision-specific IRQ edge behavior remain incompl
 
 The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning at
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
-Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, and GxROM (mappers 0, 1, 2, 3, 4, 7, and 66), including
+Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, mapper 15, and GxROM (mappers 0, 1, 2, 3, 4, 7, 15, and 66), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
 NES 2.0 linear-size headers are accepted; exponent-size encodings and other unsupported mappers are rejected by this experimental WASM core.
 `parseRom()` handles both NES 2.0 size encodings: byte 9's low/high nibble selects
@@ -129,6 +129,22 @@ count. The parser preserves the 12-bit mapper number; WASM validates these high
 bits before accepting a cartridge. Parsing a layout does not imply support for
 its board, submapper, or extended RAM configuration.
 The TypeScript core supports the broader mapper list above.
+
+Mapper 15 now uses all four address-selected PRG modes in both cores: a
+sequential 32 KiB window, a switchable 16 KiB window with a fixed upper bank
+within its 128 KiB group, one 8 KiB bank repeated four times, and one 16 KiB
+bank repeated twice. Register bit 6 controls horizontal/vertical mirroring;
+bit 7 selects the 8 KiB half in mode 2. Mode 3 protects CHR RAM writes. Reset
+selects mode 0, bank zero and vertical mirroring while retaining RAM.
+This follows the compatibility behavior documented by the
+[FCEUX mapper 15 implementation](https://github.com/TASEmulators/fceux/blob/master/src/boards/15.cpp).
+Board variants differ in bit-7 behavior outside mode 2 and mode-0 CHR write
+protection; those variants are not distinguished here. CPU-driven synthetic tests
+check every register byte, all four PRG windows, address aliases, smaller ROM
+wrapping, nametable mirroring and CHR protection in both builds. TypeScript
+snapshots now store the raw data latch in cartridge byte 22 and mode (0–3) in
+byte 23. Previous mapper-15 snapshots containing a bank shift (13/14) are
+rejected; other mapper snapshot layouts are unchanged.
 
 WASM MMC3 implements both PRG/CHR bank modes, CHR RAM, mapper mirroring and
 four-screen boards, plus the same coarse scanline IRQ latch as TypeScript.

@@ -49,7 +49,7 @@ export class WasmCore {
     const format = rom[7] & 0x0c;
     if (format !== 0 && format !== 8) throw new Error('Unsupported ROM format');
     if (format === 8 && ((rom[9] & 15) === 15 || (rom[9] >>> 4) === 15)) throw new Error('Unsupported NES 2.0 size encoding');
-    if (![0, 1, 2, 3, 4, 7, 66].includes(image.mapper)) throw new Error(`Unsupported WASM mapper: ${image.mapper}`);
+    if (![0, 1, 2, 3, 4, 7, 15, 66].includes(image.mapper)) throw new Error(`Unsupported WASM mapper: ${image.mapper}`);
     if (image.mapper === 1 && (image.prgRom.length > 0x40000 || image.chrRom.length > 0x20000)) throw new Error('Extended MMC1 boards are not supported yet');
     if (image.mapper === 0 && image.prgRom.length > 0x8000) throw new Error('Invalid NROM PRG size');
     for (let i = 0; i < rom.length; i++) this.exports.romWrite(i, rom[i]);

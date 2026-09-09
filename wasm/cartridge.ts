@@ -1,4 +1,4 @@
-// WASM cartridge storage for NROM, MMC1, UxROM, CNROM, MMC3, AxROM, and GxROM boards.
+// WASM cartridge storage for NROM, MMC1, UxROM, CNROM, MMC3, AxROM, mapper 15, and GxROM boards.
 export class Cartridge {
   readonly rom: Uint8Array = new Uint8Array(0x80000);
   readonly prgRam: Uint8Array = new Uint8Array(0x2000);
@@ -12,6 +12,7 @@ export class Cartridge {
   private bank: i32 = 0;
   private chrBank: i32 = 0;
   private mirror: i32 = 0;
+  private m15Mode: i32 = 0;
   private shift: i32 = 0x10;
   private control: i32 = 0x0c;
   private chrLow: i32 = 0;
@@ -35,6 +36,7 @@ export class Cartridge {
   }
 
   get mirroring(): string {
+    if (this.mapper == 15) return this.mirror ? 'horizontal' : 'vertical';
     if (this.mapper == 4) return this.flags & 8 ? 'four-screen' : this.mirror ? 'horizontal' : 'vertical';
     if (this.mapper == 1) {
       switch (this.control & 3) {
@@ -47,7 +49,7 @@ export class Cartridge {
     return this.mapper == 7 ? (this.mirror ? 'single-upper' : 'single-lower') : this.flags & 8 ? 'four-screen' : this.flags & 1 ? 'vertical' : 'horizontal';
   }
   reset(): void {
-    this.bank = 0; this.chrBank = 0; this.mirror = 0;
+    this.bank = 0; this.chrBank = 0; this.mirror = 0; this.m15Mode = 0;
     this.shift = 0x10; this.control = 0x0c; this.chrLow = this.chrHigh = 0;
     this.mmc3Select = 0; this.mmc3Regs.fill(0);
     this.irqLatch = this.irqCounter = 0; this.irqEnabled = this.pending = false;
@@ -57,6 +59,15 @@ export class Cartridge {
   readCpu(address: i32): i32 {
     if (address < 0x6000 || this.prgBanks == 0) return 0;
     if (address < 0x8000) return this.ramEnabled ? this.prgRam[address - 0x6000] : 0;
+    if (this.mapper == 15) {
+      // ponytail: bit 7 selects mode-2 halves only; distinguish board variants when submapper metadata is supported.
+      const slot = (address - 0x8000) >>> 13, base = (this.bank & 0x3f) * 2;
+      let selected = base + slot;
+      if (this.m15Mode == 1) selected = (slot < 2 ? base : base | 14) + (slot & 1);
+      if (this.m15Mode == 2) selected = base + (this.bank >>> 7);
+      if (this.m15Mode == 3) selected = base + (slot & 1);
+      return this.rom[this.prgStart + (selected * 0x2000 + (address & 0x1fff)) % (this.prgBanks * 0x4000)];
+    }
     if (this.mapper == 4) {
       const count = this.prgBanks * 2, slot = (address - 0x8000) >>> 13;
       const swapped = (this.mmc3Select & 0x40) != 0;
@@ -110,6 +121,9 @@ export class Cartridge {
       }
       this.shift = 0x10;
     }
+    else if (address >= 0x8000 && this.mapper == 15) {
+      this.m15Mode = address & 3; this.bank = value; this.mirror = (value >>> 6) & 1;
+    }
     else if (address >= 0x8000 && this.mapper == 2 && this.prgBanks > 0) this.bank = (value & 255) % this.prgBanks;
     else if (address >= 0x8000 && this.mapper == 7) { this.bank = value & 15; this.mirror = (value >>> 4) & 1; }
     else if (address >= 0x8000 && this.mapper == 3 && this.rom[5] > 0) this.chrBank = (value & 255) % this.rom[5];
@@ -130,7 +144,7 @@ export class Cartridge {
     return this.hasChrRom ? this.rom[this.chrStart + this.chrBank * 0x2000 + (address & 0x1fff)] : this.chrRam[address & 0x1fff];
   }
   writeChr(address: i32, value: i32): void {
-    if (!this.hasChrRom) this.chrRam[this.mapper == 1 ? this.mmc1ChrAddress(address)
+    if (!this.hasChrRom && !(this.mapper == 15 && this.m15Mode == 3)) this.chrRam[this.mapper == 1 ? this.mmc1ChrAddress(address)
       : this.mapper == 4 ? this.mmc3ChrAddress(address) : address & 0x1fff] = value & 255;
   }
   private mmc3ChrAddress(address: i32): i32 {
@@ -155,7 +169,7 @@ export class Cartridge {
     const mapperExtension: i32 = this.rom[8], sizeExtension: i32 = this.rom[9];
     if (nes2 && ((sizeExtension & 15) == 15 || (sizeExtension >>> 4) == 15)) throw new Error('Unsupported NES 2.0 size encoding');
     const mapper = (this.rom[6] >>> 4) | (this.rom[7] & 0xf0) | (nes2 ? ((mapperExtension & 15) << 8) : 0);
-    if (mapper != 0 && mapper != 1 && mapper != 2 && mapper != 3 && mapper != 4 && mapper != 7 && mapper != 66) throw new Error('Unsupported WASM mapper');
+    if (mapper != 0 && mapper != 1 && mapper != 2 && mapper != 3 && mapper != 4 && mapper != 7 && mapper != 15 && mapper != 66) throw new Error('Unsupported WASM mapper');
     const banks: i32 = this.rom[4] | (nes2 ? ((sizeExtension & 15) << 8) : 0);
     if (banks == 0 || (mapper == 0 && banks > 2)) throw new Error('Invalid PRG size');
     const start = 16 + ((this.rom[6] & 4) != 0 ? 512 : 0);

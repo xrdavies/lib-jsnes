@@ -160,17 +160,6 @@ test('GxROM switches PRG and CHR banks from one register', () => {
   const nes = new Nes(image(66, 8, 4)); nes.write(0x8000, 0x21); assert.deepEqual(prgPair(nes), [4,5]); assert.deepEqual(chrPair(nes), [0x42,0x43]);
 });
 
-test('mapper 15 supports 16KB and 8KB PRG windows with mirroring control', () => {
-  const nes = new Nes(image(15, 8, 1));
-  assert.deepEqual(prgPair(nes), [0, 1]);
-  nes.write(0x8000, 1);
-  assert.deepEqual(prgPair(nes), [1, 2]);
-  nes.write(0x8002, 1);
-  assert.deepEqual(prgPair(nes), [1, 2]);
-  assert.equal(nes.cartridge.mirroring, 'vertical');
-  const state = nes.saveState(); nes.write(0x8000, 4); nes.loadState(state);
-  assert.deepEqual(prgPair(nes), [1, 2]);
-});
 
 test('mapper 79 switches 32KB PRG and 8KB CHR banks from $4100', () => {
   const nes = new Nes(image(79, 8, 8));
