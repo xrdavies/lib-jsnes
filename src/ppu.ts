@@ -98,11 +98,26 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
         // OAM priority is resolved before background priority, even if this sprite is hidden.
         occupied[dx] = 1;
         const pixel = y * 256 + dx, background = this.backgroundOpaque[pixel];
-        if (i === 0 && dx < 255 && background) this.sprite0Hit = true;
         if (background && (attr & 0x20)) continue;
         this.frame[pixel] = this.framePalette[16 + (attr & 3) * 4 + color];
       }
     }
+  }
+  private spriteZeroOverlap(x: number, y: number): boolean {
+    if (x < 8 && (this.mask & 6) !== 6) return false;
+    const height = this.ctrl & 32 ? 16 : 8, row = y - (this.oam[0] + 1);
+    const tile = this.oam[1], attr = this.oam[2], column = x - this.oam[3];
+    if (row < 0 || row >= height || column < 0 || column > 7) return false;
+    const sy = attr & 0x80 ? height - 1 - row : row;
+    const table = height === 16 ? (tile & 1) * 0x1000 : (this.ctrl & 8 ? 0x1000 : 0);
+    const tileId = height === 16 ? (tile & 0xfe) + (sy >>> 3) : tile;
+    const sprite = table + tileId * 16 + (sy & 7), shift = attr & 0x40 ? column : 7 - column;
+    if (!((this.readMemory(sprite) | this.readMemory(sprite + 8)) & (1 << shift))) return false;
+    const wx = x + this.scrollX, wy = y + this.scrollY, sx = wx & 255, by = wy % 240;
+    const nt = (this.ctrl & 3) ^ ((wx >>> 8) & 1) ^ ((Math.floor(wy / 240) & 1) << 1);
+    const backgroundTile = this.readMemory(0x2000 + nt * 0x400 + (by >>> 3) * 32 + (sx >>> 3));
+    const background = (this.ctrl & 16 ? 0x1000 : 0) + backgroundTile * 16 + (by & 7);
+    return !!((this.readMemory(background) | this.readMemory(background + 8)) & (1 << (7 - (sx & 7))));
   }
   private color(index:number):number { let c=NES_PALETTE[this.readPalette(index)]; const e=(this.mask>>>5)&7; if(e){let r=c>>>16&255,g=c>>>8&255,b=c&255;if(e&1)r=Math.min(255,r+32);if(e&2)g=Math.min(255,g+32);if(e&4)b=Math.min(255,b+32);c=(r<<16)|(g<<8)|b;} return c; }
   private readPalette(address: number): number {
@@ -149,8 +164,15 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
       // Preserve status, line rendering, mapper clocks and line boundaries when skipping.
       const mapperLine = (this.mask & 0x18) !== 0 && (this.scanline < 240 || this.scanline === 261);
       const lineEnd = this.oddFrame && this.scanline === 261 && (this.mask & 0x18) && this.dot < 340 ? 340 : 341;
-      const next = this.dot === 0 ? 1 : this.scanline < 240 && this.dot < 256 ? 256
+      let next = this.dot === 0 ? 1 : this.scanline < 240 && this.dot < 256 ? 256
         : mapperLine && this.dot < 280 ? 280 : lineEnd;
+      const row = this.scanline - (this.oam[0] + 1);
+      const spriteX: number = this.oam[3];
+      const checkHit = !this.sprite0Hit && (this.mask & 0x18) === 0x18 && this.scanline < 240
+        && row >= 0 && row < (this.ctrl & 32 ? 16 : 8);
+      if (checkHit && this.dot < 255 && this.dot <= spriteX + 7) {
+        next = Math.min(next, (this.dot < spriteX ? spriteX : this.dot) + 1);
+      }
       const skip = Math.min(Math.floor(dots), next - this.dot - 1);
       if (skip > 0) { this.dot += skip; dots -= skip; }
       if (++this.dot === lineEnd) {
@@ -162,12 +184,16 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
           frame = true;
         }
       }
+      // ponytail: evaluate overlap with current memory; real fetch/shifter timing
+      // is still needed for register or CHR changes within the sprite's row.
+      if (checkHit && this.dot > 0 && this.dot < 256 && this.spriteZeroOverlap(this.dot - 1, this.scanline)) {
+        this.sprite0Hit = true; this.status |= 0x40;
+      }
       // ponytail: render a complete line at dot 256; per-dot fetches are needed
-      // for horizontal raster changes and exact sprite-zero hit timing.
+      // for horizontal raster changes.
       if (this.scanline < 240 && this.dot === 256) {
         this.renderBackground(this.scanline);
         this.renderSprites(this.scanline);
-        if (this.sprite0Hit) this.status |= 0x40;
       }
       // ponytail: libxnes-style scanline approximation; replace with qualified A12
       // edges when the PPU models individual pattern fetches and board revisions.

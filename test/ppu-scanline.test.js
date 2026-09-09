@@ -47,10 +47,10 @@ test('palette, scroll, mask and CHR changes affect subsequent lines without repa
 
 test('visible line completion precedes VBlank and sprite status clears on pre-render', () => {
   const nes = scene(); nes.ppu.oam.set([19, 0, 0, 20]); nes.write(0x2001, 30);
-  nes.ppu.step(20 * 341 + 255);
+  nes.ppu.step(20 * 341 + 20);
   assert.equal(nes.read(0x2002) & 64, 0);
   nes.ppu.step(1); assert.equal(nes.read(0x2002) & 64, 64);
-  nes.ppu.step(241 * 341 + 1 - (20 * 341 + 256));
+  nes.ppu.step(241 * 341 + 1 - (20 * 341 + 21));
   assert.equal(nes.frame[239 * 256], rgb(0x16));
   assert.equal(nes.read(0x2002) & 0xc0, 0xc0);
   nes.ppu.step(20 * 341); assert.equal(nes.read(0x2002) & 0xe0, 0);
@@ -80,4 +80,27 @@ test('CPU-driven CHR and palette changes produce matching split frames in WASM',
   assert.deepEqual(wasm.frame(), js.frame);
   assert.deepEqual(wasm.audioSamples(), js.audioSamples());
   assert.equal(wasm.cycleCount, js.cycleCount);
+});
+
+test('CPU polling observes sprite zero before line completion in JS and WASM', async () => {
+  const rom = image(), code = [];
+  const write = (a, v) => code.push(0xa9, v, 0x8d, a & 255, a >>> 8);
+  write(0x2003, 0);
+  for (const value of [39, 0, 0x20, 20]) write(0x2004, value);
+  write(0x2001, 0x1e);
+  code.push(0x2c, 0x02, 0x20, 0x50, 0xfb); // BIT $2002; BVC back to BIT.
+  write(0, 1);
+  code.push(0x02); // JAM after recording the hit.
+  rom.set(code, 16);
+  const js = new Nes(rom), wasm = await WasmCore.from(await readFile('dist-wasm/lib-jsnes.wasm'));
+  js.reset(); wasm.loadRom(rom); wasm.reset();
+  const before = Math.floor((40 * 341 + 20) / 3);
+  js.step(before); wasm.step(before);
+  assert.equal(js.read(0), 0);
+  assert.equal(wasm.exports.ramRead(0), 0);
+  js.step(25); wasm.step(25);
+  assert.equal(js.read(0), 1, 'polling finishes before dot 256');
+  assert.equal(wasm.exports.ramRead(0), 1);
+  assert.equal(wasm.cycleCount, js.cycleCount);
+  assert.equal(wasm.programCounter, js.cpu.pc);
 });

@@ -531,12 +531,15 @@ Each visible line is drawn at dot 256 using the current scroll, nametables,
 pattern banks, palette, mask and OAM. Later register writes affect subsequent
 lines and leave completed lines intact, allowing vertical splits and mapper IRQ
 bank changes within a frame. The visible image is complete before VBlank begins.
-Sprite-zero hit and overflow are set during the relevant line's rendering and
-cleared at pre-render dot 1. This is still a line-level approximation: writes
-within a line apply to that whole line, sprite-hit timing is at dot 256, and the
-PPU does not yet implement the hardware's per-dot fetch/scroll pipeline.
+Sprite-zero hit is set at dot x + 1 for the first opaque overlap, respecting
+rendering masks, flips, sprite size and the x=255 exclusion. Overlap uses current
+memory rather than hardware fetch buffers. Overflow is set during line rendering;
+both flags clear at pre-render dot 1. Drawing is still a line-level approximation:
+writes within a line apply to that whole line, and the PPU does not yet implement
+the hardware's per-dot fetch/scroll pipeline.
 Tests cover mid-frame palette, scroll, mask and CHR changes, partial-frame
-snapshot replay, status timing and CPU-driven split-frame parity in WASM.
+snapshot replay, status timing and CPU-driven split-frame and sprite-hit polling
+parity in WASM.
 The frame view updates progressively as the PPU advances; hosts should display it
 after their frame step. Snapshot size is unchanged; completed rows are saved
 alongside the current PPU position. Palette and sprite scratch buffers are rebuilt

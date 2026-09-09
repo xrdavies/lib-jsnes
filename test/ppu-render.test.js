@@ -94,6 +94,40 @@ test('8x16 sprites select the tile low-bit table and flip the entire height', ()
   assert.equal(pixel(nes, 27, 28), rgb(0x2a));
 });
 
+test('sprite zero hits at the first opaque overlap dot, including flips and snapshot replay', () => {
+  for (const tall of [false, true]) for (const flip of [false, true]) {
+    const nes = scene();
+    // Only background column 5 is opaque. An earlier sprite pixel alone must
+    // not trigger the flag; flipping maps sprite column 2 onto column 5.
+    nes.cartridge.writeChr(4, 0x04);
+    for (let y = 0; y < 8; y++) nes.cartridge.writeChr(16 + y, 0);
+    const row = flip ? (tall ? 15 : 7) : 0;
+    const base = tall ? 0x1020 + (row >>> 3) * 16 : 16;
+    nes.cartridge.writeChr(base + (row & 7) + 8, flip ? 0x20 : 0x24);
+    sprite(nes, 0, 16, 20, tall ? 3 : 1, 0x20 | (flip ? 0xc0 : 0));
+    nes.ppu.writeRegister(0, tall ? 0x20 : 0);
+    nes.ppu.writeRegister(1, 0x1e);
+    const initial = nes.saveState();
+    nes.ppu.step(20 * 341 + 21);
+    assert.equal(nes.ppu.readRegister(2) & 0x40, 0);
+    const before = nes.saveState();
+    nes.ppu.step(1);
+    assert.equal(nes.ppu.readRegister(2) & 0x40, 0x40);
+    const after = nes.saveState();
+    nes.loadState(initial);
+    for (let dot = 0; dot < 20 * 341 + 22; dot++) nes.ppu.step(1);
+    assert.equal(nes.ppu.readRegister(2) & 0x40, 0x40);
+    assert.deepEqual(nes.saveState(), after, 'batched and single-dot stepping agree');
+    nes.loadState(before);
+    nes.ppu.step(1);
+    assert.equal(nes.ppu.readRegister(2) & 0x40, 0x40);
+    assert.deepEqual(nes.saveState(), after);
+    nes.loadState(after);
+    nes.ppu.writeRegister(1, 0);
+    assert.equal(nes.ppu.readRegister(2) & 0x40, 0x40, 'hit stays latched when rendering stops');
+  }
+});
+
 test('transparent, disabled, and left-clipped backgrounds use the universal backdrop', () => {
   const nes = scene();
   nes.ppu.vram[0x23c0] = 3; // Palette 3 in the top-left quadrant.
