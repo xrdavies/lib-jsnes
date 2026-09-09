@@ -94,3 +94,5 @@ export function ramRead(index:i32):i32{return index>=0&&index<RAM.length?RAM[ind
 export function chrRead(index:i32):i32{return cartridge.readChr(index);}
 export function framePointer():usize{return changetype<usize>(ppu.frame.buffer)+ppu.frame.byteOffset;}
 export function frameLength():i32{return ppu.frame.length;}
+export function batteryRamPointer(): usize { return changetype<usize>(cartridge.prgRam.buffer) + cartridge.prgRam.byteOffset; }
+export function batteryRamLength(): i32 { return cartridge.prgRam.length; }

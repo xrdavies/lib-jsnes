@@ -19,6 +19,8 @@ export interface WasmExports {
   unknownOpcodeCount(): number;
   framePointer(): number;
   frameLength(): number;
+  batteryRamPointer(): number;
+  batteryRamLength(): number;
 }
 
 /** Thin browser/Node wrapper around the optional AssemblyScript build. */
@@ -55,6 +57,14 @@ export class WasmCore {
   }
 
   reset(): void { this.exports.reset(); }
+  saveBatteryRam(): Uint8Array {
+    return new Uint8Array(this.exports.memory.buffer, this.exports.batteryRamPointer(), this.exports.batteryRamLength()).slice();
+  }
+  loadBatteryRam(data: Uint8Array): void {
+    const length = this.exports.batteryRamLength();
+    if (data.length !== length) throw new RangeError(`Battery RAM must be ${length} bytes`);
+    new Uint8Array(this.exports.memory.buffer, this.exports.batteryRamPointer(), length).set(data);
+  }
   get sampleRate(): number { return this.exports.sampleRate(); }
   audioSamples(): Int16Array {
     const length = this.exports.audioDrain();

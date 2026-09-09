@@ -177,6 +177,19 @@ as `Nes`. The CPU reads the shared serial controller implementation at `$4016`
 and `$4017`; writing `$4016` latches both controllers. Host button changes affect
 the next latch, or live A-button reads while strobe is high.
 
+`WasmCore.saveBatteryRam()` and `loadBatteryRam(bytes)` use the same raw 8 KiB
+PRG RAM format as `Nes`. Save returns an independent `Uint8Array`; load copies
+an exactly sized array and rejects other lengths before writing. Restore after
+`loadRom()`, which clears cartridge RAM; `reset()` retains it. Host persistence
+accesses stored RAM even when the mapper disables CPU access or protects writes,
+and does not change those mapper controls. The host chooses storage and associates
+data with the correct cartridge, using `parseRom(bytes).battery` when appropriate.
+This is battery RAM persistence, not a full emulator snapshot.
+
+Raw WASM hosts can use `batteryRamPointer()` and `batteryRamLength()` with exported
+`memory`. As with frame views, obtain a fresh view after memory growth. The typed
+wrapper copies bytes so callers need not retain a view into WASM memory.
+
 `audioSamples()` copies the queued PCM into a host-owned array, so later steps,
 drains, or WASM memory growth do not overwrite it. Reset discards queued samples.
 Drain regularly; the queue retains at most two seconds when the host falls behind.
