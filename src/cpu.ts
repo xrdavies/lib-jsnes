@@ -93,6 +93,14 @@ export class Cpu6502 {
             case 0x94: this.write(this.zpx(), this.y); used = 4; break;
             case 0x9d: this.write(this.absx(), this.a); used = 5; break;
             case 0x99: this.write(this.absy(), this.a); used = 5; break;
+            case 0x9c:
+            case 0x9e: {
+                const base = this.abs(), address = this.indexed(base, op === 0x9c ? this.x : this.y, false);
+                // ponytail: DMA during the dummy read can change the mask; model with per-cycle CPU arbitration.
+                const value = (op === 0x9c ? this.y : this.x) & ((base >>> 8) + 1);
+                const target = (base & 0xff00) === (address & 0xff00) ? address : (value << 8) | (address & 255);
+                this.write(target, value); used = 5; break;
+            }
             case 0xad: this.a = this.read(this.abs()); this.nz(this.a); used = 4; break;
             case 0xbd: this.a = this.read(this.absx(true)); this.nz(this.a); used = 4; break;
             case 0xe8: this.read(this.pc); this.x = (this.x + 1) & 255; this.nz(this.x); used = 2; break;
@@ -283,6 +291,7 @@ export class Cpu6502 {
             case 0xdb: this.dcp(this.absy()); used = 7; break;
             case 0xe3: this.isc(this.indX()); used = 8; break;
             case 0xbf: this.a = this.x = this.read(this.absy(true)); this.nz(this.a); used = 4; break;
+            case 0xab: this.a = this.x = this.imm(); this.nz(this.a); used = 2; break;
             case 0xbb: this.a = this.x = this.sp = this.read(this.absy(true)) & this.sp; this.nz(this.a); used = 4; break;
             case 0x03: { const a = this.indX(); const v = this.shift(this.readForModify(a), false); this.write(a, v); this.a |= v; this.nz(this.a); used = 8; break; }
             case 0x0b:

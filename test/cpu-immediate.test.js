@@ -6,7 +6,7 @@ import { Cpu6502, WasmCore } from '../dist/index.js';
 const binary = await readFile(new URL('../dist-wasm/lib-jsnes.wasm', import.meta.url));
 const nz = value => (value === 0 ? 2 : 0) + (value >= 128 ? 128 : 0);
 
-for (const [opcode, name] of [[0x4b, 'ALR'], [0x6b, 'ARR'], [0xcb, 'AXS']]) {
+for (const [opcode, name] of [[0x4b, 'ALR'], [0x6b, 'ARR'], [0xab, 'LAX'], [0xcb, 'AXS']]) {
   test(`${name} immediate matches all operand pairs and carry/decimal inputs in both cores`, async () => {
     const rom = new Uint8Array(16 + 0x4000);
     rom.set([78, 69, 83, 26, 1, 0]);
@@ -34,6 +34,9 @@ for (const [opcode, name] of [[0x4b, 'ALR'], [0x6b, 'ARR'], [0xcb, 'AXS']]) {
           result = Math.floor((a & operand) / 2) + carry * 128; expectedA = result;
           const bit6 = Math.floor(result / 64) % 2, bit5 = Math.floor(result / 32) % 2;
           expectedFlags = (flags & ~0xc3) | nz(result) | bit6 | (bit6 !== bit5 ? 64 : 0);
+        } else if (opcode === 0xab) {
+          expectedA = expectedX = operand;
+          expectedFlags = (flags & ~0x82) | nz(operand);
         } else {
           const difference = a - operand; result = (difference + 256) % 256; expectedX = result;
           expectedFlags = (flags & ~0x83) | nz(result) | (difference >= 0 ? 1 : 0);
