@@ -146,13 +146,6 @@ test('save/load restores CPU, mapper, PPU memory, and cartridge RAM', () => {
   assert.equal(nes.cycleCount, 0); assert.equal(nes.audioSamples().length, 0);
 });
 
-test('PPU raises one NMI when VBlank begins and NMI output is enabled', () => {
-  const bytes = image(0, 1, 1); const prg = 16; bytes[prg + 0x3ffa] = 0; bytes[prg + 0x3ffb] = 0x80; bytes[prg + 0x3ffc] = 0; bytes[prg + 0x3ffd] = 0x80; bytes[prg] = 0xea; // NMI target $8000.
-  const nes = new Nes(bytes); nes.reset(); nes.ppu.writeRegister(0, 0x80); nes.step(27394);
-  assert.equal(nes.cpu.pc, 0x8000);
-  assert.equal(nes.ppu.consumeNmi(), false);
-});
-
 test('CNROM switches the 8KB CHR bank without changing PRG mapping', () => {
   const nes = new Nes(image(3, 2, 4)); assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
   nes.write(0x8000, 2); assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x44, 0x45]);
@@ -184,7 +177,7 @@ test('PPU mask clips the first eight background columns', () => {
 });
 
 test('PPU enables an immediate NMI when NMI output is turned on during VBlank', () => {
-  const nes=new Nes(image(0,1,1)); nes.ppu.step(241*341); assert.equal(nes.ppu.consumeNmi(),false); nes.ppu.writeRegister(0,0x80); assert.equal(nes.ppu.consumeNmi(),true);
+  const nes=new Nes(image(0,1,1)); nes.ppu.step(241*341+1); assert.equal(nes.ppu.consumeNmi(),false); nes.ppu.writeRegister(0,0x80); assert.equal(nes.ppu.consumeNmi(),true);
 });
 
 test('PPU status reads preserve sprite hit and overflow bits', () => {

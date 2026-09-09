@@ -2,7 +2,7 @@ import type { Cartridge } from './cartridge.js';
 
 export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,0x5c007e,0x6e0040,0x6c0700,0x561d00,0x333500,0x0b4800,0x005100,0x004b00,0x00402b,0x000000,0x000000,0x000000,0xaaaaaa,0x155fd9,0x4240ff,0x7527fe,0xa01acc,0xb71e7b,0xb53120,0x994e00,0x6b6d00,0x388700,0x0c9300,0x008b00,0x008268,0x000000,0x000000,0x000000,0xffffff,0x64b0ff,0x9290ff,0xb36aff,0xdf54ff,0xf053a4,0xf0705f,0xf1a33b,0xbdc52f,0x8bd53f,0x5eea6f,0x4de6ae,0x4dd2e6,0x4d4d4d,0x000000,0x000000,0xffffff,0xc0dfff,0xd3d2ff,0xe8c8ff,0xfbc2ff,0xfec4d7,0xfcc7b0,0xf9d89c,0xe6e89e,0xd5f0a3,0xc5f7c8,0xc5f7e1,0xc5e9f2,0xbcbcbc,0x000000,0x000000]);export class Ppu {
   constructor(private readonly cartridge: Cartridge) {}
-  reset(): void { this.ctrl=0; this.mask=0; this.status=0; this.backgroundOpaque.fill(0); this.nmiPending=false; this.sprite0Hit=false; this.spriteOverflow=false; this.scrollX=0; this.scrollY=0; this.oamAddr=0; this.addr=0; this.latch=false; this.data=0; this.scanline=0; this.dot=0; this.frame.fill(0xff000000); }
+  reset(): void { this.ctrl=0; this.mask=0; this.status=0; this.backgroundOpaque.fill(0); this.nmiPending=false; this.sprite0Hit=false; this.spriteOverflow=false; this.scrollX=0; this.scrollY=0; this.oamAddr=0; this.addr=0; this.latch=false; this.data=0; this.scanline=0; this.dot=0; this.scanlineTicks=0; this.frame.fill(0xff000000); }
   readonly vram = new Uint8Array(0x4000); readonly backgroundOpaque = new Uint8Array(256*240); readonly palette = new Uint8Array(32); readonly oam = new Uint8Array(256); readonly frame = new Uint32Array(256*240);
   private ctrl=0; private mask=0; private scanlineTicks=0; private nmiPending=false; private sprite0Hit=false; private spriteOverflow=false; private scrollX=0; private scrollY=0; private status=0; private oamAddr=0; private addr=0; private latch=false; private data=0; scanline=0; dot=0;
   readRegister(reg:number):number { switch(reg&7){case 2: {const v=this.status|(this.sprite0Hit?0x40:0)|(this.spriteOverflow?0x20:0); this.status&=0x7f; this.latch=false; return v;} case 4:return this.oam[this.oamAddr]; case 7:{const a=this.addr&0x3fff; const v=a>=0x3f00?this.palette[this.paletteIndex(a)]:this.data; if(a<0x3f00)this.data=this.readMemory(a); else this.data=this.readMemory((a-0x1000)&0x3fff); this.addr=(a+(this.ctrl&4?32:1))&0x3fff; return v;} default:return 0;} }
@@ -37,5 +37,32 @@ export const NES_PALETTE = new Uint32Array([0x666666,0x002a88,0x1412a7,0x3b00a4,
   consumeNmi(): boolean { const pending=this.nmiPending; this.nmiPending=false; return pending; }
   loadState(state: Uint8Array): void { if(state.length!==0x4000+32+256+13) throw new RangeError('Invalid PPU state'); this.vram.set(state.subarray(0,0x4000)); this.palette.set(state.subarray(0x4000,0x4020)); this.oam.set(state.subarray(0x4020,0x4120)); const v=state.subarray(0x4120); [this.ctrl,this.mask,this.status,this.oamAddr]=v; this.addr=v[4]|(v[5]<<8); this.latch=!!v[6]; this.data=v[7]; this.scanline=v[8]|(v[9]<<8); this.dot=v[10]|(v[11]<<8); this.nmiPending=!!v[12]; }
   dma(bytes: Uint8Array): void { for(let i=0;i<256;i++)this.oam[(this.oamAddr+i)&255]=bytes[i]; this.oamAddr=(this.oamAddr+256)&255; }
-  step(dots=1):boolean {let frame=false; while(dots-->0){if(++this.dot>=341){this.dot=0;this.scanlineTicks++; if(++this.scanline>=262){this.scanline=0; this.spriteOverflow=false; this.renderBackground(); this.renderSprites(); if(this.sprite0Hit)this.status|=0x40; frame=true;} if(this.scanline===241)this.status|=0x80; if(this.ctrl&0x80)this.nmiPending=true; if(this.scanline===261)this.status&=0x7f;}} return frame;}
+  step(dots = 1): boolean {
+    let frame = false;
+    while (dots-- > 0) {
+      if (++this.dot === 341) {
+        this.dot = 0;
+        this.scanlineTicks++;
+        if (++this.scanline === 262) {
+          this.scanline = 0;
+          // ponytail: rendering is still frame-batched; move fetches to individual dots for raster effects.
+          this.renderBackground();
+          this.renderSprites();
+          if (this.sprite0Hit) this.status |= 0x40;
+          frame = true;
+        }
+      }
+      if (this.dot === 1) {
+        if (this.scanline === 241) {
+          this.status |= 0x80;
+          if (this.ctrl & 0x80) this.nmiPending = true;
+        } else if (this.scanline === 261) {
+          this.status &= 0x1f;
+          this.sprite0Hit = false;
+          this.spriteOverflow = false;
+        }
+      }
+    }
+    return frame;
+  }
 }
