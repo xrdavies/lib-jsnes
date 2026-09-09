@@ -15,7 +15,7 @@ function scene({ chrRom = false, flags = 1, mask = 0x1e, scroll = 0, spriteContr
   ppu(0x2000, [0]); ppu(0x2400, [1]); ppu(0x2800, [0]); ppu(0x2c00, [1]);
   ppu(0x3f00, [0x0f, 0x2a]); ppu(0x3f11, [0x16]);
   // One sprite at (20,20); the remaining zero-filled sprites are outside that row.
-  for (const [i, v] of [19, 1, 0, 20].entries()) write(0x200 + i, v);
+  for (const [i, v] of [20, 1, 0, 20].entries()) write(0x200 + i, v);
   write(0x2003, 0); write(0x4014, 2);
   write(0x2005, scroll); write(0x2005, 0);
   write(0x2000, spriteControl); write(0x2001, mask);

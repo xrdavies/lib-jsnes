@@ -47,7 +47,7 @@ test('palette/mask changes apply immediately while coarse scroll and CHR preserv
 });
 
 test('visible line completion precedes VBlank and sprite status clears on pre-render', () => {
-  const nes = scene(); nes.ppu.oam.set([19, 0, 0, 20]); nes.write(0x2001, 30);
+  const nes = scene(); nes.ppu.oam.set([20, 0, 0, 20]); nes.write(0x2001, 30);
   nes.ppu.step(20 * 341 + 20);
   assert.equal(nes.read(0x2002) & 64, 0);
   nes.ppu.step(1); assert.equal(nes.read(0x2002) & 64, 64);
@@ -80,7 +80,7 @@ test('pixels commit at x+1 and palette/mask writes affect only subsequent pixels
 });
 
 test('pixel composition applies sprite priority, left clipping and grayscale at output time', () => {
-  const nes = scene(); nes.ppu.oam.set([19, 0, 0, 0]);
+  const nes = scene(); nes.ppu.oam.set([20, 0, 0, 0]);
   nes.ppu.palette[17] = 0x2a; nes.write(0x2001, 0x1e);
   nes.ppu.step(20 * 341 + 3);
   assert.equal(nes.frame[20 * 256 + 2], rgb(0x2a));
@@ -150,7 +150,7 @@ test('CPU polling observes sprite zero before line completion in JS and WASM', a
   const rom = image(), code = [];
   const write = (a, v) => code.push(0xa9, v, 0x8d, a & 255, a >>> 8);
   write(0x2003, 0);
-  for (const value of [39, 0, 0x20, 20]) write(0x2004, value);
+  for (const value of [40, 0, 0x20, 20]) write(0x2004, value);
   write(0x2001, 0x1e);
   code.push(0x2c, 0x02, 0x20, 0x50, 0xfb); // BIT $2002; BVC back to BIT.
   write(0, 1);

@@ -16,7 +16,7 @@ const rgb = code => (0xff000000 | NES_PALETTE[code]) >>> 0;
 
 test('eight sprite slots read low/high planes separately and retain selected OAM data', () => {
   const nes = scene(), reads = [], ppu = nes.ppu;
-  ppu.oam.set([19, 3, 0, 20]); ppu.step(19 * 341 + 256);
+  ppu.oam.set([20, 3, 0, 20]); ppu.step(19 * 341 + 256);
   const read = nes.cartridge.readChr.bind(nes.cartridge);
   nes.cartridge.readChr = a => { reads.push([ppu.dot, a]); return read(a); };
   ppu.step(1); ppu.oam.set([255, 9, 0, 50]); // Selection already captured tile 3 at X=20.
@@ -33,7 +33,7 @@ test('eight sprite slots read low/high planes separately and retain selected OAM
 
 test('first selected sprite retains its original OAM identity; flipped 8x16 sprites fetch the correct pair', () => {
   const nes = scene(), ppu = nes.ppu;
-  ppu.oam.set([19, 3, 0xc0, 20], 4); nes.write(0x2000, 0x20);
+  ppu.oam.set([20, 3, 0xc0, 20], 4); nes.write(0x2000, 0x20);
   for (let i = 0; i < 8; i++) nes.cartridge.writeChr(i, 255);
   nes.cartridge.writeChr(0x1037, 0x80);
   ppu.step(20 * 341 + 28);
@@ -44,7 +44,7 @@ test('first selected sprite retains its original OAM identity; flipped 8x16 spri
 test('snapshots resume each sprite fetch phase in JS and WASM without re-reading the low plane', async () => {
   const binary = await readFile('dist-wasm/lib-jsnes.wasm');
   for (const dot of [257, 260, 261, 262, 263, 279, 319, 320]) {
-    const nes = scene(); nes.ppu.oam.set([19, 1, 0, 20]);
+    const nes = scene(); nes.ppu.oam.set([20, 1, 0, 20]);
     nes.cartridge.writeChr(16, 0xff); nes.ppu.step(19 * 341 + dot);
     nes.cartridge.writeChr(16, 0); nes.cartridge.writeChr(24, 0xff);
     const saved = nes.saveState(), wasm = await WasmCore.from(binary);

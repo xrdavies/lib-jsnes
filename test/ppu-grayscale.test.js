@@ -37,7 +37,7 @@ test('grayscale applies to both background and sprite colors and survives snapsh
   const nes = scene(); nes.ppu.oam.fill(255);
   for (let row = 0; row < 8; row++) nes.cartridge.writeChr(row, 255);
   nes.ppu.palette[1] = 0x2a; nes.ppu.palette[17] = 0x16;
-  nes.ppu.oam.set([19, 0, 0, 20]); nes.write(0x2001, 0x1f);
+  nes.ppu.oam.set([20, 0, 0, 20]); nes.write(0x2001, 0x1f);
   const state = nes.saveState();
   nes.write(0x2001, 0x1e); nes.loadState(state); nes.ppu.step(341 * 262 * 2);
   assert.equal(nes.frame[8], 0xffffffff);
@@ -47,7 +47,7 @@ test('grayscale applies to both background and sprite colors and survives snapsh
 test('frame colors refresh after palette edits, mask changes, snapshots and reset', () => {
   const nes = scene(); nes.ppu.oam.fill(255);
   for (let row = 0; row < 8; row++) nes.cartridge.writeChr(row, 255);
-  nes.ppu.oam.set([19, 0, 0, 20]);
+  nes.ppu.oam.set([20, 0, 0, 20]);
   const expected = (code, mask) => {
     const color = NES_PALETTE[code & (mask & 1 ? 0x30 : 0x3f)];
     const channels = [color >>> 16 & 255, color >>> 8 & 255, color & 255];

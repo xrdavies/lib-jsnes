@@ -17,7 +17,7 @@ function scene() {
   return nes;
 }
 function sprite(nes, id, x, y, tile = 1, attr = 0) {
-  nes.ppu.oam.set([y - 1, tile, attr, x], id * 4);
+  nes.ppu.oam.set([y, tile, attr, x], id * 4);
 }
 function render(nes, mask = 0x1e) {
   nes.ppu.writeRegister(1, mask);
