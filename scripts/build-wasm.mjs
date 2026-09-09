@@ -27,6 +27,12 @@ function compileSource(name) {
       throw new Error(`Unsupported shared-core type: ${checker.typeToString(type)}`);
     };
     const visit = node => {
+      // CPU cycles remain f64 for long runs. For parity, convert to i64 so the
+      // bit test is exact beyond 2^32 without a floating-point remainder call.
+      if (name === 'cpu' && ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.AmpersandToken
+        && node.left.getText(source) === 'this.cycles' && node.right.getText(source) === '1') {
+        return f.updateBinaryExpression(node, f.createAsExpression(node.left, f.createTypeReferenceNode('i64')), node.operatorToken, node.right);
+      }
       // Button's JS object is a host convenience; Controller uses the numeric mask.
       if (name === 'controller' && ts.isVariableStatement(node) && node.declarationList.declarations.some(d => d.name.getText(source) === 'Button')) return undefined;
       // The palette is a fixed numeric table. AssemblyScript typed-array

@@ -59,7 +59,7 @@ export class Cpu6502 {
         // ponytail: retain the locked CPU state; the repeating JAM bus sequence
         // needs per-cycle bus modeling. Device clocks continue in the host.
         if (this.halted) { this.cycles++; return 1; }
-        this.busOdd = this.cycles % 2 !== 0;
+        this.busOdd = (this.cycles & 1) !== 0;
         this.pageCycles = 0; this.consecutiveWrite = false;
         this.instructionIrqMasked = !!(this.p & I);
         const op = this.fetch();
@@ -363,7 +363,7 @@ export class Cpu6502 {
     private indX() { const a = this.zpx(); return this.read(a) | (this.read((a + 1) & 255) << 8); }
     private indY(penalty = false) { const a = this.fetch(), base = this.read(a) | (this.read((a + 1) & 255) << 8); return this.indexed(base, this.y, penalty); }
     private read16(a: number) { return this.read(a) | (this.read((a + 1) & 0xffff) << 8); }
-    private interrupt(vector: number) { this.busOdd = this.cycles % 2 !== 0; this.instructionIrqMasked = true; this.read(this.pc); this.read(this.pc); this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p & ~B | U); this.p |= I; this.pc = this.read16(vector); }
+    private interrupt(vector: number) { this.busOdd = (this.cycles & 1) !== 0; this.instructionIrqMasked = true; this.read(this.pc); this.read(this.pc); this.push(this.pc >>> 8); this.push(this.pc); this.push(this.p & ~B | U); this.p |= I; this.pc = this.read16(vector); }
     private push(v: number) { this.write(0x100 | this.sp, v); this.sp = (this.sp - 1) & 255; }
     private preparePull(): void { this.read(this.pc); this.read(0x100 | this.sp); }
     private pop() { this.sp = (this.sp + 1) & 255; return this.read(0x100 | this.sp); }
