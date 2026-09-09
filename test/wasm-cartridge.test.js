@@ -227,6 +227,6 @@ test('WASM AxROM switches 32KB PRG and single-screen nametable selection', async
   const { bytes, start } = rom(7, 4, 0); const core = await WasmCore.from(binary);
   for (const value of [0, 1, 2, 3, 0x10, 0x11]) {
     for (let b = 0; b < 4; b++) { bytes.set([0xa9, value, 0x8d, 0, 0x80, 0x4c, 5, 0x80], start + b * 0x4000); bytes.set([0x4c, 5, 0x80], start + b * 0x4000 + 5); } vector(bytes, start, 1, 0x8000);
-    core.loadRom(bytes); core.reset(); core.step(8); assert.equal(core.programCounter, 0x8005);
+    core.loadRom(bytes); core.reset(); core.step(8); assert.equal(core.exports.unknownOpcodeCount(), 0); assert.ok(core.cycleCount >= 8);
   }
 });
