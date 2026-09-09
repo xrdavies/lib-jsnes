@@ -61,14 +61,52 @@ for (const mapper of [87, 140, 177, 241]) test(`mapper ${mapper} decodes every r
   }
 });
 
+for (const mapper of [79, 113]) test(`mapper ${mapper} selects only its wired bank bits across expansion-register aliases`, async () => {
+  const wasm = await WasmCore.from(binary);
+  for (const banks of [1, 16]) for (const register of [0x4100, 0x4b22, 0x5fff]) {
+    const code = [];
+    for (let value = 0; value < 256; value++) {
+      code.push(0xa9, value, 0x8d, register & 255, register >>> 8);
+      // These addresses have no mapper register, despite being nearby/on the cartridge bus.
+      for (const ignored of [0x4200, 0x5000, 0x6000, 0x8000]) code.push(0xa9, 0, 0x8d, ignored & 255, ignored >>> 8);
+      code.push(0xad, 0, 0x80, 0x85, 0, 0xad, 0, 0xc0, 0x85, 1);
+    }
+    const bytes = image(mapper, code, banks, 16), js = new Nes(bytes);
+    js.reset(); wasm.loadRom(bytes); wasm.reset();
+    for (let value = 0; value < 256; value++) {
+      js.step(44); wasm.step(44);
+      const prg = mapper === 79 ? (value >>> 3) & 1 : (value >>> 3) & 7;
+      const chr = mapper === 79 ? value & 7 : (value & 7) + (value & 64 ? 8 : 0);
+      const expected = [2 * prg % banks, (2 * prg + 1) % banks];
+      assert.deepEqual([js.read(0), js.read(1)], expected);
+      assert.deepEqual([0, 1].map(i => wasm.exports.ramRead(i)), expected);
+      for (const address of [0, 0x1000, 0x1fff]) {
+        assert.equal(js.cartridge.readChr(address), 0x80 + chr);
+        assert.equal(wasm.exports.chrRead(address), 0x80 + chr);
+      }
+      if (mapper === 113) assert.equal(js.cartridge.mirroring, value & 128 ? 'vertical' : 'horizontal');
+    }
+    // Older mapper-79 snapshots may contain mapper-113-only bank bits.
+    const state = js.saveState();
+    state[11 + 7] = 7; state[11 + 8] = 15;
+    js.loadState(state);
+    assert.equal(js.read(0x8000), (mapper === 79 ? 2 : 14) % banks);
+    assert.equal(js.cartridge.readChr(0), mapper === 79 ? 0x87 : 0x8f);
+    wasm.reset(); assert.equal(wasm.exports.chrRead(0), 0x80);
+    assert.equal(wasm.exports.unknownOpcodeCount(), 0);
+  }
+});
+
 test('discrete mapper CHR RAM, mirroring changes and reset reach PPU reads in both cores', async () => {
   const wasm = await WasmCore.from(binary);
-  for (const mapper of [87, 140, 177, 241]) for (const vertical of [false, true]) {
+  for (const mapper of [79, 87, 113, 140, 177, 241]) for (const vertical of [false, true]) {
     const code = [], write = (a, v) => code.push(0xa9, v, 0x8d, a & 255, a >>> 8);
     const addr = a => { write(0x2006, a >>> 8); write(0x2006, a & 255); };
     const readPpu = (a, target) => { addr(a); code.push(0xad, 7, 0x20, 0xad, 7, 0x20, 0x85, target); };
     addr(0); write(0x2007, 0x5a);
-    write(mapper === 87 || mapper === 140 ? 0x7fff : 0xffff, vertical ? 0xdf : 0xff);
+    const register = mapper === 79 || mapper === 113 ? 0x5fff : mapper === 87 || mapper === 140 ? 0x7fff : 0xffff;
+    const value = mapper === 113 ? (vertical ? 0xff : 0x7f) : vertical ? 0xdf : 0xff;
+    write(register, value);
     readPpu(0, 4);
     for (let i = 0; i < 4; i++) { addr(0x2000 + i * 0x400); write(0x2007, i + 1); }
     for (let i = 0; i < 4; i++) readPpu(0x2000 + i * 0x400, i);

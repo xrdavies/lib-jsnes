@@ -10,7 +10,7 @@ npm test
 npm run build:wasm
 ```
 
-`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise/DMC APU as mono PCM, including frame and DMC IRQs. Mappers 79, 113 and 225 remain TypeScript-only.
+`npm test` builds TypeScript and WASM and runs the built-in Node test suite. `npm run build:wasm` compiles the AssemblyScript browser ABI to `dist-wasm/lib-jsnes.wasm`; the generated binary is intentionally ignored. The WASM ABI accepts a ROM through `romWrite`/`loadRom`, resets from its vector, executes the shared 6502 core through `step`, and exposes the frame buffer pointer. Both cores are in development. WASM executes the shared CPU and PPU, including background/sprite rendering, OAM DMA, and VBlank NMI. WASM also supports both standard controllers. WASM exposes the shared pulse/triangle/noise/DMC APU as mono PCM, including frame and DMC IRQs. Mapper 225 remains TypeScript-only.
 
 ## Performance
 
@@ -172,7 +172,7 @@ so PPU A12 filtering and MMC3 revision-specific IRQ edge behavior remain incompl
 
 The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning at
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
-Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, mapper 15, GxROM, and mappers 87, 140, 177 and 241 (mappers 0, 1, 2, 3, 4, 7, 15, 66, 87, 140, 177 and 241), including
+Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, MMC3, AxROM, mapper 15, GxROM, and mappers 79, 87, 113, 140, 177 and 241 (mappers 0, 1, 2, 3, 4, 7, 15, 66, 79, 87, 113, 140, 177 and 241), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
 NES 2.0 linear-size headers are accepted; exponent-size encodings and other unsupported mappers are rejected by this experimental WASM core.
 `WasmCore.loadRom()` now allocates ROM storage to fit the input and copies it in
@@ -215,6 +215,19 @@ wrapping, nametable mirroring and CHR protection in both builds. TypeScript
 snapshots now store the raw data latch in cartridge byte 22 and mode (0–3) in
 byte 23. Previous mapper-15 snapshots containing a bank shift (13/14) are
 rejected; other mapper snapshot layouts are unchanged.
+
+Both cores distinguish mapper 79 (NINA-03/06) from mapper 113: mapper 79 uses
+bit 3 for its 32 KiB PRG selector and bits 0–2 for its 8 KiB CHR selector,
+retaining header mirroring. Mapper 113 uses bits 3–5 for PRG, bits 0–2 plus bit 6
+for CHR, and bit 7 for vertical (set) or horizontal (clear) mirroring. Writes
+are decoded only when `(address & 0xE100) === 0x4100`, including the aliases in
+`$4100–$5FFF`. The distinction is also documented in
+[Mesen's NINA implementation](https://github.com/SourMesen/Mesen2/blob/master/Core/NES/Mappers/Unlicensed/Nina03_06.h).
+Previously TypeScript incorrectly applied mapper 113's extra selector bits to
+mapper 79. The fix also masks these bits when reading older mapper-79 snapshots;
+section size is unchanged. Tests cover every register byte, aliases, ignored
+addresses, PRG mirroring, CHR RAM, mapper-controlled nametables and rendered pixels
+in both builds. Reset selects bank zero; mapper 113 initializes vertical mirroring.
 
 WASM also supports mapper 87's swapped CHR selector bits, mapper 140's combined
 PRG/CHR selector at `$6000–$7FFF`, and mapper 177/241's 32 KiB PRG selectors at

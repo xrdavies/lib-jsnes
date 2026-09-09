@@ -71,7 +71,7 @@ export class Cartridge {
       if (this.m15Mode === 3) selected = base + (slot8 & 1);
       return this.rom.prgRom[(selected * 0x2000 + (address & 0x1fff)) % this.rom.prgRom.length];
     }
-    if (this.rom.mapper === 79 || this.rom.mapper === 113 || this.rom.mapper === 140 || this.rom.mapper === 177 || this.rom.mapper === 241) bank = this.gxBank * 2 + slot;
+    if (this.rom.mapper === 79 || this.rom.mapper === 113 || this.rom.mapper === 140 || this.rom.mapper === 177 || this.rom.mapper === 241) bank = (this.rom.mapper === 79 ? this.gxBank & 1 : this.gxBank) * 2 + slot;
     if (this.rom.mapper === 225) { const b = address < 0xc000 ? this.m15Bank : this.gxBank; return this.rom.prgRom[((b % (this.rom.prgRom.length / 0x4000)) * 0x4000) + (address & 0x3fff)]; }
     if (this.rom.mapper === 4) { const b= this.rom.prgRom.length/0x2000; const last=b-1, second=last-1, r=this.mmc3Regs; const slot8=(address-0x8000)>>>13; const mode=this.mmc3Select&0x40; bank=mode?(slot8===0?second:slot8===1?r[7]:slot8===2?r[6]:last):(slot8===0?r[6]:slot8===1?r[7]:slot8===2?second:last); bank%=b; return this.rom.prgRom[bank*0x2000+(address&0x1fff)]; }
     if (this.rom.mapper === 66) bank = (this.gxBank&3)*2 + slot;
@@ -94,7 +94,12 @@ export class Cartridge {
     if (this.rom.mapper === 177 && address >= 0x8000) { this.gxBank = value & 0x1f; this.m15Mirror = value & 0x20 ? 1 : 0; return; }
     if (this.rom.mapper === 225 && address >= 0x8000) { const high=(address>>>14)&1, prg=((address>>>6)&0x3f)|(high<<6); this.gxChr=(address&0x3f)|(high<<6); this.m15Bank=prg; this.gxBank=(address>>>12)&1?prg:prg+1; this.m15Mirror=(address>>>13)&1; return; }
     if (this.rom.mapper === 241 && address >= 0x8000) { this.gxBank = value & 0x1f; return; }
-    if ((this.rom.mapper === 79 || this.rom.mapper === 113) && (address & 0xe100) === 0x4100) { this.gxChr = ((value & 0x40) >>> 3) | (value & 7); this.gxBank = (value >>> 3) & 7; if (this.rom.mapper === 113) this.m15Mirror = value & 0x80 ? 0 : 1; return; }
+    if ((this.rom.mapper === 79 || this.rom.mapper === 113) && (address & 0xe100) === 0x4100) {
+      this.gxChr = (value & 7) | (this.rom.mapper === 113 ? (value & 0x40) >>> 3 : 0);
+      this.gxBank = (value >>> 3) & (this.rom.mapper === 79 ? 1 : 7);
+      if (this.rom.mapper === 113) this.m15Mirror = value & 0x80 ? 0 : 1;
+      return;
+    }
     if (this.rom.mapper === 87 && address >= 0x6000 && address < 0x8000) { this.chrBank = ((value & 1) << 1) | ((value & 2) >>> 1); return; }
     if (address < 0x6000) return;
     if (address < 0x8000) {
@@ -145,7 +150,7 @@ export class Cartridge {
 
   private chrAddress(address: number): number {
     address &= 0x1fff;
-    if (this.rom.mapper === 66 || this.rom.mapper === 79 || this.rom.mapper === 113 || this.rom.mapper === 140 || this.rom.mapper === 225) return (this.gxChr % (this.chr.length / 0x2000)) * 0x2000 + address;
+    if (this.rom.mapper === 66 || this.rom.mapper === 79 || this.rom.mapper === 113 || this.rom.mapper === 140 || this.rom.mapper === 225) return ((this.rom.mapper === 79 ? this.gxChr & 7 : this.gxChr) % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 87) return (this.chrBank % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 4) {
       // Inversion swaps the two 4KB halves. R0/R1 each select an aligned
