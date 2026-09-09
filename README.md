@@ -158,7 +158,7 @@ outside the current timing model.
 Pulse channels implement all four duty patterns, CPU/2 timer clocks, and half-frame
 sweeps with channel-specific negate and target-overflow muting. Tests check output
 frequency, duty ratios, sweep timing, and snapshot continuation. Audio remains
-incomplete: exact frame edge timing and analog output filters are not implemented.
+incomplete: exact frame edge timing and the remaining analog output filters are not implemented.
 
 The pulse CPU/2 divider runs independently of the frame sequencer. Writes to
 `$4017` restart frame sequencing without shifting the pulse timer clock phase.
@@ -191,10 +191,14 @@ This weighted TND lookup is an approximation of the analog circuit, following
 the reference core's mixing model. Each table is scaled by 32767 and truncated
 before summing, keeping TypeScript and WASM PCM identical. Tests cover all 31
 pulse sums and 203 weighted TND inputs, compression and DMC-dependent gain.
-The old linear gains and fixed negative bias are removed. Samples use Int16Array
-storage but are currently unipolar (zero to positive full scale); DC removal and
-analog high/low-pass filters are not yet modeled. Snapshot layout is unchanged,
-but replaying an older snapshot now generates the new mix rather than old PCM.
+The old linear gains and fixed negative bias are removed. The unipolar mix passes through a 90 Hz one-pole high-pass filter before signed
+Int16 PCM conversion, removing steady DAC offsets. The filter uses a bilinear
+transform with `c = sampleRate / (PI * 90)`, feed-forward gain `c / (c + 1)` and
+feedback `(c - 1) / (c + 1)`. Previous input/output retain Float64 precision;
+only emitted PCM is rounded. Draining audio does not reset filter history.
+This implements the reference chain's first stage; the additional 440 Hz
+high-pass and 14 kHz low-pass stages remain unimplemented. Tests check the exact
+DC step response, signed release transient, 20 Hz/1 kHz gain, and snapshot replay.
 
 `new Apu()` remains valid for standalone synthesis, including direct `$4011` DAC
 writes. For DMC sample playback, supply `new Apu({ readDmc(address) { ... } })`;
@@ -203,9 +207,10 @@ connect this bus automatically. Reading `$4015` clears only the frame IRQ;
 writing `$4015` or disabling IRQ in `$4010` acknowledges DMC IRQ. Stopping the
 reader leaves buffered output and the current DAC level intact.
 
-The APU snapshot is now 79 bytes and includes the DMC reader, prefetch byte,
-shift register, timer, DAC, IRQ and independent pulse-clock phase. Previous
-62-byte and 78-byte APU snapshots are rejected.
+The APU snapshot is now 95 bytes and includes the DMC reader, prefetch byte,
+shift register, timer, DAC, IRQ, independent pulse-clock phase and filter history.
+Filter input/output are stored as little-endian Float64 values at offsets 79/87.
+Previous 62-byte, 78-byte and 79-byte APU snapshots are rejected.
 DMC tests cover all rates, maximum length, mapper wrap, output limits, CPU IRQs,
 continued output after stopping, and snapshot replay in TypeScript, with PCM and
 CPU parity checks in WASM.

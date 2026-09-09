@@ -22,7 +22,7 @@ test('both pulse channels produce the programmed frequency and duty cycle', () =
     apu.step(160000); // 100 periods of 16 * (99 + 1) CPU cycles.
     const pcm = apu.drainSamples();
     let rises = 0;
-    for (let i = 1; i < pcm.length; i++) if (pcm[i] > pcm[i - 1]) rises++;
+    for (let i = 1; i < pcm.length; i++) if (pcm[i] > 0 && pcm[i - 1] <= 0) rises++;
     assert.ok(Math.abs(rises - 100) <= 1, `channel ${channel}, duty ${duty}: ${rises} rises`);
     const highRatio = pcm.filter(value => value > 0).length / pcm.length;
     assert.ok(Math.abs(highRatio - [0.125, 0.25, 0.5, 0.75][duty]) < 0.01);

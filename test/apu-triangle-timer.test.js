@@ -50,11 +50,9 @@ test('triangle frequency matches the programmed period in emitted PCM', () => {
   const apu = triangle(99); apu.step(7457); apu.drainSamples();
   apu.step(3200000); // 1000 cycles of a 32-step waveform at 100 CPU clocks/step.
   const pcm = apu.drainSamples();
-  let peaks = 0, direction = 0;
+  let peaks = 0;
   for (let i = 1; i < pcm.length; i++) {
-    const next = Math.sign(pcm[i] - pcm[i - 1]);
-    if (next < 0 && direction > 0) peaks++;
-    if (next) direction = next;
+    if (pcm[i] > 0 && pcm[i - 1] <= 0) peaks++;
   }
-  assert.ok(Math.abs(peaks - 1000) <= 1, `expected 1000 triangle peaks, got ${peaks}`);
+  assert.ok(Math.abs(peaks - 1000) <= 1, `expected 1000 triangle periods, got ${peaks}`);
 });
