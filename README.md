@@ -72,7 +72,7 @@ and rendered pixels. This covers bank mapping, not cycle-accurate MMC3 IRQs.
 
 The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning at
 `framePointer()` with a `Uint32Array(memory.buffer, framePointer(), frameLength())`.
-Its cartridge path accepts iNES 1.0 NROM, UxROM, CNROM, AxROM, and GxROM (mappers 0, 2, 3, 7, and 66), including
+Its cartridge path accepts iNES 1.0 NROM, MMC1, UxROM, CNROM, AxROM, and GxROM (mappers 0, 1, 2, 3, 7, and 66), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
 NES 2.0 linear-size headers are accepted; exponent-size encodings and other unsupported mappers are rejected by this experimental WASM core.
 `parseRom()` handles both NES 2.0 size encodings: byte 9's low/high nibble selects
@@ -81,6 +81,13 @@ count. The parser preserves the 12-bit mapper number; WASM validates these high
 bits before accepting a cartridge. Parsing a layout does not imply support for
 its board, submapper, or extended RAM configuration.
 The TypeScript core supports the broader mapper list above.
+
+WASM MMC1 supports serial register writes, all four PRG modes, aligned 8 KiB and
+split 4 KiB CHR banks, four mirroring modes, and PRG RAM disable. Tests execute
+register writes through the CPU and compare mapped bytes and rendered frames.
+Extended MMC1 boards (over 256 KiB PRG or 128 KiB CHR) are rejected by both
+cores. Consecutive-cycle MMC1 write suppression and board variants remain
+unimplemented; instruction-level bank tests do not establish cycle accuracy.
 
 AxROM and GxROM tests cover every bank-register value, both PRG halves, the full CHR window,
 smaller ROM mirroring, CHR RAM, reset, and rendered pixels. CNROM and GxROM reset
