@@ -41,6 +41,15 @@ test('first selected sprite retains its original OAM identity; flipped 8x16 spri
   assert.equal(ppu.readRegister(2) & 64, 0, 'OAM sprite 1 cannot cause sprite-zero hit');
 });
 
+test('pre-render sprite fetch prepares the first visible line', () => {
+  const nes = scene(), ppu = nes.ppu;
+  ppu.oam.set([0, 1, 0, 20]);
+  for (let i = 0; i < 8; i++) nes.cartridge.writeChr(16 + i, 255);
+  nes.runFrame();
+  nes.runFrame();
+  assert.equal(nes.frame[20], rgb(0x16));
+});
+
 test('snapshots resume each sprite fetch phase in JS and WASM without re-reading the low plane', async () => {
   const binary = await readFile('dist-wasm/lib-jsnes.wasm');
   for (const dot of [257, 260, 261, 262, 263, 279, 319, 320]) {
