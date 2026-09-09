@@ -24,6 +24,10 @@ export interface WasmExports {
   frameLength(): number;
   batteryRamPointer(): number;
   batteryRamLength(): number;
+  stateSize(): number;
+  stateAllocate(): number;
+  saveState(): number;
+  loadState(): void;
 }
 
 /** Thin browser/Node wrapper around the optional AssemblyScript build. */
@@ -57,7 +61,7 @@ export class WasmCore {
     const required = ['romAllocate', 'romWrite', 'loadRom', 'reset', 'setController', 'step', 'runFrame',
       'sampleRate', 'audioDrain', 'audioPointer', 'cycleCount', 'programCounter', 'cpuRegister',
       'cpuJammed', 'unknownOpcodeCount', 'ramRead', 'chrRead', 'framePointer', 'frameLength',
-      'batteryRamPointer', 'batteryRamLength'];
+      'batteryRamPointer', 'batteryRamLength', 'stateSize', 'stateAllocate', 'saveState', 'loadState'];
     if (!(exports.memory instanceof WebAssembly.Memory) || required.some(name => typeof exports[name] !== 'function')) {
       throw new TypeError('WASM module does not implement the lib-jsnes ABI');
     }
@@ -83,6 +87,18 @@ export class WasmCore {
   }
 
   reset(): void { this.exports.reset(); }
+  saveState(): Uint8Array {
+    const pointer = this.exports.saveState();
+    return new Uint8Array(this.exports.memory.buffer, pointer, this.exports.stateSize()).slice();
+  }
+  loadState(state: Uint8Array): void {
+    if (state.length !== this.exports.stateSize()) throw new RangeError('Invalid state size');
+    // Allocation can grow memory or collect a managed input buffer.
+    state = new Uint8Array(state);
+    const pointer = this.exports.stateAllocate();
+    new Uint8Array(this.exports.memory.buffer, pointer, state.length).set(state);
+    this.exports.loadState();
+  }
   saveBatteryRam(): Uint8Array {
     return new Uint8Array(this.exports.memory.buffer, this.exports.batteryRamPointer(), this.exports.batteryRamLength()).slice();
   }

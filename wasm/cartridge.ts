@@ -85,8 +85,8 @@ export class Cartridge {
       return this.rom[this.prgStart + (bank % count) * 0x2000 + (address & 0x1fff)];
     }
     let selected = this.mapper == 2
-      ? (address < 0xc000 ? this.bank : this.prgBanks - 1)
-      : this.mapper == 66 || this.mapper == 7 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 177 || this.mapper == 241 ? (this.bank * 2 + ((address - 0x8000) >>> 14)) % this.prgBanks
+      ? (address < 0xc000 ? this.bank % this.prgBanks : this.prgBanks - 1)
+      : this.mapper == 66 || this.mapper == 7 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 177 || this.mapper == 241 ? ((this.mapper == 7 ? this.bank & 15 : this.mapper == 66 ? this.bank & 3 : this.mapper == 79 ? this.bank & 1 : this.bank) * 2 + ((address - 0x8000) >>> 14)) % this.prgBanks
       : ((address - 0x8000) >>> 14) % this.prgBanks;
     if (this.mapper == 1) {
       const slot = (address - 0x8000) >>> 14, bank = this.bank & 15;
@@ -106,24 +106,24 @@ export class Cartridge {
       const high = (address >>> 8) & 64, selected = ((address >>> 6) & 63) | high;
       this.bank = address & 0x1000 ? selected : selected & 126;
       this.highBank = address & 0x1000 ? selected : this.bank + 1;
-      this.chrBank = ((address & 63) | high) % (this.chrBytes / 0x2000);
+      this.chrBank = ((address & 63) | high);
       this.mirror = (address >>> 13) & 1;
       return;
     }
     if ((this.mapper == 79 || this.mapper == 113) && (address & 0xe100) == 0x4100) {
       this.bank = (value >>> 3) & (this.mapper == 79 ? 1 : 7);
-      this.chrBank = ((value & 7) | (this.mapper == 113 ? (value & 0x40) >>> 3 : 0)) % (this.chrBytes / 0x2000);
+      this.chrBank = ((value & 7) | (this.mapper == 113 ? (value & 0x40) >>> 3 : 0));
       if (this.mapper == 113) this.mirror = value & 0x80 ? 0 : 1;
       return;
     }
     if (address >= 0x6000 && address < 0x8000) {
       if (this.mapper == 87) {
-        this.chrBank = (((value & 1) << 1) | ((value & 2) >>> 1)) % (this.chrBytes / 0x2000);
+        this.chrBank = (((value & 1) << 1) | ((value & 2) >>> 1));
         return;
       }
       if (this.mapper == 140) {
         this.bank = (value >>> 4) & 3;
-        this.chrBank = (value & 15) % (this.chrBytes / 0x2000);
+        this.chrBank = value & 15;
         return;
       }
       if (this.ramEnabled && !(this.mapper == 4 && this.ramProtected)) this.prgRam[address - 0x6000] = value & 255;
@@ -161,12 +161,12 @@ export class Cartridge {
     else if (address >= 0x8000 && this.mapper == 15) {
       this.m15Mode = address & 3; this.bank = value; this.mirror = (value >>> 6) & 1;
     }
-    else if (address >= 0x8000 && this.mapper == 2 && this.prgBanks > 0) this.bank = (value & 255) % this.prgBanks;
-    else if (address >= 0x8000 && this.mapper == 7) { this.bank = value & 15; this.mirror = (value >>> 4) & 1; }
-    else if (address >= 0x8000 && this.mapper == 3 && this.hasChrRom) this.chrBank = (value & 255) % (this.chrBytes / 0x2000);
+    else if (address >= 0x8000 && this.mapper == 2 && this.prgBanks > 0) this.bank = value & 255;
+    else if (address >= 0x8000 && this.mapper == 7) { this.bank = value & 255; this.mirror = (value >>> 4) & 1; }
+    else if (address >= 0x8000 && this.mapper == 3) this.chrBank = value & 255;
     else if (address >= 0x8000 && this.mapper == 66) {
-      this.bank = (value >>> 4) & 3;
-      this.chrBank = this.hasChrRom ? (value & 3) % (this.chrBytes / 0x2000) : 0;
+      this.bank = value >>> 4;
+      this.chrBank = value & 3;
     }
   }
   readChr(address: i32): i32 {
@@ -178,7 +178,7 @@ export class Cartridge {
       const offset = this.mmc1ChrAddress(address);
       return this.hasChrRom ? this.rom[this.chrStart + offset] : this.chrRam[offset];
     }
-    return this.hasChrRom ? this.rom[this.chrStart + this.chrBank * 0x2000 + (address & 0x1fff)] : this.chrRam[address & 0x1fff];
+    return this.hasChrRom ? this.rom[this.chrStart + (this.chrBank % (this.chrBytes / 0x2000)) * 0x2000 + (address & 0x1fff)] : this.chrRam[address & 0x1fff];
   }
   writeChr(address: i32, value: i32): void {
     if (!this.hasChrRom && !(this.mapper == 15 && this.m15Mode == 3)) this.chrRam[this.mapper == 1 ? this.mmc1ChrAddress(address)
@@ -195,6 +195,53 @@ export class Cartridge {
     const slot = address >>> 12;
     const bank = this.control & 16 ? (slot == 0 ? this.chrLow : this.chrHigh) : (this.chrLow & 30) + slot;
     return (bank % (this.chrBytes / 0x1000)) * 0x1000 + (address & 0xfff);
+  }
+  get stateSize(): i32 {
+    if (!this.prgBanks) throw new Error('Load a ROM before saving or restoring state');
+    return 26 + 0x2000 + (this.hasChrRom ? 0 : 0x2000) + (this.mapper == 225 ? 4 : 0);
+  }
+  saveState(): Uint8Array {
+    const out = new Uint8Array(this.stateSize);
+    out[0] = this.shift; out[1] = this.control; out[2] = this.chrLow; out[3] = this.chrHigh;
+    if (this.mapper == 1 || this.mapper == 2) out[4] = this.bank;
+    if (this.mapper == 3 || this.mapper == 87) out[5] = this.chrBank;
+    if (this.mapper == 7) out[6] = this.bank;
+    if (this.mapper == 66 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 177 || this.mapper == 241) out[7] = this.bank;
+    if (this.mapper == 225) out[7] = this.highBank;
+    if (this.mapper == 66 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 225) out[8] = this.chrBank;
+    out[9] = this.mmc3Select; out[10] = this.mapper == 4 ? this.mirror : 0;
+    out.set(this.mmc3Regs, 11); out[19] = this.irqLatch; out[20] = this.irqCounter;
+    out[21] = this.irqEnabled ? 1 : 0;
+    if (this.mapper == 15 || this.mapper == 225) out[22] = this.bank;
+    out[23] = this.mapper == 15 ? this.m15Mode : 14;
+    if (this.mapper == 15 || this.mapper == 113 || this.mapper == 177 || this.mapper == 225) out[24] = this.mirror;
+    out[25] = (this.pending ? 1 : 0) | (this.ramDisabled ? 2 : 0) | (this.ramProtected ? 4 : 0);
+    out.set(this.prgRam, 26);
+    if (!this.hasChrRom) out.set(this.chrRam, 26 + 0x2000);
+    if (this.mapper == 225) out.set(this.extraRam, out.length - 4);
+    return out;
+  }
+  validateState(state: Uint8Array): void {
+    if (state.length != this.stateSize || state[10] > 1 || state[21] > 1 || state[24] > 1 || state[25] > 7
+      || (this.mapper == 15 ? state[23] > 3 : state[23] != 13 && state[23] != 14)) throw new RangeError('Invalid cartridge state');
+    if (this.mapper == 225) for (let i = state.length - 4; i < state.length; i++) {
+      if (state[i] > 15) throw new RangeError('Invalid cartridge state');
+    }
+  }
+  loadState(state: Uint8Array): void {
+    this.validateState(state);
+    this.shift = state[0]; this.control = state[1]; this.chrLow = state[2]; this.chrHigh = state[3];
+    this.bank = this.mapper == 1 || this.mapper == 2 ? state[4] : this.mapper == 7 ? state[6]
+      : this.mapper == 15 || this.mapper == 225 ? state[22] : state[7];
+    this.chrBank = this.mapper == 3 || this.mapper == 87 ? state[5] : this.mapper == 79 ? state[8] & 7 : state[8];
+    this.highBank = state[7]; this.m15Mode = this.mapper == 15 ? state[23] : 0;
+    this.mirror = this.mapper == 4 ? state[10] : this.mapper == 7 ? (this.bank >>> 4) & 1 : state[24];
+    this.mmc3Select = state[9]; this.mmc3Regs.set(state.subarray(11, 19));
+    this.irqLatch = state[19]; this.irqCounter = state[20]; this.irqEnabled = !!state[21];
+    this.pending = !!(state[25] & 1); this.ramDisabled = !!(state[25] & 2); this.ramProtected = !!(state[25] & 4);
+    this.prgRam.set(state.subarray(26, 26 + 0x2000));
+    if (!this.hasChrRom) this.chrRam.set(state.subarray(26 + 0x2000, 26 + 0x4000));
+    if (this.mapper == 225) this.extraRam.set(state.subarray(state.length - 4));
   }
   load(length: i32): void {
     this.prgBanks = 0;

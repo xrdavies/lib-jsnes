@@ -1,5 +1,5 @@
 import { Cpu6502, CpuBus } from '../dist-wasm/cpu.generated';
-import { Ppu } from '../dist-wasm/ppu.generated';
+import { Ppu, PPU_STATE_SIZE } from '../dist-wasm/ppu.generated';
 import { Apu, DmcBus } from '../dist-wasm/apu.generated';
 import { Controller } from '../dist-wasm/controller.generated';
 import { OamDma, OamDmaBus, DmcDma, DmcDmaBus } from '../dist-wasm/dma.generated';
@@ -11,6 +11,7 @@ const apu = new Apu(new Bus());
 const oamDma = new OamDma(new Bus());
 const dmcDma = new DmcDma(new Bus());
 let audio = new Int16Array(0);
+let snapshot = new Uint8Array(0);
 const controller1 = new Controller(), controller2 = new Controller();
 let collectionCycles: i32 = 0;
 let frameCompleted: boolean = false;
@@ -171,3 +172,53 @@ export function batteryRamPointer(): usize { return changetype<usize>(cartridge.
 export function batteryRamLength(): i32 { return cartridge.prgRam.length; }
 
 export function cpuJammed(): boolean { return cpu.jammed; }
+
+export function stateSize(): i32 {
+  return Cpu6502.STATE_SIZE + cartridge.stateSize + PPU_STATE_SIZE + Apu.STATE_SIZE + 8 + RAM.length + 1 + OamDma.STATE_SIZE + DmcDma.STATE_SIZE;
+}
+export function stateAllocate(): usize {
+  snapshot = new Uint8Array(stateSize());
+  __collect();
+  return changetype<usize>(snapshot.buffer);
+}
+export function saveState(): usize {
+  stateAllocate();
+  let offset = 0;
+  snapshot.set(cpu.saveState(), offset); offset += Cpu6502.STATE_SIZE;
+  snapshot.set(cartridge.saveState(), offset); offset += cartridge.stateSize;
+  snapshot.set(ppu.saveState(), offset); offset += PPU_STATE_SIZE;
+  snapshot.set(apu.saveState(), offset); offset += Apu.STATE_SIZE;
+  snapshot.set(controller1.saveState(), offset); offset += 4;
+  snapshot.set(controller2.saveState(), offset); offset += 4;
+  snapshot.set(RAM, offset); offset += RAM.length;
+  snapshot[offset++] = openBus;
+  snapshot.set(oamDma.saveState(), offset); offset += OamDma.STATE_SIZE;
+  snapshot.set(dmcDma.saveState(), offset);
+  __collect();
+  return changetype<usize>(snapshot.buffer);
+}
+export function loadState(): void {
+  if (snapshot.length != stateSize()) throw new RangeError('Invalid state size');
+  let offset = Cpu6502.STATE_SIZE;
+  const cpuState = snapshot.subarray(0, offset);
+  const cartState = snapshot.subarray(offset, offset + cartridge.stateSize); offset += cartridge.stateSize;
+  const ppuState = snapshot.subarray(offset, offset + PPU_STATE_SIZE); offset += PPU_STATE_SIZE;
+  const apuState = snapshot.subarray(offset, offset + Apu.STATE_SIZE); offset += Apu.STATE_SIZE;
+  const pad1 = snapshot.subarray(offset, offset + 4); offset += 4;
+  const pad2 = snapshot.subarray(offset, offset + 4); offset += 4;
+  const dmaOffset = offset + RAM.length + 1;
+  const oamState = snapshot.subarray(dmaOffset, dmaOffset + OamDma.STATE_SIZE);
+  const dmcState = snapshot.subarray(dmaOffset + OamDma.STATE_SIZE);
+  // Validate all sections before modifying state or discarding queued audio.
+  Cpu6502.validateSnapshot(cpuState); cartridge.validateState(cartState);
+  Ppu.validateState(ppuState); Apu.validateState(apuState);
+  Controller.validateState(pad1); Controller.validateState(pad2);
+  OamDma.validateState(oamState); DmcDma.validateState(dmcState);
+  if (!!(apuState[67] & 4) != !!(dmcState[0] || dmcState[1])) throw new RangeError('Invalid DMC DMA request state');
+  cpu.loadState(cpuState); cartridge.loadState(cartState); ppu.loadState(ppuState); apu.loadState(apuState);
+  controller1.loadState(pad1); controller2.loadState(pad2);
+  RAM.set(snapshot.subarray(offset, offset + RAM.length)); openBus = snapshot[offset + RAM.length];
+  oamDma.loadState(oamState); dmcDma.loadState(dmcState);
+  nmiPolled = irqPolled = nmiEarlier = irqEarlier = frameCompleted = false;
+  collectionCycles = 0; audio = new Int16Array(0);
+}

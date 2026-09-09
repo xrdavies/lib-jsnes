@@ -183,8 +183,8 @@ CHR ROM cartridges do not append pattern memory. `cartridge.stateSize` gives
 the actual section length, while `Cartridge.STATE_SIZE` is the fixed register/PRG
 RAM prefix. Old CHR RAM snapshots that omitted pattern memory are rejected.
 Restoring copies both RAM regions, including currently hidden CHR banks, so
-subsequent frames redraw from the saved tiles. This applies to `Nes` snapshots;
-the WASM wrapper does not yet expose a snapshot API.
+subsequent frames redraw from the saved tiles. `Nes` and `WasmCore` now support
+full snapshots using the same byte layout for the same ROM.
 The shared CPU now exposes `saveState(): Uint8Array` and
 `loadState(bytes: Uint8Array)` using the same 16-byte layout in TypeScript and
 AssemblyScript. The existing `save()`/`load()` number-array API remains available
@@ -205,8 +205,10 @@ reject invalid timing fields before changing state. APU serialization also uses
 the shared source and retains its 131-byte layout. Cross-build tests compare PCM,
 IRQ status and DMC reads after restoring both frame modes, pending writes and
 deferred sample fetches. Invalid oscillator, filter and timing values leave live
-state and queued PCM intact. The production ABI still lacks full-system
-save/restore; cartridge serialization and system assembly remain to be connected.
+state and queued PCM intact. The WASM cartridge codec translates its storage into
+the existing JS mapper layout, retaining raw bank values until memory is read.
+Full-system tests cover all 15 supported mappers with CHR ROM and CHR RAM,
+partial DMA, memory growth, fresh-instance restoration and queued-audio handling.
 OAM DMA now alternates one CPU-bus read and one OAMDATA write per CPU cycle,
 after one or two halt/alignment cycles. Relative to this core's cycle count, an
 odd-cycle `$4014` write takes 513 DMA cycles and an even-cycle write takes 514;
@@ -615,7 +617,7 @@ KIL (`$02/$12/$22/$32/$42/$52/$62/$72/$92/$B2/$D2/$F2`) now jams the CPU,
 instead of falling through to unknown-opcode handling and running later bytes.
 `nes.cpu.jammed` and `core.jammed` report the condition; raw WASM hosts can use
 `cpuJammed()`. Interrupts cannot release the jam, while reset or loading a running
-TypeScript snapshot can. Device clocks and audio continue during system stepping.
+snapshot can in either core. Device clocks and audio continue during system stepping.
 The initial instruction takes two cycles and retains PC at the following byte;
 subsequent CPU steps advance one halted cycle. The detailed repeating electrical
 bus sequence during JAM is not modeled. KIL is recognized even in strict CPU mode
@@ -812,11 +814,33 @@ lib-jsnes ABI; invalid modules fail before a core is created.
 `WasmCore.from()` validates the required exports and memory object immediately.
 Passing a valid but unrelated WebAssembly module fails with a clear ABI error
 before any ROM or emulator state is created. Use a binary produced by the matching
-`build:wasm` script; older binaries without `romAllocate` are intentionally
+`build:wasm` script; older binaries without the snapshot exports are intentionally
 rejected.
 The validation covers every public typed-wrapper operation, including controller,
-audio, CPU diagnostics, frame, CHR and battery-RAM exports, so a partially
+audio, CPU diagnostics, frame, CHR, snapshots and battery-RAM exports, so a partially
 compatible module fails at construction rather than during a later call.
+
+`WasmCore.saveState()` returns an owned `Uint8Array`, compatible with
+`Nes.loadState()` for the same ROM. `WasmCore.loadState(bytes)` restores CPU,
+mapper, PPU/frame, APU, controllers, RAM, open bus and DMA. Successful restoration
+discards queued audio; invalid lengths or component fields leave live state and
+queued PCM intact. Load the ROM before restoring. Snapshots omit ROM bytes and
+ROM identity, so the host must associate them with the correct cartridge. These
+are development snapshots, not a stable archive format; unused mapper fields
+may be normalized by the WASM codec.
+
+```ts
+const saved = core.saveState();
+core.runFrame();
+core.loadState(saved); // Continue from the saved frame and device phase.
+```
+
+Raw WASM hosts call `saveState()` for a pointer and `stateSize()` for its length.
+Copy those bytes before another save, allocation or memory growth. To restore,
+call `stateAllocate()`, write exactly `stateSize()` bytes to its returned pointer,
+then call `loadState()`. The typed wrapper handles copying, bounds and refreshed
+memory views. Managed scratch storage remains rooted through collection; this
+format serializes emulator state, not arbitrary linear memory or GC internals.
 
 `setController(player, mask)` accepts player 1 or 2 and the same `Button` masks
 as `Nes`. The CPU reads the shared serial controller implementation at `$4016`
