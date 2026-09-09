@@ -48,13 +48,15 @@ export class Cartridge {
     if (this.rom[0] != 78 || this.rom[1] != 69 || this.rom[2] != 83 || this.rom[3] != 26) throw new Error('Invalid iNES header');
     const nes2 = (this.rom[7] & 0x0c) == 8;
     if (!nes2 && (this.rom[7] & 0x0c) != 0) throw new Error('Unsupported ROM format');
-    if (nes2 && ((this.rom[4] & 0x3f) == 0x3f || (this.rom[5] & 0x3f) == 0x3f)) throw new Error('Unsupported NES 2.0 size encoding');
-    const mapper = (this.rom[6] >>> 4) | (this.rom[7] & 0xf0) | (nes2 ? ((this.rom[8] & 15) << 8) : 0);
+    // Widen bytes before shifting: u8 << 8 would discard the extension bits.
+    const mapperExtension: i32 = this.rom[8], sizeExtension: i32 = this.rom[9];
+    if (nes2 && ((sizeExtension & 15) == 15 || (sizeExtension >>> 4) == 15)) throw new Error('Unsupported NES 2.0 size encoding');
+    const mapper = (this.rom[6] >>> 4) | (this.rom[7] & 0xf0) | (nes2 ? ((mapperExtension & 15) << 8) : 0);
     if (mapper != 0 && mapper != 2 && mapper != 3 && mapper != 7 && mapper != 66) throw new Error('Unsupported WASM mapper');
-    const banks: i32 = this.rom[4] | (nes2 ? ((this.rom[9] & 15) << 8) : 0);
+    const banks: i32 = this.rom[4] | (nes2 ? ((sizeExtension & 15) << 8) : 0);
     if (banks == 0 || (mapper == 0 && banks > 2)) throw new Error('Invalid PRG size');
     const start = 16 + ((this.rom[6] & 4) != 0 ? 512 : 0);
-    const chrBanks: i32 = this.rom[5] | (nes2 ? ((this.rom[9] >>> 4) << 8) : 0);
+    const chrBanks: i32 = this.rom[5] | (nes2 ? ((sizeExtension >>> 4) << 8) : 0);
     if (start + banks * 0x4000 + chrBanks * 0x2000 > length) throw new Error('Truncated ROM');
     this.prgStart = start;
     this.prgBanks = banks;

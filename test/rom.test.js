@@ -7,7 +7,7 @@ console.log('rom tests passed');
 const { Button } = await import('../dist/index.js'); nes.setController(1, Button.A | Button.Start); nes.write(0x4016, 1); nes.write(0x4016, 0); assert.deepEqual([nes.read(0x4016), nes.read(0x4016), nes.read(0x4016), nes.read(0x4016)], [1,0,0,1]);
 nes.write(0x4015, 1); nes.write(0x4000, 0x4f); nes.write(0x4002, 0x20); nes.write(0x4003, 0); nes.write(0x4015, 1); nes.step(1000); assert.equal(nes.read(0x4015)&1,1); nes.write(0x4015,0); assert.equal(nes.read(0x4015),0); assert.equal(nes.apu.sampleRate,44100); assert.ok(nes.audioSamples().length > 0);
 const nes2 = new Uint8Array(16 + 0x4000 + 0x2000); nes2.set([0x4e,0x45,0x53,0x1a,1,1,0,0x08]); assert.equal(parseRom(nes2).format, 'nes2');
-const exponent = new Uint8Array(16); exponent.set([0x4e,0x45,0x53,0x1a,0xff,0,0,0x08]); assert.throws(() => parseRom(exponent), /too large/);
+const exponent = new Uint8Array(16); exponent.set([0x4e,0x45,0x53,0x1a,0xff,0,0,0x08,0,0x0f]); assert.throws(() => parseRom(exponent), /too large/);
 nes.write(0x2003, 0xfe); for(let i=0;i<256;i++)nes.write(i, i); nes.write(0x4014,0); assert.equal(nes.ppu.oam[0xfe],0); assert.equal(nes.ppu.oam[0xff],1); assert.equal(nes.ppu.oam[0],2);
 const rgbaRef=nes.frameRgba(); assert.equal(nes.frameRgba(),rgbaRef);
 const rgbaBefore=nes.frameRgba()[0]; nes.ppu.writeRegister(1,0); nes.runFrame(); const rgbaAfter=nes.frameRgba(); assert.equal(rgbaAfter,rgbaRef); assert.equal(rgbaAfter[3],255);

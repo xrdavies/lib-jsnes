@@ -51,6 +51,11 @@ The WASM module exports `memory`; read `frameLength()` 32-bit pixels beginning a
 Its cartridge path accepts iNES 1.0 NROM, UxROM, CNROM, AxROM, and GxROM (mappers 0, 2, 3, 7, and 66), including
 16 KiB NROM mirroring and optional trainer data. PRG mapping excludes CHR bytes.
 NES 2.0 linear-size headers are accepted; exponent-size encodings and other unsupported mappers are rejected by this experimental WASM core.
+`parseRom()` handles both NES 2.0 size encodings: byte 9's low/high nibble selects
+PRG/CHR exponent encoding when it equals 15. Other values extend the linear bank
+count. The parser preserves the 12-bit mapper number; WASM validates these high
+bits before accepting a cartridge. Parsing a layout does not imply support for
+its board, submapper, or extended RAM configuration.
 The TypeScript core supports the broader mapper list above.
 
 AxROM and GxROM tests cover every bank-register value, both PRG halves, the full CHR window,

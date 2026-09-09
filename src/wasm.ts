@@ -44,8 +44,9 @@ export class WasmCore {
   loadRom(rom: Uint8Array): void {
     if (rom.length > WasmCore.MAX_ROM_SIZE) throw new RangeError('ROM exceeds WASM capacity');
     const image = parseRom(rom);
-    if ((rom[7] & 0x0c) === 0x04) throw new Error('Unsupported ROM format');
-    if ((rom[7] & 0x0c) === 0x08 && ((rom[4] & 0x3f) === 0x3f || (rom[5] & 0x3f) === 0x3f)) throw new Error('Unsupported NES 2.0 size encoding');
+    const format = rom[7] & 0x0c;
+    if (format !== 0 && format !== 8) throw new Error('Unsupported ROM format');
+    if (format === 8 && ((rom[9] & 15) === 15 || (rom[9] >>> 4) === 15)) throw new Error('Unsupported NES 2.0 size encoding');
     if (![0, 2, 3, 7, 66].includes(image.mapper)) throw new Error(`Unsupported WASM mapper: ${image.mapper}`);
     if (image.mapper === 0 && image.prgRom.length > 0x8000) throw new Error('Invalid NROM PRG size');
     for (let i = 0; i < rom.length; i++) this.exports.romWrite(i, rom[i]);
