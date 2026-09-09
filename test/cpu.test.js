@@ -154,3 +154,7 @@ test('RTS wraps a return address of $ffff to $0000', () => {
   assert.equal(cpu.step(), 6);
   assert.equal(cpu.pc, 0);
 });
+
+test('undocumented DCP and ISC perform read-modify-write bus cycles', () => {
+  for (const opcode of [0xc7, 0xe7]) { const {cpu,memory,writes}=machine([opcode,0x10]); memory[0x10]=1; cpu.a=2; cpu.p=0x24; assert.equal(cpu.step(),5); assert.deepEqual(writes,[[0x10,1],[0x10,opcode===0xc7?0:2]]); }
+});
