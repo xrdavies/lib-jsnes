@@ -182,6 +182,15 @@ test('Color Dreams switches 32KB PRG and 8KB CHR from one register', () => {
   assert.deepEqual(prgPair(nes), [6, 7]); assert.deepEqual(chrPair(nes), [0x4e, 0x4f]);
 });
 
+test('CPROM keeps the lower 4KB CHR page fixed and switches the upper page', () => {
+  const nes = new Nes(image(13, 2, 8));
+  assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x40]);
+  nes.write(0x8000, 3);
+  assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x43]);
+  const state = nes.saveState(); nes.write(0xffff, 1); nes.loadState(state);
+  assert.deepEqual(chrPair(nes), [0x40, 0x43]);
+});
+
 test('Camerica mapper 71 switches the lower PRG window and single-screen mirroring', () => {
   const nes = new Nes(image(71, 8, 1, 1));
   assert.deepEqual(prgPair(nes), [0, 7]); assert.equal(nes.cartridge.mirroring, 'vertical');

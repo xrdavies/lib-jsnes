@@ -25,11 +25,12 @@ export class Cartridge {
 
   constructor(readonly rom: RomImage) {
     if (rom.consoleType && rom.consoleType !== 'nes') throw new Error(`Unsupported console type: ${rom.consoleType}`);
-    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 15, 34, 66, 71, 79, 87, 113, 140, 177, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
+    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 34, 66, 71, 79, 87, 113, 140, 177, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
     if (rom.mapper === 1 && (rom.prgRom.length > 0x40000 || rom.chrRom.length > 0x20000)) {
       throw new Error('Extended MMC1 boards are not supported yet');
     }
     if ((rom.mapper === 9 || rom.mapper === 10) && rom.prgRom.length < 0x8000) throw new Error('MMC2/MMC4 require at least 32 KiB PRG');
+    if (rom.mapper === 13 && rom.prgRom.length !== 0x8000) throw new Error('CPROM requires 32 KiB PRG');
     if (rom.mapper === 225) this.gxBank = 1;
     if (rom.mapper === 9 || rom.mapper === 10) this.m9Mirror = rom.mirroring === 'four-screen' ? 2 : rom.mirroring === 'vertical' ? 1 : 0;
     this.chr = rom.chrRam ? new Uint8Array(0x2000) : rom.chrRom;
@@ -135,6 +136,7 @@ export class Cartridge {
     if (this.rom.mapper === 71) { if ((address & 0xf000) === 0x9000) this.m71Mirror = 1 + ((value >>> 4) & 1); else this.gxBank = value; return; }
     if (this.rom.mapper === 9 || this.rom.mapper === 10) { switch (address & 0xf000) { case 0xa000: this.prg = value; break; case 0xb000: this.mmc3Regs[0] = value; break; case 0xc000: this.mmc3Regs[1] = value; break; case 0xd000: this.mmc3Regs[2] = value; break; case 0xe000: this.mmc3Regs[3] = value; break; case 0xf000: this.m9Mirror = (value & 1) ^ 1; break; } return; }
     if (this.rom.mapper === 11) { this.gxBank = value; return; }
+    if (this.rom.mapper === 13) { this.chrBank = value; return; }
     if (this.rom.mapper === 34) { this.gxBank = value; return; }
     if (this.rom.mapper === 3) { this.chrBank = value; return; }
     if (this.rom.mapper === 7) { this.axBank=value; return; }
@@ -190,6 +192,7 @@ export class Cartridge {
     address &= 0x1fff;
     if (this.rom.mapper === 9 || this.rom.mapper === 10) return this.mmc2ChrAddress(address);
     if (this.rom.mapper === 11) return ((this.gxBank >>> 4) % (this.chr.length / 0x2000)) * 0x2000 + address;
+    if (this.rom.mapper === 13) return address < 0x1000 ? address : (this.chrBank % (this.chr.length / 0x1000)) * 0x1000 + (address & 0x0fff);
     if (this.rom.mapper === 66 || this.rom.mapper === 79 || this.rom.mapper === 113 || this.rom.mapper === 140 || this.rom.mapper === 225) return ((this.rom.mapper === 79 ? this.gxChr & 7 : this.gxChr) % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 87) return (this.chrBank % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 4) {

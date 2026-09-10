@@ -77,6 +77,19 @@ test('WASM Color Dreams switches 32KB PRG and 8KB CHR from one register', async 
   assert.equal(core.exports.unknownOpcodeCount(), 0);
 });
 
+test('WASM CPROM keeps the lower 4KB CHR page fixed and switches the upper page', async () => {
+  const { bytes, start } = rom(13, 2, 8);
+  const chrStart = start + 2 * 0x4000;
+  for (let bank = 0; bank < 16; bank++) bytes.fill(0x40 + bank, chrStart + bank * 0x1000, chrStart + (bank + 1) * 0x1000);
+  bytes.set([0xa9, 3, 0x8d, 0, 0x80, 0x4c, 0x05, 0x81], start + 0x100);
+  bytes.set([0, 0x81], start + 2 * 0x4000 - 4);
+  const js = new Nes(bytes), core = await WasmCore.from(binary);
+  js.reset(); core.loadRom(bytes); core.reset(); js.step(40); core.step(40);
+  assert.deepEqual([core.exports.chrRead(0), core.exports.chrRead(0x1000)], [0x40, 0x43]);
+  assert.deepEqual([core.programCounter, core.cycleCount], [js.cpu.pc, js.cycleCount]);
+  assert.equal(core.exports.unknownOpcodeCount(), 0);
+});
+
 test('WASM Camerica mapper 71 switches the lower PRG window and preserves the fixed upper bank', async () => {
   const { bytes, start } = rom(71, 4, 1, false);
   const program = [0xa9, 2, 0x8d, 0, 0x80, 0xad, 0, 0x80, 0x85, 0, 0xad, 0, 0xc0, 0x85, 1,
@@ -166,7 +179,7 @@ test('wrapper rejects unsupported cartridges before replacing the running ROM', 
   vector(valid.bytes, valid.start, 1, 0x8000);
   core.loadRom(valid.bytes); core.reset();
   const nes2 = rom(0, 1).bytes; nes2[7] = 8;
-  for (const invalid of [rom(5, 2).bytes, rom(0, 3).bytes]) {
+  for (const invalid of [rom(5, 2).bytes, rom(0, 3).bytes, rom(13, 1).bytes, rom(13, 4).bytes]) {
     assert.throws(() => core.loadRom(invalid));
     assert.equal(core.programCounter, 0x8000);
     assert.equal(core.cycleCount, 0);
