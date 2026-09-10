@@ -265,6 +265,15 @@ test('mapper 89 decodes PRG, CHR and single-screen register bits', () => {
   assert.deepEqual(prgPair(nes), [5, 15]); assert.deepEqual(chrPair(nes), [0x54, 0x55]);
 });
 
+test('mapper 94 selects its lower PRG bank from register bits 2–5', () => {
+  const nes = new Nes(image(94, 16, 1));
+  assert.deepEqual(prgPair(nes), [0, 15]);
+  nes.write(0x8000, 0x14); assert.deepEqual(prgPair(nes), [5, 15]);
+  nes.write(0xffff, 0x15); assert.deepEqual(prgPair(nes), [5, 15]);
+  const state = nes.saveState(); nes.write(0x8000, 0); nes.loadState(state);
+  assert.deepEqual(prgPair(nes), [5, 15]);
+});
+
 test('mapper 240 switches 32KB PRG and 8KB CHR from its expansion register', () => {
   const nes = new Nes(image(240, 8, 4));
   assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
