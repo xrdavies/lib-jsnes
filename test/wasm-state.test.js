@@ -30,7 +30,7 @@ function configure(js, mapper) {
 }
 
 test('full snapshots cross JS/WASM for every supported mapper, including raw bank latches and CHR RAM', async () => {
-  for (const mapper of [0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 32, 34, 66, 70, 71, 78, 79, 87, 113, 140, 152, 177, 180, 225, 240, 241]) for (const chrRom of [false, true]) {
+  for (const mapper of [0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 32, 34, 66, 70, 71, 78, 79, 87, 89, 113, 140, 152, 177, 180, 225, 240, 241]) for (const chrRom of [false, true]) {
     const bytes = rom(mapper, chrRom), js = new Nes(bytes), wasm = await WasmCore.from(binary);
     js.reset(); wasm.loadRom(bytes); wasm.reset();
     // Execute from RAM while mapper windows change. Update banks through CPU writes

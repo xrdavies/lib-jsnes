@@ -73,7 +73,7 @@ export class WasmCore {
     if (rom.length > WasmCore.MAX_ROM_SIZE) throw new RangeError('ROM exceeds WASM capacity');
     const image = parseRom(rom);
     if (image.consoleType !== 'nes') throw new Error(`Unsupported console type: ${image.consoleType}`);
-    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 32, 34, 66, 70, 71, 78, 79, 87, 113, 140, 152, 177, 180, 225, 240, 241].includes(image.mapper)) throw new Error(`Unsupported WASM mapper: ${image.mapper}`);
+    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 32, 34, 66, 70, 71, 78, 79, 87, 89, 113, 140, 152, 177, 180, 225, 240, 241].includes(image.mapper)) throw new Error(`Unsupported WASM mapper: ${image.mapper}`);
     if (image.mapper === 1 && (image.prgRom.length > 0x40000 || image.chrRom.length > 0x20000)) throw new Error('Extended MMC1 boards are not supported yet');
     if ((image.mapper === 9 || image.mapper === 10) && image.prgRom.length < 0x8000) throw new Error('MMC2/MMC4 require at least 32 KiB PRG');
     if (image.mapper === 13 && image.prgRom.length !== 0x8000) throw new Error('CPROM requires 32 KiB PRG');

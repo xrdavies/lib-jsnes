@@ -252,6 +252,19 @@ test('mapper 78 switches lower PRG, CHR and single-screen mirroring', () => {
   assert.deepEqual(prgPair(nes), [1, 7]); assert.equal(nes.cartridge.mirroring, 'single-upper');
 });
 
+test('mapper 89 decodes PRG, CHR and single-screen register bits', () => {
+  const nes = new Nes(image(89, 16, 16));
+  assert.deepEqual(prgPair(nes), [0, 15]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
+  nes.write(0x8000, 0xd2);
+  assert.deepEqual(prgPair(nes), [5, 15]); assert.deepEqual(chrPair(nes), [0x54, 0x55]);
+  nes.write(0xffff, 0x80);
+  assert.deepEqual(prgPair(nes), [0, 15]);
+  assert.equal(nes.cartridge.mirroring, 'single-lower');
+  nes.write(0xffff, 0xda); assert.equal(nes.cartridge.mirroring, 'single-upper');
+  const state = nes.saveState(); nes.write(0x8000, 0); nes.loadState(state);
+  assert.deepEqual(prgPair(nes), [5, 15]); assert.deepEqual(chrPair(nes), [0x54, 0x55]);
+});
+
 test('mapper 240 switches 32KB PRG and 8KB CHR from its expansion register', () => {
   const nes = new Nes(image(240, 8, 4));
   assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
