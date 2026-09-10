@@ -90,6 +90,34 @@ test('WASM Camerica mapper 71 switches the lower PRG window and preserves the fi
   assert.equal(core.exports.unknownOpcodeCount(), 0);
 });
 
+test('WASM MMC2 and MMC4 switch PRG windows and latch both CHR halves from PPU addresses', async () => {
+  for (const mapper of [9, 10]) {
+    const { bytes, start } = rom(mapper, 8, 8);
+    const chrStart = start + 8 * 0x4000;
+    for (let bank = 0; bank < 16; bank++) bytes.fill(0x40 + bank, chrStart + bank * 0x1000, chrStart + (bank + 1) * 0x1000);
+    const code = [], write = (address, value) => code.push(0xa9, value, 0x8d, address & 255, address >>> 8);
+    const read = (address, destination) => code.push(0xad, address & 255, address >>> 8, 0x85, destination);
+    write(0xb000, 0); write(0xc000, 1); write(0xd000, 2); write(0xe000, 3); write(0xa000, 3);
+    read(0x8000, 0); read(0xa000, 1); read(0xc000, 2); read(0xe000, 3);
+    const pc = mapper === 9 ? 0xe100 : 0xc100, loop = pc + code.length;
+    code.push(0x4c, loop & 255, loop >>> 8);
+    bytes.set(code, start + 7 * 0x4000 + (mapper === 9 ? 0x2100 : 0x100));
+    bytes.set([pc & 255, pc >>> 8], start + 8 * 0x4000 - 4);
+    const js = new Nes(bytes), core = await WasmCore.from(binary);
+    js.reset(); core.loadRom(bytes); core.reset(); js.step(200); core.step(200);
+    const expected = mapper === 9 ? [0x31, 0x36, 0x37, 0x37] : [0x33, 0x33, 0x37, 0x37];
+    assert.deepEqual([0, 1, 2, 3].map(i => core.exports.ramRead(i)), expected);
+    assert.deepEqual([core.programCounter, core.cycleCount], [js.cpu.pc, js.cycleCount]);
+    for (const address of [0, 0x1000]) assert.equal(core.exports.chrRead(address), js.cartridge.readChr(address));
+    assert.equal(core.exports.chrRead(0x0fd0), 0x40); assert.equal(js.cartridge.readChr(0x0fd0), 0x40);
+    assert.equal(core.exports.chrRead(0), 0x40); assert.equal(js.cartridge.readChr(0), 0x40);
+    assert.equal(core.exports.chrRead(0x1fd0), 0x42); assert.equal(js.cartridge.readChr(0x1fd0), 0x42);
+    assert.equal(core.exports.chrRead(0x1000), 0x42); assert.equal(js.cartridge.readChr(0x1000), 0x42);
+    const state = core.saveState(); core.exports.chrRead(0x0fe0); core.loadState(state);
+    assert.equal(core.exports.chrRead(0), 0x40); assert.equal(core.exports.unknownOpcodeCount(), 0);
+  }
+});
+
 test('WASM CNROM switches CHR banks without changing PRG bytes', async () => {
   const { bytes, start } = rom(3, 2, 4);
   bytes.fill(0x11, start + 2 * 0x4000, start + 2 * 0x4000 + 0x2000);

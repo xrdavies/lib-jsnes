@@ -191,6 +191,25 @@ test('Camerica mapper 71 switches the lower PRG window and single-screen mirrori
   assert.deepEqual(prgPair(nes), [3, 7]); assert.equal(nes.cartridge.mirroring, 'single-upper');
 });
 
+test('MMC2 and MMC4 switch PRG windows and latch both CHR halves from PPU addresses', () => {
+  for (const mapper of [9, 10]) {
+    const nes = new Nes(image(mapper, 8, 8, 1));
+    for (const [address, value] of [[0xb000, 0], [0xc000, 1], [0xd000, 2], [0xe000, 3]]) nes.write(address, value);
+    assert.deepEqual([nes.cartridge.readChr(0), nes.cartridge.readChr(0x1000)], [0x41, 0x43]);
+    assert.equal(nes.cartridge.readChr(0x0fd0), 0x40);
+    assert.equal(nes.cartridge.readChr(0), 0x40);
+    assert.equal(nes.cartridge.readChr(0x1fd0), 0x42);
+    assert.equal(nes.cartridge.readChr(0x1000), 0x42);
+    assert.equal(nes.cartridge.readChr(0x0fe0), 0x41);
+    assert.equal(nes.cartridge.readChr(0x1fe0), 0x43);
+    nes.write(0xa000, 3);
+    assert.deepEqual(mapper === 9 ? [nes.read(0x8000), nes.read(0xa000), nes.read(0xc000), nes.read(0xe000)] : [nes.read(0x8000), nes.read(0xa000), nes.read(0xc000)], mapper === 9 ? [1, 6, 7, 7] : [3, 3, 7]);
+    nes.write(0xf000, 1); assert.equal(nes.cartridge.mirroring, 'horizontal');
+    const state = nes.saveState(); nes.write(0xb000, 7); nes.read(0x0fd0); nes.loadState(state);
+    assert.equal(nes.cartridge.readChr(0), 0x41); assert.equal(nes.cartridge.mirroring, 'horizontal');
+  }
+});
+
 
 test('mapper 79 switches 32KB PRG and 8KB CHR banks from $4100', () => {
   const nes = new Nes(image(79, 8, 8));
