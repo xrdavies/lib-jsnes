@@ -224,6 +224,23 @@ test('mapper 180 fixes the lower PRG window and switches the upper window', () =
   nes.reset(); assert.deepEqual(prgPair(nes), [0, 0]);
 });
 
+test('Bandai mappers 70 and 152 switch lower PRG and CHR banks', () => {
+  const mapper70 = new Nes(image(70, 8, 8));
+  assert.deepEqual(prgPair(mapper70), [0, 7]); assert.deepEqual(chrPair(mapper70), [0x40, 0x41]);
+  mapper70.write(0x8000, 0x21);
+  assert.deepEqual(prgPair(mapper70), [2, 7]); assert.deepEqual(chrPair(mapper70), [0x42, 0x43]);
+  const state70 = mapper70.saveState(); mapper70.write(0x8000, 0); mapper70.loadState(state70);
+  assert.deepEqual(prgPair(mapper70), [2, 7]); assert.deepEqual(chrPair(mapper70), [0x42, 0x43]);
+
+  const mapper152 = new Nes(image(152, 8, 8));
+  assert.equal(mapper152.cartridge.mirroring, 'single-lower');
+  mapper152.write(0x8000, 0xa1);
+  assert.deepEqual(prgPair(mapper152), [2, 7]); assert.deepEqual(chrPair(mapper152), [0x42, 0x43]);
+  assert.equal(mapper152.cartridge.mirroring, 'single-upper');
+  const state152 = mapper152.saveState(); mapper152.write(0x8000, 0); mapper152.loadState(state152);
+  assert.equal(mapper152.cartridge.mirroring, 'single-upper');
+});
+
 test('mapper 240 switches 32KB PRG and 8KB CHR from its expansion register', () => {
   const nes = new Nes(image(240, 8, 4));
   assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
