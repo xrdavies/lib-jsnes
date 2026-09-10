@@ -25,7 +25,7 @@ export class Cartridge {
 
   constructor(readonly rom: RomImage) {
     if (rom.consoleType && rom.consoleType !== 'nes') throw new Error(`Unsupported console type: ${rom.consoleType}`);
-    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 32, 34, 66, 70, 71, 79, 87, 113, 140, 152, 177, 180, 225, 240, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
+    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 32, 34, 66, 70, 71, 78, 79, 87, 113, 140, 152, 177, 180, 225, 240, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
     if (rom.mapper === 1 && (rom.prgRom.length > 0x40000 || rom.chrRom.length > 0x20000)) {
       throw new Error('Extended MMC1 boards are not supported yet');
     }
@@ -45,6 +45,7 @@ export class Cartridge {
     if (this.rom.mapper === 7) return this.axBank&16 ? 'single-upper' : 'single-lower';
     if (this.rom.mapper === 4) return this.rom.mirroring === 'four-screen' ? 'four-screen' : this.mmc3Mirror ? 'horizontal' : 'vertical';
     if (this.rom.mapper === 15 || this.rom.mapper === 113 || this.rom.mapper === 177 || this.rom.mapper === 225) return this.m15Mirror ? 'horizontal' : 'vertical';
+    if (this.rom.mapper === 78) return this.m15Mirror ? 'single-upper' : 'single-lower';
     if (this.rom.mapper === 152) return this.m71Mirror ? 'single-upper' : 'single-lower';
     if (this.rom.mapper === 71) return this.m71Mirror === 2 ? 'single-upper' : this.m71Mirror === 1 ? 'single-lower' : this.rom.mirroring;
     if (this.rom.mapper === 9 || this.rom.mapper === 10) return this.m9Mirror === 2 ? 'four-screen' : this.m9Mirror ? 'vertical' : 'horizontal';
@@ -79,7 +80,7 @@ export class Cartridge {
     const count = this.rom.prgRom.length / 0x4000;
     let bank = slot;
     if (this.rom.mapper === 2) bank = slot === 0 ? this.prg : count - 1;
-    if (this.rom.mapper === 70 || this.rom.mapper === 152) bank = slot === 0 ? this.gxBank : count - 1;
+    if (this.rom.mapper === 70 || this.rom.mapper === 78 || this.rom.mapper === 152) bank = slot === 0 ? this.gxBank : count - 1;
     if (this.rom.mapper === 180) bank = slot === 0 ? 0 : this.gxBank;
     if (this.rom.mapper === 9) { const count8 = count * 2, slot8 = (address - 0x8000) >>> 13, selected = slot8 === 0 ? this.prg % count8 : count8 - (4 - slot8); return this.rom.prgRom[(selected * 0x2000 + (address & 0x1fff)) % this.rom.prgRom.length]; }
     if (this.rom.mapper === 10) bank = address < 0xc000 ? this.prg : count - 1;
@@ -154,6 +155,7 @@ export class Cartridge {
     }
     if (this.rom.mapper === 2) this.prg = value;
     if (this.rom.mapper === 70 || this.rom.mapper === 152) { this.gxBank = (value >>> 4) & 7; this.gxChr = value & 15; if (this.rom.mapper === 152) this.m71Mirror = value >>> 7; return; }
+    if (this.rom.mapper === 78) { this.gxBank = value & 7; this.gxChr = value >>> 4; this.m15Mirror = (value >>> 3) & 1; return; }
     if (this.rom.mapper === 180) { this.gxBank = value; return; }
     if (this.rom.mapper === 71) { if ((address & 0xf000) === 0x9000) this.m71Mirror = 1 + ((value >>> 4) & 1); else this.gxBank = value; return; }
     if (this.rom.mapper === 9 || this.rom.mapper === 10) { switch (address & 0xf000) { case 0xa000: this.prg = value; break; case 0xb000: this.mmc3Regs[0] = value; break; case 0xc000: this.mmc3Regs[1] = value; break; case 0xd000: this.mmc3Regs[2] = value; break; case 0xe000: this.mmc3Regs[3] = value; break; case 0xf000: this.m9Mirror = (value & 1) ^ 1; break; } return; }
@@ -225,7 +227,7 @@ export class Cartridge {
     if (this.rom.mapper === 11) return ((this.gxBank >>> 4) % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 13) return address < 0x1000 ? address : (this.chrBank % (this.chr.length / 0x1000)) * 0x1000 + (address & 0x0fff);
     if (this.rom.mapper === 32) return (this.mmc3Regs[(address >>> 10) & 7] % (this.chr.length / 0x400)) * 0x400 + (address & 0x3ff);
-    if (this.rom.mapper === 66 || this.rom.mapper === 70 || this.rom.mapper === 79 || this.rom.mapper === 113 || this.rom.mapper === 140 || this.rom.mapper === 152 || this.rom.mapper === 225 || this.rom.mapper === 240) return ((this.rom.mapper === 79 ? this.gxChr & 7 : this.gxChr) % (this.chr.length / 0x2000)) * 0x2000 + address;
+    if (this.rom.mapper === 66 || this.rom.mapper === 70 || this.rom.mapper === 78 || this.rom.mapper === 79 || this.rom.mapper === 113 || this.rom.mapper === 140 || this.rom.mapper === 152 || this.rom.mapper === 225 || this.rom.mapper === 240) return ((this.rom.mapper === 79 ? this.gxChr & 7 : this.gxChr) % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 87) return (this.chrBank % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 4) {
       // Inversion swaps the two 4KB halves. R0/R1 each select an aligned

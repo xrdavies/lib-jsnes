@@ -241,6 +241,17 @@ test('Bandai mappers 70 and 152 switch lower PRG and CHR banks', () => {
   assert.equal(mapper152.cartridge.mirroring, 'single-upper');
 });
 
+test('mapper 78 switches lower PRG, CHR and single-screen mirroring', () => {
+  const nes = new Nes(image(78, 8, 8));
+  assert.deepEqual(prgPair(nes), [0, 7]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
+  nes.write(0x8000, 0x33);
+  assert.deepEqual(prgPair(nes), [3, 7]); assert.deepEqual(chrPair(nes), [0x46, 0x47]);
+  assert.equal(nes.cartridge.mirroring, 'single-lower');
+  nes.write(0xffff, 0x39); assert.equal(nes.cartridge.mirroring, 'single-upper');
+  const state = nes.saveState(); nes.write(0x8000, 0); nes.loadState(state);
+  assert.deepEqual(prgPair(nes), [1, 7]); assert.equal(nes.cartridge.mirroring, 'single-upper');
+});
+
 test('mapper 240 switches 32KB PRG and 8KB CHR from its expansion register', () => {
   const nes = new Nes(image(240, 8, 4));
   assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
