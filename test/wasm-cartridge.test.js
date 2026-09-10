@@ -161,6 +161,20 @@ test('WASM mapper 180 fixes the lower PRG window and switches the upper window',
   core.reset(); assert.equal(core.exports.ramRead(0), 0);
 });
 
+test('WASM mapper 240 switches 32KB PRG and 8KB CHR from its expansion register', async () => {
+  const { bytes, start } = rom(240, 8, 4), chrStart = start + 8 * 0x4000;
+  for (let bank = 0; bank < 8; bank++) bytes.fill(0x40 + bank, chrStart + bank * 0x1000, chrStart + (bank + 1) * 0x1000);
+  const code = [0xad, 0, 0x80, 0x85, 0, 0xa9, 0x21, 0x8d, 0x20, 0x40,
+    0xad, 0, 0x80, 0x85, 1, 0xad, 0, 0xc0, 0x85, 2, 0x4c, 0x14, 0x81];
+  for (let bank = 0; bank < 4; bank++) bytes.set(code, start + bank * 0x8000 + 0x100);
+  bytes.set([0, 0x81], start + 0x7ffc);
+  const js = new Nes(bytes), core = await WasmCore.from(binary);
+  js.reset(); core.loadRom(bytes); core.reset(); js.step(100); core.step(100);
+  assert.deepEqual([0, 1, 2].map(i => core.exports.ramRead(i)), [0x30, 0x34, 0x35]);
+  assert.deepEqual([core.exports.chrRead(0), core.exports.chrRead(0x1000)], [0x42, 0x43]);
+  assert.deepEqual([core.programCounter, core.cycleCount], [js.cpu.pc, js.cycleCount]); assert.equal(core.exports.unknownOpcodeCount(), 0);
+});
+
 test('WASM CNROM switches CHR banks without changing PRG bytes', async () => {
   const { bytes, start } = rom(3, 2, 4);
   bytes.fill(0x11, start + 2 * 0x4000, start + 2 * 0x4000 + 0x2000);
@@ -194,7 +208,7 @@ test('native WASM loadRom validates layout and mapper even without the TypeScrip
   const nes2 = rom(0, 1).bytes; nes2[7] = 8;
   const noPrg = rom(0, 0).bytes;
   for (const bytes of [new Uint8Array(16), rom(0, 1).bytes.subarray(0, 32),
-    rom(5, 2).bytes, noPrg,
+    rom(5, 2).bytes, noPrg, rom(240, 1).bytes,
     rom(2, 2, 1).bytes.subarray(0, 16 + 0x8000)]) {
     for (let i = 0; i < bytes.length; i++) e.romWrite(i, bytes[i]);
     assert.throws(() => e.loadRom(bytes.length));
@@ -209,7 +223,7 @@ test('wrapper rejects unsupported cartridges before replacing the running ROM', 
   vector(valid.bytes, valid.start, 1, 0x8000);
   core.loadRom(valid.bytes); core.reset();
   const nes2 = rom(0, 1).bytes; nes2[7] = 8;
-  for (const invalid of [rom(5, 2).bytes, rom(0, 3).bytes, rom(13, 1).bytes, rom(13, 4).bytes, rom(32, 1).bytes]) {
+  for (const invalid of [rom(5, 2).bytes, rom(0, 3).bytes, rom(13, 1).bytes, rom(13, 4).bytes, rom(32, 1).bytes, rom(240, 1).bytes]) {
     assert.throws(() => core.loadRom(invalid));
     assert.equal(core.programCounter, 0x8000);
     assert.equal(core.cycleCount, 0);

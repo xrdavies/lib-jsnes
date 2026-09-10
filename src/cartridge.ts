@@ -25,7 +25,7 @@ export class Cartridge {
 
   constructor(readonly rom: RomImage) {
     if (rom.consoleType && rom.consoleType !== 'nes') throw new Error(`Unsupported console type: ${rom.consoleType}`);
-    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 32, 34, 66, 71, 79, 87, 113, 140, 177, 180, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
+    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 32, 34, 66, 71, 79, 87, 113, 140, 177, 180, 225, 240, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
     if (rom.mapper === 1 && (rom.prgRom.length > 0x40000 || rom.chrRom.length > 0x20000)) {
       throw new Error('Extended MMC1 boards are not supported yet');
     }
@@ -33,6 +33,7 @@ export class Cartridge {
     if (rom.mapper === 13 && rom.prgRom.length !== 0x8000) throw new Error('CPROM requires 32 KiB PRG');
     if (rom.mapper === 32 && rom.prgRom.length < 0x8000) throw new Error('Irem G-101 requires at least 32 KiB PRG');
     if (rom.mapper === 32 && (rom.prgRom.length % 0x4000 || rom.chrRom.length % 0x400)) throw new Error('Irem G-101 requires 16 KiB PRG and 1 KiB CHR banks');
+    if (rom.mapper === 240 && rom.prgRom.length % 0x8000) throw new Error('Mapper 240 requires 32 KiB PRG banks');
     if (rom.mapper === 225) this.gxBank = 1;
     if (rom.mapper === 9 || rom.mapper === 10) this.m9Mirror = rom.mirroring === 'four-screen' ? 2 : rom.mirroring === 'vertical' ? 1 : 0;
     if (rom.mapper === 32) this.m32Mirror = rom.mirroring === 'four-screen' ? 2 : rom.mirroring === 'horizontal' ? 1 : 0;
@@ -87,6 +88,10 @@ export class Cartridge {
         : (slot8 === 0 ? count8 - 2 : slot8 === 1 ? this.gxBank : slot8 === 2 ? this.prg : count8 - 1);
       return this.rom.prgRom[(selected % count8) * 0x2000 + (address & 0x1fff)];
     }
+    if (this.rom.mapper === 240) {
+      const count32 = this.rom.prgRom.length / 0x8000;
+      return this.rom.prgRom[(this.gxBank % count32) * 0x8000 + (address & 0x7fff)];
+    }
     if (this.rom.mapper === 71) bank = slot === 0 ? this.gxBank : count - 1;
     if (this.rom.mapper === 7) bank = (this.axBank&15)*2 + slot;
     if (this.rom.mapper === 11) bank = (this.gxBank & 3) * 2 + slot;
@@ -121,6 +126,7 @@ export class Cartridge {
     address &= 0xffff;
     value &= 255;
     if (this.rom.mapper === 140 && address >= 0x6000 && address < 0x8000) { this.gxChr = value & 15; this.gxBank = (value >>> 4) & 3; return; }
+    if (this.rom.mapper === 240 && address >= 0x4020 && address < 0x6000) { this.gxBank = value >>> 4; this.gxChr = value & 15; return; }
     if (this.rom.mapper === 177 && address >= 0x8000) { this.gxBank = value & 0x1f; this.m15Mirror = value & 0x20 ? 1 : 0; return; }
     if (this.rom.mapper === 225 && (address & 0xf800) === 0x5800) { this.extraRam[address & 3] = value & 15; return; }
     if (this.rom.mapper === 225 && address >= 0x8000) {
@@ -216,7 +222,7 @@ export class Cartridge {
     if (this.rom.mapper === 11) return ((this.gxBank >>> 4) % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 13) return address < 0x1000 ? address : (this.chrBank % (this.chr.length / 0x1000)) * 0x1000 + (address & 0x0fff);
     if (this.rom.mapper === 32) return (this.mmc3Regs[(address >>> 10) & 7] % (this.chr.length / 0x400)) * 0x400 + (address & 0x3ff);
-    if (this.rom.mapper === 66 || this.rom.mapper === 79 || this.rom.mapper === 113 || this.rom.mapper === 140 || this.rom.mapper === 225) return ((this.rom.mapper === 79 ? this.gxChr & 7 : this.gxChr) % (this.chr.length / 0x2000)) * 0x2000 + address;
+    if (this.rom.mapper === 66 || this.rom.mapper === 79 || this.rom.mapper === 113 || this.rom.mapper === 140 || this.rom.mapper === 225 || this.rom.mapper === 240) return ((this.rom.mapper === 79 ? this.gxChr & 7 : this.gxChr) % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 87) return (this.chrBank % (this.chr.length / 0x2000)) * 0x2000 + address;
     if (this.rom.mapper === 4) {
       // Inversion swaps the two 4KB halves. R0/R1 each select an aligned

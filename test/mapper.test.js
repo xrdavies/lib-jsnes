@@ -224,6 +224,16 @@ test('mapper 180 fixes the lower PRG window and switches the upper window', () =
   nes.reset(); assert.deepEqual(prgPair(nes), [0, 0]);
 });
 
+test('mapper 240 switches 32KB PRG and 8KB CHR from its expansion register', () => {
+  const nes = new Nes(image(240, 8, 4));
+  assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
+  nes.write(0x4020, 0x21);
+  assert.deepEqual(prgPair(nes), [4, 5]); assert.deepEqual(chrPair(nes), [0x42, 0x43]);
+  const state = nes.saveState(); nes.write(0x5fff, 0); nes.loadState(state);
+  assert.deepEqual(prgPair(nes), [4, 5]); assert.deepEqual(chrPair(nes), [0x42, 0x43]);
+  assert.throws(() => new Nes(image(240, 1, 1)), /32 KiB PRG banks/);
+});
+
 test('Camerica mapper 71 switches the lower PRG window and single-screen mirroring', () => {
   const nes = new Nes(image(71, 8, 1, 1));
   assert.deepEqual(prgPair(nes), [0, 7]); assert.equal(nes.cartridge.mirroring, 'vertical');
