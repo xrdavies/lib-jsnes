@@ -274,6 +274,16 @@ test('mapper 94 selects its lower PRG bank from register bits 2–5', () => {
   assert.deepEqual(prgPair(nes), [5, 15]);
 });
 
+test('mapper 38 switches 32KB PRG and 8KB CHR from the $7000 register', () => {
+  const nes = new Nes(image(38, 8, 8));
+  assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);
+  nes.write(0x7000, 0x0d);
+  assert.deepEqual(prgPair(nes), [2, 3]); assert.deepEqual(chrPair(nes), [0x46, 0x47]);
+  nes.write(0x6fff, 0); assert.deepEqual(prgPair(nes), [2, 3]);
+  const state = nes.saveState(); nes.write(0x7fff, 0); nes.loadState(state);
+  assert.deepEqual(prgPair(nes), [2, 3]); assert.deepEqual(chrPair(nes), [0x46, 0x47]);
+});
+
 test('mapper 240 switches 32KB PRG and 8KB CHR from its expansion register', () => {
   const nes = new Nes(image(240, 8, 4));
   assert.deepEqual(prgPair(nes), [0, 1]); assert.deepEqual(chrPair(nes), [0x40, 0x41]);

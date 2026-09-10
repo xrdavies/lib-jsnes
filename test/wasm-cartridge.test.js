@@ -216,6 +216,21 @@ test('WASM mapper 94 selects the lower 16KB PRG bank', async () => {
   assert.deepEqual([core.programCounter, core.cycleCount], [js.cpu.pc, js.cycleCount]); assert.equal(core.exports.unknownOpcodeCount(), 0);
 });
 
+test('WASM mapper 38 switches 32KB PRG and 8KB CHR from $7000', async () => {
+  const { bytes, start } = rom(38, 8, 8);
+  const chrStart = start + 8 * 0x4000;
+  for (let bank = 0; bank < 8; bank++) bytes.fill(0x40 + bank, chrStart + bank * 0x2000, chrStart + (bank + 1) * 0x2000);
+  const code = [0xad, 0, 0x80, 0x85, 0, 0xa9, 0x0d, 0x8d, 0, 0x70,
+    0xad, 0, 0x80, 0x85, 1, 0xad, 0, 0xc0, 0x85, 2, 0x4c, 0x14, 0x81];
+  for (let bank = 0; bank < 8; bank++) bytes.set(code, start + bank * 0x4000 + 0x100);
+  bytes.set([0, 0x81], start + 0x8000 - 4);
+  const js = new Nes(bytes), core = await WasmCore.from(binary);
+  js.reset(); core.loadRom(bytes); core.reset(); js.step(100); core.step(100);
+  assert.deepEqual([0, 1, 2].map(i => core.exports.ramRead(i)), [0x30, 0x32, 0x33]);
+  assert.deepEqual([core.exports.chrRead(0), core.exports.chrRead(0x1000)], [0x43, 0x43]);
+  assert.deepEqual([core.programCounter, core.cycleCount], [js.cpu.pc, js.cycleCount]); assert.equal(core.exports.unknownOpcodeCount(), 0);
+});
+
 test('WASM mapper 240 switches 32KB PRG and 8KB CHR from its expansion register', async () => {
   const { bytes, start } = rom(240, 8, 4), chrStart = start + 8 * 0x4000;
   for (let bank = 0; bank < 8; bank++) bytes.fill(0x40 + bank, chrStart + bank * 0x1000, chrStart + (bank + 1) * 0x1000);
