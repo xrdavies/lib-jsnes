@@ -32,6 +32,7 @@ export class Cartridge {
     if ((rom.mapper === 9 || rom.mapper === 10) && rom.prgRom.length < 0x8000) throw new Error('MMC2/MMC4 require at least 32 KiB PRG');
     if (rom.mapper === 13 && rom.prgRom.length !== 0x8000) throw new Error('CPROM requires 32 KiB PRG');
     if (rom.mapper === 32 && rom.prgRom.length < 0x8000) throw new Error('Irem G-101 requires at least 32 KiB PRG');
+    if (rom.mapper === 32 && (rom.prgRom.length % 0x4000 || rom.chrRom.length % 0x400)) throw new Error('Irem G-101 requires 16 KiB PRG and 1 KiB CHR banks');
     if (rom.mapper === 225) this.gxBank = 1;
     if (rom.mapper === 9 || rom.mapper === 10) this.m9Mirror = rom.mirroring === 'four-screen' ? 2 : rom.mirroring === 'vertical' ? 1 : 0;
     if (rom.mapper === 32) this.m32Mirror = rom.mirroring === 'four-screen' ? 2 : rom.mirroring === 'horizontal' ? 1 : 0;
