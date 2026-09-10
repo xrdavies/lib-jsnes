@@ -214,6 +214,16 @@ test('Irem G-101 rejects partial PRG and CHR banks', () => {
   assert.throws(() => new Nes(bytes), /1 KiB CHR banks/);
 });
 
+test('mapper 180 fixes the lower PRG window and switches the upper window', () => {
+  const nes = new Nes(image(180, 8, 1));
+  assert.deepEqual(prgPair(nes), [0, 0]);
+  nes.write(0x8000, 3);
+  assert.deepEqual(prgPair(nes), [0, 3]);
+  const state = nes.saveState(); nes.write(0xffff, 1); nes.loadState(state);
+  assert.deepEqual(prgPair(nes), [0, 3]);
+  nes.reset(); assert.deepEqual(prgPair(nes), [0, 0]);
+});
+
 test('Camerica mapper 71 switches the lower PRG window and single-screen mirroring', () => {
   const nes = new Nes(image(71, 8, 1, 1));
   assert.deepEqual(prgPair(nes), [0, 7]); assert.equal(nes.cartridge.mirroring, 'vertical');

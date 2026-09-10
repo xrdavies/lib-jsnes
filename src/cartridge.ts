@@ -25,7 +25,7 @@ export class Cartridge {
 
   constructor(readonly rom: RomImage) {
     if (rom.consoleType && rom.consoleType !== 'nes') throw new Error(`Unsupported console type: ${rom.consoleType}`);
-    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 32, 34, 66, 71, 79, 87, 113, 140, 177, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
+    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 32, 34, 66, 71, 79, 87, 113, 140, 177, 180, 225, 241].includes(rom.mapper)) throw new Error(`Unsupported mapper: ${rom.mapper}`);
     if (rom.mapper === 1 && (rom.prgRom.length > 0x40000 || rom.chrRom.length > 0x20000)) {
       throw new Error('Extended MMC1 boards are not supported yet');
     }
@@ -77,6 +77,7 @@ export class Cartridge {
     const count = this.rom.prgRom.length / 0x4000;
     let bank = slot;
     if (this.rom.mapper === 2) bank = slot === 0 ? this.prg : count - 1;
+    if (this.rom.mapper === 180) bank = slot === 0 ? 0 : this.gxBank;
     if (this.rom.mapper === 9) { const count8 = count * 2, slot8 = (address - 0x8000) >>> 13, selected = slot8 === 0 ? this.prg % count8 : count8 - (4 - slot8); return this.rom.prgRom[(selected * 0x2000 + (address & 0x1fff)) % this.rom.prgRom.length]; }
     if (this.rom.mapper === 10) bank = address < 0xc000 ? this.prg : count - 1;
     if (this.rom.mapper === 32) {
@@ -144,6 +145,7 @@ export class Cartridge {
       return;
     }
     if (this.rom.mapper === 2) this.prg = value;
+    if (this.rom.mapper === 180) { this.gxBank = value; return; }
     if (this.rom.mapper === 71) { if ((address & 0xf000) === 0x9000) this.m71Mirror = 1 + ((value >>> 4) & 1); else this.gxBank = value; return; }
     if (this.rom.mapper === 9 || this.rom.mapper === 10) { switch (address & 0xf000) { case 0xa000: this.prg = value; break; case 0xb000: this.mmc3Regs[0] = value; break; case 0xc000: this.mmc3Regs[1] = value; break; case 0xd000: this.mmc3Regs[2] = value; break; case 0xe000: this.mmc3Regs[3] = value; break; case 0xf000: this.m9Mirror = (value & 1) ^ 1; break; } return; }
     if (this.rom.mapper === 11) { this.gxBank = value; return; }

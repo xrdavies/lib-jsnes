@@ -110,6 +110,10 @@ export class Cartridge {
       const selected = address < 0xc000 ? this.bank % this.prgBanks : this.prgBanks - 1;
       return this.rom[this.prgStart + selected * 0x4000 + (address & 0x3fff)];
     }
+    if (this.mapper == 180) {
+      const selected = address < 0xc000 ? 0 : this.bank % this.prgBanks;
+      return this.rom[this.prgStart + selected * 0x4000 + (address & 0x3fff)];
+    }
     if (this.mapper == 32) {
       const count8 = this.prgBanks * 2, slot8 = (address - 0x8000) >>> 13;
       const selected = this.m32Mode == 0
@@ -216,6 +220,7 @@ export class Cartridge {
       if ((address & 0xf000) == 0x9000) this.mirror = 1 + ((value >>> 4) & 1); else this.bank = value & 255;
     }
     else if (address >= 0x8000 && this.mapper == 2 && this.prgBanks > 0) this.bank = value & 255;
+    else if (address >= 0x8000 && this.mapper == 180) this.bank = value & 255;
     else if (address >= 0x8000 && this.mapper == 11) this.bank = value & 255;
     else if (address >= 0x8000 && this.mapper == 13) this.chrBank = value & 255;
     else if (address >= 0x8000 && this.mapper == 34) this.bank = value & 255;
@@ -288,7 +293,7 @@ export class Cartridge {
     if (this.mapper == 1 || this.mapper == 2 || this.mapper == 9 || this.mapper == 10 || this.mapper == 32) out[4] = this.bank;
     if (this.mapper == 3 || this.mapper == 13 || this.mapper == 87) out[5] = this.chrBank;
     if (this.mapper == 7) out[6] = this.bank;
-    if (this.mapper == 11 || this.mapper == 32 || this.mapper == 34 || this.mapper == 66 || this.mapper == 71 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 177 || this.mapper == 241) out[7] = this.mapper == 32 ? this.highBank : this.bank;
+    if (this.mapper == 11 || this.mapper == 32 || this.mapper == 34 || this.mapper == 66 || this.mapper == 71 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 177 || this.mapper == 180 || this.mapper == 241) out[7] = this.mapper == 32 ? this.highBank : this.bank;
     if (this.mapper == 225) out[7] = this.highBank;
     if (this.mapper == 66 || this.mapper == 79 || this.mapper == 113 || this.mapper == 140 || this.mapper == 225) out[8] = this.chrBank;
     out[9] = this.mmc3Select; out[10] = this.mapper == 4 ? this.mirror : 0;
@@ -347,7 +352,7 @@ export class Cartridge {
       return <i32>size;
     };
     const mapper = (this.rom[6] >>> 4) | (this.rom[7] & 0xf0) | (nes2 ? ((mapperExtension & 15) << 8) : 0);
-    if (mapper != 0 && mapper != 1 && mapper != 2 && mapper != 3 && mapper != 4 && mapper != 7 && mapper != 9 && mapper != 10 && mapper != 11 && mapper != 13 && mapper != 15 && mapper != 32 && mapper != 34 && mapper != 66 && mapper != 71 && mapper != 79 && mapper != 87 && mapper != 113 && mapper != 140 && mapper != 177 && mapper != 225 && mapper != 241) throw new Error('Unsupported WASM mapper');
+    if (mapper != 0 && mapper != 1 && mapper != 2 && mapper != 3 && mapper != 4 && mapper != 7 && mapper != 9 && mapper != 10 && mapper != 11 && mapper != 13 && mapper != 15 && mapper != 32 && mapper != 34 && mapper != 66 && mapper != 71 && mapper != 79 && mapper != 87 && mapper != 113 && mapper != 140 && mapper != 177 && mapper != 180 && mapper != 225 && mapper != 241) throw new Error('Unsupported WASM mapper');
     const prgSize: i32 = nes2 && (sizeExtension & 15) == 15 ? exponentSize(this.rom[4]) : (this.rom[4] | (nes2 ? ((sizeExtension & 15) << 8) : 0)) * 0x4000;
     const chrSize: i32 = nes2 && (sizeExtension >>> 4) == 15 ? exponentSize(this.rom[5]) : (this.rom[5] | (nes2 ? ((sizeExtension >>> 4) << 8) : 0)) * 0x2000;
     if (prgSize == 0 || (mapper == 0 && prgSize > 0x8000) || (mapper == 13 && prgSize != 0x8000) || ((mapper == 9 || mapper == 10 || mapper == 32) && prgSize < 0x8000) || prgSize % 0x4000 != 0) throw new Error('Invalid PRG size');

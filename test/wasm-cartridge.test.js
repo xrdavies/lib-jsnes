@@ -149,6 +149,18 @@ test('WASM Irem G-101 switches 8KB PRG and 1KB CHR windows in both PRG modes', a
   assert.deepEqual([core.programCounter, core.cycleCount], [js.cpu.pc, js.cycleCount]); assert.equal(core.exports.unknownOpcodeCount(), 0);
 });
 
+test('WASM mapper 180 fixes the lower PRG window and switches the upper window', async () => {
+  const { bytes, start } = rom(180, 4, 1);
+  const code = [0xad, 0, 0x80, 0x85, 0, 0xa9, 3, 0x8d, 0, 0x80,
+    0xad, 0, 0x80, 0x85, 1, 0xad, 0, 0xc0, 0x85, 2, 0x4c, 0x14, 0x81];
+  bytes.set(code, start + 0x100); bytes.set([0, 0x81], start + 0x3ffc);
+  const js = new Nes(bytes), core = await WasmCore.from(binary);
+  js.reset(); core.loadRom(bytes); core.reset(); js.step(100); core.step(100);
+  assert.deepEqual([0, 1, 2].map(i => core.exports.ramRead(i)), [0x30, 0x30, 0x33]);
+  assert.deepEqual([core.programCounter, core.cycleCount], [js.cpu.pc, js.cycleCount]); assert.equal(core.exports.unknownOpcodeCount(), 0);
+  core.reset(); assert.equal(core.exports.ramRead(0), 0);
+});
+
 test('WASM CNROM switches CHR banks without changing PRG bytes', async () => {
   const { bytes, start } = rom(3, 2, 4);
   bytes.fill(0x11, start + 2 * 0x4000, start + 2 * 0x4000 + 0x2000);
