@@ -131,6 +131,24 @@ test('WASM MMC2 and MMC4 switch PRG windows and latch both CHR halves from PPU a
   }
 });
 
+test('WASM Irem G-101 switches 8KB PRG and 1KB CHR windows in both PRG modes', async () => {
+  const { bytes, start } = rom(32, 8, 8), chrStart = start + 8 * 0x4000;
+  for (let bank = 0; bank < 16; bank++) bytes.fill(0x30 + bank, start + bank * 0x2000, start + (bank + 1) * 0x2000);
+  for (let bank = 0; bank < 64; bank++) bytes.fill(0x40 + bank, chrStart + bank * 0x400, chrStart + (bank + 1) * 0x400);
+  const code = [], write = (address, value) => code.push(0xa9, value, 0x8d, address & 255, address >>> 8);
+  const read = (address, destination) => code.push(0xad, address & 255, address >>> 8, 0x85, destination);
+  write(0x8000, 1); write(0xa000, 2); write(0x9000, 3);
+  for (let slot = 0; slot < 8; slot++) write(0xb000 + slot, 8 + slot);
+  for (let slot = 0; slot < 4; slot++) read(0x8000 + slot * 0x2000, slot);
+  const loop = 0xe100 + code.length; code.push(0x4c, loop & 255, loop >>> 8);
+  bytes.set(code, start + 15 * 0x2000 + 0x100); bytes.set([0, 0xe1], start + 8 * 0x4000 - 4);
+  const js = new Nes(bytes), core = await WasmCore.from(binary);
+  js.reset(); core.loadRom(bytes); core.reset(); js.step(300); core.step(300);
+  assert.deepEqual([0, 1, 2, 3].map(i => core.exports.ramRead(i)), [0x3e, 0x32, 0x31, 0x3f]);
+  assert.deepEqual(Array.from({ length: 8 }, (_, slot) => core.exports.chrRead(slot * 0x400)), Array.from({ length: 8 }, (_, slot) => 0x48 + slot));
+  assert.deepEqual([core.programCounter, core.cycleCount], [js.cpu.pc, js.cycleCount]); assert.equal(core.exports.unknownOpcodeCount(), 0);
+});
+
 test('WASM CNROM switches CHR banks without changing PRG bytes', async () => {
   const { bytes, start } = rom(3, 2, 4);
   bytes.fill(0x11, start + 2 * 0x4000, start + 2 * 0x4000 + 0x2000);
@@ -179,7 +197,7 @@ test('wrapper rejects unsupported cartridges before replacing the running ROM', 
   vector(valid.bytes, valid.start, 1, 0x8000);
   core.loadRom(valid.bytes); core.reset();
   const nes2 = rom(0, 1).bytes; nes2[7] = 8;
-  for (const invalid of [rom(5, 2).bytes, rom(0, 3).bytes, rom(13, 1).bytes, rom(13, 4).bytes]) {
+  for (const invalid of [rom(5, 2).bytes, rom(0, 3).bytes, rom(13, 1).bytes, rom(13, 4).bytes, rom(32, 1).bytes]) {
     assert.throws(() => core.loadRom(invalid));
     assert.equal(core.programCounter, 0x8000);
     assert.equal(core.cycleCount, 0);

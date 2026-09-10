@@ -191,6 +191,22 @@ test('CPROM keeps the lower 4KB CHR page fixed and switches the upper page', () 
   assert.deepEqual(chrPair(nes), [0x40, 0x43]);
 });
 
+test('Irem G-101 switches 8KB PRG and 1KB CHR windows in both PRG modes', () => {
+  const bytes = image(32, 8, 8, 1), chrStart = 16 + 8 * 0x4000;
+  for (let bank = 0; bank < 16; bank++) bytes.fill(0x30 + bank, 16 + bank * 0x2000, 16 + (bank + 1) * 0x2000);
+  for (let bank = 0; bank < 64; bank++) bytes.fill(0x40 + bank, chrStart + bank * 0x400, chrStart + (bank + 1) * 0x400);
+  const nes = new Nes(bytes);
+  nes.write(0x8000, 1); nes.write(0xa000, 2);
+  for (let slot = 0; slot < 8; slot++) nes.write(0xb000 + slot, 8 + slot);
+  assert.deepEqual([0x8000, 0xa000, 0xc000, 0xe000].map(a => nes.read(a)), [0x31, 0x32, 0x3e, 0x3f]);
+  assert.deepEqual(Array.from({ length: 8 }, (_, slot) => nes.cartridge.readChr(slot * 0x400)), Array.from({ length: 8 }, (_, slot) => 0x48 + slot));
+  nes.write(0x9000, 3);
+  assert.deepEqual([0x8000, 0xa000, 0xc000, 0xe000].map(a => nes.read(a)), [0x3e, 0x32, 0x31, 0x3f]);
+  assert.equal(nes.cartridge.mirroring, 'horizontal');
+  const state = nes.saveState(); nes.write(0x9000, 0); nes.write(0x8000, 5); nes.loadState(state);
+  assert.deepEqual([nes.read(0x8000), nes.read(0xc000)], [0x3e, 0x31]); assert.equal(nes.cartridge.mirroring, 'horizontal');
+});
+
 test('Camerica mapper 71 switches the lower PRG window and single-screen mirroring', () => {
   const nes = new Nes(image(71, 8, 1, 1));
   assert.deepEqual(prgPair(nes), [0, 7]); assert.equal(nes.cartridge.mirroring, 'vertical');

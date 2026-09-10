@@ -73,13 +73,14 @@ export class WasmCore {
     if (rom.length > WasmCore.MAX_ROM_SIZE) throw new RangeError('ROM exceeds WASM capacity');
     const image = parseRom(rom);
     if (image.consoleType !== 'nes') throw new Error(`Unsupported console type: ${image.consoleType}`);
-    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 34, 66, 71, 79, 87, 113, 140, 177, 225, 241].includes(image.mapper)) throw new Error(`Unsupported WASM mapper: ${image.mapper}`);
+    if (![0, 1, 2, 3, 4, 7, 9, 10, 11, 13, 15, 32, 34, 66, 71, 79, 87, 113, 140, 177, 225, 241].includes(image.mapper)) throw new Error(`Unsupported WASM mapper: ${image.mapper}`);
     if (image.mapper === 1 && (image.prgRom.length > 0x40000 || image.chrRom.length > 0x20000)) throw new Error('Extended MMC1 boards are not supported yet');
     if ((image.mapper === 9 || image.mapper === 10) && image.prgRom.length < 0x8000) throw new Error('MMC2/MMC4 require at least 32 KiB PRG');
     if (image.mapper === 13 && image.prgRom.length !== 0x8000) throw new Error('CPROM requires 32 KiB PRG');
+    if (image.mapper === 32 && image.prgRom.length < 0x8000) throw new Error('Irem G-101 requires at least 32 KiB PRG');
     if (image.mapper === 0 && image.prgRom.length > 0x8000) throw new Error('Invalid NROM PRG size');
     if (image.prgRom.length % 0x4000 !== 0) throw new Error('Invalid PRG size');
-    const chrUnit = image.mapper === 4 ? 0x400 : image.mapper === 1 ? 0x1000 : 0x2000;
+    const chrUnit = image.mapper === 4 || image.mapper === 32 ? 0x400 : image.mapper === 1 ? 0x1000 : 0x2000;
     if (image.chrRom.length % chrUnit !== 0) throw new Error('Unsupported CHR bank size');
     // Allocation may grow memory or reclaim its former ROM buffer.
     if (rom.buffer === this.exports.memory.buffer) rom = new Uint8Array(rom);
