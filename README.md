@@ -20,6 +20,21 @@ compiler failure, retry, and byte-identical output from independent staging path
 When builds target the same output, the last successful completion wins; run the
 optimized build after debug experiments before packaging.
 
+## Publishing
+
+Run the test suite and inspect the package contents before publishing:
+
+```sh
+npm test
+npm pack --dry-run
+npm login
+npm publish --access public
+```
+
+`prepublishOnly` rebuilds the TypeScript and optimized WASM artifacts. Verify the
+published version with `npm view lib-jsnes version`; bump `version` in
+`package.json` for each release.
+
 ## Performance
 
 The default WASM build uses AssemblyScript optimization level 3, retaining runtime
